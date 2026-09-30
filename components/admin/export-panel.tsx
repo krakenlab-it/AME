@@ -49,25 +49,30 @@ export function ExportPanel({ profiles }: { profiles: { key: string; label: stri
   return (
     <form onSubmit={submit} className="sheet space-y-5 p-6">
       <fieldset className="space-y-2">
-        <legend className="font-semibold">Finalidad del archivo</legend>
+        <legend className="mb-1 text-[15px] font-semibold">1. ¿Para qué es el archivo?</legend>
         {profiles.map((p) => (
-          <label key={p.key} className="flex items-center gap-3 rounded-xl border border-marian-line px-4 py-3 has-[:checked]:border-marian has-[:checked]:bg-marian-soft/50">
-            <input type="radio" name="profile" value={p.key} checked={profile === p.key} onChange={() => setProfile(p.key)} className="h-5 w-5 accent-marian" />
+          <label key={p.key} className="choice">
+            <input type="radio" name="profile" value={p.key} checked={profile === p.key} onChange={() => setProfile(p.key)} className="h-5 w-5 shrink-0 accent-marian" />
             {p.label}
           </label>
         ))}
       </fieldset>
-      {current && <p className="text-sm text-ink-muted">Columnas incluidas: {current.columns.join(", ")}.</p>}
-      <Field id="purpose" label="Motivo o solicitud que justifica la exportación" required hint="Queda registrado en la auditoría. Ej.: Envío mensual de reembolsos a AIG, solicitud del 30/09.">
-        <textarea id="purpose" value={purpose} onChange={(e) => setPurpose(e.target.value)} minLength={10} maxLength={300} required rows={3} className="field-input" />
+      {current && <p className="text-sm text-ink-muted"><span className="font-semibold">Columnas incluidas:</span> {current.columns.join(", ")}.</p>}
+      <Field id="purpose" label="2. Motivo o solicitud que justifica la exportación" required hint="Queda registrado en la auditoría. Ej.: Envío mensual de reembolsos a AIG, solicitud del 30/09.">
+        <textarea id="purpose" aria-describedby="purpose-hint" value={purpose} onChange={(e) => setPurpose(e.target.value)} minLength={10} maxLength={300} required rows={3} className="field-input" />
       </Field>
-      <fieldset className="flex gap-4">
-        <legend className="mb-2 font-semibold">Formato</legend>
-        {(["xlsx", "csv"] as const).map((f) => (
-          <label key={f} className="flex items-center gap-2"><input type="radio" checked={format === f} onChange={() => setFormat(f)} className="h-5 w-5 accent-marian" />{f.toUpperCase()}</label>
-        ))}
+      <fieldset className="space-y-2">
+        <legend className="mb-1 text-[15px] font-semibold">3. Formato</legend>
+        <div className="grid gap-2 sm:grid-cols-2">
+          {([["xlsx", "Excel (.xlsx)"], ["csv", "Texto separado por comas (.csv)"]] as const).map(([f, label]) => (
+            <label key={f} className="choice">
+              <input type="radio" name="format" value={f} checked={format === f} onChange={() => setFormat(f)} className="h-5 w-5 shrink-0 accent-marian" />
+              {label}
+            </label>
+          ))}
+        </div>
       </fieldset>
-      <Button type="submit" loading={busy}><Download className="h-4 w-4" aria-hidden /> Generar archivo para AIG</Button>
+      <Button type="submit" loading={busy}><Download className="h-4 w-4" aria-hidden /> {busy ? "Generando…" : "Generar archivo para AIG"}</Button>
       {msg && <Notice tone={msg.tone} live>{msg.text}</Notice>}
     </form>
   );

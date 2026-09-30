@@ -19,16 +19,18 @@ export default async function ConfirmationPage() {
         <StepCrown current={7} />
         <section className="sheet step-enter space-y-6 p-7 text-center md:p-10" aria-labelledby="ok-title">
           <CheckCircle2 className="mx-auto h-14 w-14 text-ok" aria-hidden />
-          <h1 id="ok-title" className="text-[30px] leading-tight">Información registrada correctamente</h1>
-          <p className="text-lg">Gracias. Hemos recibido la actualización de su información.</p>
-          <p className="text-ink-muted">Su información será utilizada únicamente para las finalidades descritas en el Aviso de Privacidad.</p>
+          <h1 id="ok-title" className="text-[30px] leading-tight">Listo, registramos tu información</h1>
+          <p className="text-lg">Gracias. Recibimos la actualización de tus datos.</p>
           <div className="rounded-xl bg-marian-soft/60 px-5 py-4">
-            <p className="text-sm text-ink-muted">Número de confirmación</p>
-            <p className="mt-1 font-serif text-[28px] font-semibold tracking-[0.08em] text-marian">{ctx.person.confirmation_code}</p>
+            <p className="text-sm text-ink-muted">Tu número de confirmación</p>
+            <p className="mt-1 break-all font-serif text-[28px] font-semibold tracking-[0.08em] text-marian">{ctx.person.confirmation_code}</p>
           </div>
-          <p className="text-sm text-ink-muted">Guarda este número. Si registraste un correo, te enviamos una confirmación sin datos sensibles.</p>
+          <p className="text-[15px] text-ink-muted">
+            Guarda este número por si necesitas consultarlo. Si registraste un correo, te enviamos una confirmación sin datos sensibles.
+          </p>
+          <p className="text-[15px] text-ink-muted">Usaremos tu información solo para lo descrito en el Aviso de Privacidad.</p>
           <form action={finishAction}>
-            <Button type="submit" block>Finalizar</Button>
+            <Button type="submit" block>Terminar y cerrar sesión</Button>
           </form>
         </section>
       </div>

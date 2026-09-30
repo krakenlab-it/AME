@@ -4,6 +4,7 @@ import { useActionState, useState, useTransition } from "react";
 import { Download, Upload } from "lucide-react";
 import { importAction, issueMissingLinksAction, type ImportState } from "@/app/admin/panel-actions";
 import { Button } from "@/components/ui/button";
+import { Field } from "@/components/ui/field";
 import { Notice } from "@/components/ui/notice";
 
 function download(csv: string, name: string) {
@@ -25,17 +26,21 @@ export function ImportPanel() {
   return (
     <div className="space-y-8">
       <form action={formAction} className="sheet space-y-5 p-6">
-        <h2 className="text-xl">Cargar base inicial</h2>
-        <p className="text-sm text-ink-muted">
-          Archivo .csv o .xlsx con las columnas <code>first_names</code>, <code>last_names</code> y <code>national_id</code> (máximo 5 MB).
-          Descarga la <a className="font-semibold text-marian underline" href="/templates/initial_people.csv" download>plantilla</a>.
-        </p>
-        <input name="file" type="file" accept=".csv,.xlsx" required className="block w-full text-sm file:mr-4 file:rounded-lg file:border-0 file:bg-marian-soft file:px-4 file:py-2 file:font-semibold file:text-marian" />
-        <label className="flex items-start gap-3 text-sm">
-          <input type="checkbox" name="allowPartial" className="mt-0.5 h-5 w-5 accent-marian" />
-          <span>Si hay filas con errores, importar solo las válidas (las rechazadas se listan en el reporte y no se importan).</span>
+        <div className="space-y-1">
+          <h2 className="text-xl">1. Cargar base inicial</h2>
+          <p className="text-[15px] text-ink-muted">
+            Sube un archivo .csv o .xlsx con las columnas <code>first_names</code>, <code>last_names</code> y <code>national_id</code> (máximo 5 MB).
+            ¿No sabes cómo armarlo? Descarga la <a className="font-semibold text-marian underline underline-offset-2" href="/templates/initial_people.csv" download>plantilla de ejemplo</a>.
+          </p>
+        </div>
+        <Field id="import-file" label="Archivo de personas" required>
+          <input id="import-file" name="file" type="file" accept=".csv,.xlsx" required className="block w-full rounded-xl border border-field bg-white p-2 text-[15px] file:mr-4 file:min-h-[44px] file:cursor-pointer file:rounded-lg file:border-0 file:bg-marian-soft file:px-4 file:font-semibold file:text-marian hover:border-marian" />
+        </Field>
+        <label className="choice !items-start text-[15px]">
+          <input type="checkbox" name="allowPartial" className="mt-0.5 h-5 w-5 shrink-0 accent-marian" />
+          <span>Si hay filas con errores, importar solo las válidas. Las rechazadas aparecen en el reporte y no se importan.</span>
         </label>
-        <Button type="submit" loading={pending}><Upload className="h-4 w-4" aria-hidden /> Validar e importar</Button>
+        <Button type="submit" loading={pending}><Upload className="h-4 w-4" aria-hidden /> {pending ? "Importando…" : "Validar e importar"}</Button>
       </form>
 
       {state.error && <Notice tone="error" live>{state.error}</Notice>}
@@ -62,7 +67,8 @@ export function ImportPanel() {
           {(state.rejected?.length ?? 0) > 0 && (
             <div className="max-h-96 overflow-auto">
               <table className="admin-table">
-                <thead><tr><th>Fila</th><th>Cédula</th><th>Motivo</th></tr></thead>
+                <caption className="sr-only">Filas rechazadas</caption>
+                <thead><tr><th scope="col">Fila</th><th scope="col">Cédula</th><th scope="col">Motivo</th></tr></thead>
                 <tbody>{state.rejected!.map((e) => <tr key={`${e.row}-${e.reason}`}><td>{e.row}</td><td className="tabular-nums">{e.cedula}</td><td>{e.reason}</td></tr>)}</tbody>
               </table>
             </div>
@@ -71,8 +77,8 @@ export function ImportPanel() {
       )}
 
       <section className="sheet space-y-4 p-6">
-        <h2 className="text-xl">Enlaces para registros sin enlace vigente</h2>
-        <p className="text-sm text-ink-muted">Genera enlaces nuevos para personas pendientes o iniciadas cuyo enlace venció, fue revocado o se perdió.</p>
+        <h2 className="text-xl">2. Enlaces para registros sin enlace vigente</h2>
+        <p className="text-[15px] text-ink-muted">Genera enlaces nuevos para personas pendientes o iniciadas cuyo enlace venció, fue revocado o se perdió.</p>
         <Button variant="secondary" loading={linksPending} onClick={() => start(async () => {
           const r = await issueMissingLinksAction();
           if (r.error) setLinksMsg(r.error);

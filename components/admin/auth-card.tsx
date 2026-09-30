@@ -9,8 +9,9 @@ export function AdminAuthCard({ title, subtitle, children }: { title: string; su
         <div className="flex items-center gap-3">
           <MaristaLogo className="w-12" />
           <div>
+            <p className="text-xs font-semibold uppercase tracking-wide text-ink-muted">Panel administrativo</p>
             <h1 className="text-2xl">{title}</h1>
-            {subtitle && <p className="text-sm text-ink-muted">{subtitle}</p>}
+            {subtitle && <p className="text-[15px] text-ink-muted">{subtitle}</p>}
           </div>
         </div>
         {children}
@@ -21,7 +22,7 @@ export function AdminAuthCard({ title, subtitle, children }: { title: string; su
 
 export function AdminAuthLink({ href, children }: { href: string; children: ReactNode }) {
   return (
-    <Link href={href} className="text-sm font-medium text-marian underline">
+    <Link href={href} className="inline-flex min-h-[44px] items-center text-[15px] font-semibold text-marian underline underline-offset-2">
       {children}
     </Link>
   );

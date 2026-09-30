@@ -9,7 +9,14 @@ export function Field({
     <div className={cn("space-y-1.5", className)}>
       <label htmlFor={id} className="block text-[15px] font-semibold text-ink">
         {label}
-        {required ? <span className="text-alert" aria-hidden> *</span> : <span className="font-normal text-ink-muted"> (opcional)</span>}
+        {required ? (
+          <>
+            <span className="text-alert" aria-hidden> *</span>
+            <span className="sr-only"> (obligatorio)</span>
+          </>
+        ) : (
+          <span className="font-normal text-ink-muted"> (opcional)</span>
+        )}
       </label>
       {hint && <p id={`${id}-hint`} className="text-sm text-ink-muted">{hint}</p>}
       {children}
@@ -25,4 +32,13 @@ export function Field({
 
 export function describedBy(id: string, opts: { hint?: string; error?: string }) {
   return [opts.hint ? `${id}-hint` : null, opts.error ? `${id}-error` : null].filter(Boolean).join(" ") || undefined;
+}
+
+export function RequiredLegend() {
+  return (
+    <p className="text-sm text-ink-muted">
+      Los campos marcados con <span className="font-semibold text-alert" aria-hidden>*</span>
+      <span className="sr-only">asterisco</span> son obligatorios.
+    </p>
+  );
 }

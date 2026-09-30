@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { StatusBadge } from "@/components/admin/status-badge";
+import { Button } from "@/components/ui/button";
 import { Notice } from "@/components/ui/notice";
 import { getRepo } from "@/lib/database";
 import { keyedHash } from "@/lib/encryption/crypto";
@@ -47,62 +48,121 @@ export default async function AdminDashboard({ searchParams }: { searchParams: P
     return `?${params.toString()}`;
   };
 
+  const needsReview = counts.NEEDS_REVIEW;
+
   return (
     <div className="space-y-8">
       {sp.denegado && <Notice tone="warning">Tu rol no tiene permiso para esa sección.</Notice>}
-      <h1 className="text-3xl">Resumen</h1>
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
-        {cards.map(([label, value, s]) => (
-          <Link key={label} href={canView ? (s ? `?estado=${s}` : "?") : "#"} className="sheet block p-4 hover:border-marian">
-            <p className="text-sm text-ink-muted">{label}</p>
-            <p className="mt-1 font-serif text-3xl font-semibold text-marian">{value.toLocaleString("es-EC")}</p>
-          </Link>
-        ))}
-      </div>
+      <header className="space-y-1">
+        <h1 className="text-3xl">Resumen</h1>
+        <p className="text-ink-muted">Avance de las personas invitadas a actualizar sus datos. Toca una tarjeta para filtrar la lista.</p>
+      </header>
+
+      {canView && needsReview > 0 && status !== "NEEDS_REVIEW" && (
+        <Notice tone="warning" title="Hay registros esperando tu revisión">
+          {needsReview.toLocaleString("es-EC")} {needsReview === 1 ? "registro requiere" : "registros requieren"} una revisión manual antes del archivo para AIG.{" "}
+          <Link className="font-semibold text-marian underline underline-offset-2" href="?estado=NEEDS_REVIEW">Ver registros por revisar</Link>
+        </Notice>
+      )}
+
+      <ul className="grid grid-cols-2 gap-3 md:grid-cols-5" aria-label="Totales por estado">
+        {cards.map(([label, value, s]) => {
+          const active = canView && (s ? status === s : !status);
+          const body = (
+            <>
+              <span className="block text-sm font-medium text-ink-muted">{label}</span>
+              <span className="mt-1 block font-serif text-3xl font-semibold text-marian">{value.toLocaleString("es-EC")}</span>
+            </>
+          );
+          return (
+            <li key={label}>
+              {canView ? (
+                <Link
+                  href={s ? `?estado=${s}` : "?"}
+                  aria-current={active ? "true" : undefined}
+                  className={`sheet block h-full p-4 transition-colors hover:border-marian ${active ? "border-2 border-marian bg-marian-soft/60" : ""}`}
+                >
+                  {body}
+                </Link>
+              ) : (
+                <div className="sheet h-full p-4">{body}</div>
+              )}
+            </li>
+          );
+        })}
+      </ul>
 
       {list && (
         <section className="space-y-4" aria-labelledby="personas">
           <div className="flex flex-wrap items-end justify-between gap-3">
-            <h2 id="personas" className="text-2xl">Registros</h2>
+            <h2 id="personas" className="text-2xl">
+              Registros
+              {status && <span className="ml-2 text-lg font-normal text-ink-muted">· {STATUS_LABELS[status]}</span>}
+            </h2>
             <form className="flex flex-wrap gap-2" role="search">
-              <label className="sr-only" htmlFor="q">Buscar</label>
-              <input id="q" name="q" defaultValue={q} placeholder="Nombre, apellido, cédula o AIG-…" className="field-input !min-h-[44px] w-72 !py-2 text-sm" />
-              <label className="sr-only" htmlFor="estado">Estado</label>
-              <select id="estado" name="estado" defaultValue={status ?? ""} className="field-input !min-h-[44px] w-48 !py-2 text-sm">
-                <option value="">Todos los estados</option>
-                {PERSON_STATUSES.map((s) => <option key={s} value={s}>{STATUS_LABELS[s]}</option>)}
-              </select>
-              <button className="rounded-xl bg-marian px-4 text-sm font-semibold text-white" type="submit">Filtrar</button>
+              <div>
+                <label className="sr-only" htmlFor="q">Buscar por nombre, cédula o código de confirmación</label>
+                <input id="q" name="q" type="search" defaultValue={q} placeholder="Nombre, cédula o AIG-…" className="field-input !min-h-[44px] w-full !py-2 text-sm sm:w-72" />
+              </div>
+              <div>
+                <label className="sr-only" htmlFor="estado">Filtrar por estado</label>
+                <select id="estado" name="estado" defaultValue={status ?? ""} className="field-input !min-h-[44px] w-full !py-2 text-sm sm:w-48">
+                  <option value="">Todos los estados</option>
+                  {PERSON_STATUSES.map((s) => <option key={s} value={s}>{STATUS_LABELS[s]}</option>)}
+                </select>
+              </div>
+              <Button type="submit" size="sm">Buscar</Button>
+              {(q || status) && <Link className="inline-flex min-h-[44px] items-center px-2 text-sm font-semibold text-marian underline underline-offset-2" href="?">Quitar filtros</Link>}
             </form>
           </div>
           <div className="sheet overflow-x-auto">
             <table className="admin-table">
+              <caption className="sr-only">Personas invitadas y su estado</caption>
               <thead>
-                <tr><th>Apellidos</th><th>Nombres</th><th>Cédula</th><th>Estado</th><th>Confirmación</th><th>Enviado</th><th><span className="sr-only">Acciones</span></th></tr>
+                <tr>
+                  <th scope="col">Apellidos</th>
+                  <th scope="col">Nombres</th>
+                  <th scope="col">Cédula</th>
+                  <th scope="col">Estado</th>
+                  <th scope="col">Confirmación</th>
+                  <th scope="col">Enviado</th>
+                  <th scope="col"><span className="sr-only">Acciones</span></th>
+                </tr>
               </thead>
               <tbody>
                 {list.rows.map((r) => (
                   <tr key={r.id}>
-                    <td className="font-medium">{r.last_names}</td>
+                    <th scope="row" className="text-left font-medium">{r.last_names}</th>
                     <td>{r.first_names}</td>
                     <td className="tabular-nums">{maskCedulaTail(r.national_id_last2)}</td>
                     <td><StatusBadge status={r.status} /></td>
                     <td className="tabular-nums">{r.confirmation_code ?? "—"}</td>
                     <td>{formatDateTime(r.submitted_at)}</td>
-                    <td><Link className="font-semibold text-marian hover:underline" href={`/admin/personas/${r.id}`}>Ver</Link></td>
+                    <td>
+                      <Link className="inline-flex min-h-[44px] items-center whitespace-nowrap font-semibold text-marian underline-offset-2 hover:underline" href={`/admin/personas/${r.id}`}>
+                        Ver ficha<span className="sr-only"> de {r.first_names} {r.last_names}</span>
+                      </Link>
+                    </td>
                   </tr>
                 ))}
-                {!list.rows.length && <tr><td colSpan={7} className="py-8 text-center text-ink-muted">No hay registros con estos filtros.</td></tr>}
+                {!list.rows.length && (
+                  <tr>
+                    <td colSpan={7} className="py-10 text-center text-ink-muted">
+                      No encontramos registros con estos filtros. Prueba con otro nombre o{" "}
+                      <Link className="font-semibold text-marian underline underline-offset-2" href="?">quita los filtros</Link>.
+                    </td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>
-          <div className="flex items-center justify-between text-sm text-ink-muted">
-            <span>{list.total.toLocaleString("es-EC")} registros</span>
+          <nav aria-label="Paginación" className="flex flex-wrap items-center justify-between gap-2 text-sm text-ink-muted">
+            <span aria-live="polite">{list.total.toLocaleString("es-EC")} {list.total === 1 ? "registro" : "registros"} · página {page}</span>
             <div className="flex gap-2">
-              {page > 1 && <Link className="rounded-lg px-3 py-2 text-marian hover:bg-marian-soft" href={qs({ p: page - 1 })}>Anterior</Link>}
-              {page * PAGE_SIZE < list.total && <Link className="rounded-lg px-3 py-2 text-marian hover:bg-marian-soft" href={qs({ p: page + 1 })}>Siguiente</Link>}
+              {page > 1 && <Link className="inline-flex min-h-[44px] items-center rounded-lg px-4 font-semibold text-marian hover:bg-marian-soft" href={qs({ p: page - 1 })}>← Anterior</Link>}
+              {page * PAGE_SIZE < list.total && <Link className="inline-flex min-h-[44px] items-center rounded-lg px-4 font-semibold text-marian hover:bg-marian-soft" href={qs({ p: page + 1 })}>Siguiente →</Link>}
             </div>
-          </div>
+          </nav>
         </section>
       )}
     </div>

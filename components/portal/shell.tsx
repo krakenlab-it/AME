@@ -7,15 +7,15 @@ export function PortalShell({ children, readiness, organizationName }: { childre
   return (
     <div className="flex min-h-dvh flex-col">
       {readiness && !readiness.ready && !readiness.blockPortal && (
-        <div className="bg-[#FBF5E6] px-4 py-2 text-center text-[13px] text-ink" role="note">
-          Entorno de prueba: los textos legales están pendientes de revisión (LEGAL_REVIEW_REQUIRED). No ingrese datos reales.
+        <div className="bg-warn-soft px-4 py-2 text-center text-sm text-ink" role="note">
+          <strong className="font-semibold">Entorno de prueba.</strong> Los textos legales están pendientes de revisión (LEGAL_REVIEW_REQUIRED). No ingreses datos reales.
         </div>
       )}
       <header className="border-b border-marian-line/60 bg-white">
         <div className="mx-auto flex max-w-5xl items-center gap-3 px-5 py-3">
           <Link href="/" className="flex items-center gap-3 rounded-lg" aria-label={`${organizationName}, inicio`}>
             <MaristaLogo className="w-10" />
-            <span className="font-serif text-[17px] font-semibold leading-tight text-marian">{organizationName}</span>
+            <span className="font-serif text-base font-semibold leading-tight text-marian sm:text-[17px]">{organizationName}</span>
           </Link>
         </div>
       </header>

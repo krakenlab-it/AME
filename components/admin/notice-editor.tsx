@@ -11,13 +11,13 @@ export function NoticeEditor({ current, suggestedVersion }: { current: string; s
   return (
     <form action={action} className="sheet space-y-5 p-6">
       <h2 className="text-xl">Publicar nueva versión</h2>
-      <p className="text-sm text-ink-muted">
+      <p className="text-[15px] text-ink-muted">
         Puedes usar variables que se reemplazan con la configuración legal: {"{{responsibleLegalName}}"}, {"{{recipientLegalName}}"},
         {" {{privacyEmail}}"}, {"{{retentionPeriod}}"}, {"{{retentionReason}}"}. Las personas que ya enviaron su información conservan
         la evidencia de la versión que aceptaron.
       </p>
       <div className="grid gap-4 sm:grid-cols-2">
-        <Field id="version" label="Versión" required><input id="version" name="version" defaultValue={suggestedVersion} className="field-input" required /></Field>
+        <Field id="version" label="Versión" hint="Ejemplo: 1.1" required><input id="version" name="version" aria-describedby="version-hint" defaultValue={suggestedVersion} className="field-input" required /></Field>
         <Field id="effective_date" label="Vigente desde"><input id="effective_date" name="effective_date" type="date" className="field-input" /></Field>
       </div>
       <Field id="body" label="Texto del aviso" required>
@@ -25,7 +25,7 @@ export function NoticeEditor({ current, suggestedVersion }: { current: string; s
       </Field>
       {state.error && <Notice tone="error" live>{state.error}</Notice>}
       {state.ok && <Notice tone="success" live>Versión publicada. Se mostrará a partir de ahora en el portal.</Notice>}
-      <Button type="submit" loading={pending}>Publicar versión</Button>
+      <Button type="submit" loading={pending}>{pending ? "Publicando…" : "Publicar versión"}</Button>
     </form>
   );
 }

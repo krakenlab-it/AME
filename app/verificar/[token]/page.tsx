@@ -23,10 +23,13 @@ export default async function VerifyLinkPage({ params }: { params: Promise<{ tok
           state === "valid" ? (
             <IdentifyPanel token={token} turnstileSiteKey={process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY ?? null} />
           ) : (
-            <div className="sheet space-y-4 p-6 md:p-8" role="alert">
+            <div className="sheet space-y-4 p-6 md:p-8" role="status">
               <LinkIcon className="h-7 w-7 text-marian" aria-hidden />
               <h2 className="text-2xl">Este enlace no está disponible</h2>
               <p className="text-ink-muted">{linkStateMessage(state)}</p>
+              <p className="rounded-xl bg-marian-soft/60 px-4 py-3 text-[15px]">
+                <span className="font-semibold">¿Necesitas ayuda?</span> Escribe a {privacy.config.supportContact}.
+              </p>
             </div>
           )
         }
