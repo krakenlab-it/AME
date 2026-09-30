@@ -1,6 +1,7 @@
 import { Mail } from "lucide-react";
 import { PortalHero, ProtectedNote } from "@/components/portal/hero";
 import { PortalShell, PortalUnavailable } from "@/components/portal/shell";
+import { DemoAccess } from "@/components/demo/demo-access";
 import { Notice } from "@/components/ui/notice";
 import { getRepo } from "@/lib/database";
 import { getActivePrivacy } from "@/lib/privacy/active";
@@ -36,6 +37,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
               </>
             )}
             <ProtectedNote />
+            <DemoAccess />
           </div>
         }
       />

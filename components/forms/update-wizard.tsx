@@ -1,14 +1,16 @@
 "use client";
 
+import * as m from "motion/react-m";
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useForm, type FieldPath, type UseFormRegisterReturn } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Building2, Check, Lock, Mail, Pencil, UserRound } from "lucide-react";
+import { Building2, Check, CheckCircle2, Lock, Mail, Pencil, ShieldCheck, UserRound } from "lucide-react";
 import { submitAction } from "@/app/verificar/actions";
 import { StepCrown } from "@/components/portal/step-crown";
 import { Button } from "@/components/ui/button";
-import { describedBy, Field } from "@/components/ui/field";
+import { ErrorSummary, type SummaryItem } from "@/components/ui/error-summary";
+import { describedBy, Field, RequiredLegend } from "@/components/ui/field";
 import { Notice } from "@/components/ui/notice";
 import { ACCOUNT_TYPES, BANKS, BANKS_REQUIRING_NAME, EC_PROVINCES, PHONE_COUNTRY_CODES, type BankOption } from "@/lib/validation/constants";
 import { submissionSchema, type Submission, type SubmissionInput } from "@/lib/validation/schemas";
@@ -46,6 +48,33 @@ const STEP_FIELDS: Record<number, Path[]> = {
     "bank.accountHolderName", "bank.accountHolderCedula", "bank.ownershipDeclared",
   ],
   5: ["consents.privacyAccepted", "consents.sharingAccepted", "consents.accuracyDeclared"],
+};
+
+const FIELD_LABELS: Partial<Record<Path, string>> = {
+  "names.firstNames": "Nombres",
+  "names.lastNames": "Apellidos",
+  "contact.primaryEmail": "Correo principal",
+  "contact.primaryEmailConfirm": "Confirmar correo",
+  "contact.secondaryEmail": "Correo alternativo",
+  "contact.phoneCountryCode": "Código de país",
+  "contact.phoneNumber": "Teléfono celular",
+  "contact.addressLine1": "Dirección",
+  "contact.addressLine2": "Complemento",
+  "contact.city": "Ciudad",
+  "contact.province": "Provincia",
+  "contact.country": "País",
+  "contact.postalCode": "Código postal",
+  "bank.bankName": "Banco",
+  "bank.bankOtherName": "Nombre de la institución",
+  "bank.accountType": "Tipo de cuenta",
+  "bank.accountNumber": "Número de cuenta",
+  "bank.accountNumberConfirm": "Confirmar número de cuenta",
+  "bank.accountHolderName": "Nombre del titular",
+  "bank.accountHolderCedula": "Cédula del titular",
+  "bank.ownershipDeclared": "Declaración sobre la cuenta",
+  "consents.privacyAccepted": "Aviso de privacidad",
+  "consents.sharingAccepted": "Comunicación de datos a AIG",
+  "consents.accuracyDeclared": "Declaración de veracidad",
 };
 
 function stepForPath(path: string): number {
@@ -103,12 +132,36 @@ export function UpdateWizard({ registered, privacy, supportContact }: WizardProp
 
   useEffect(() => {
     headingRef.current?.focus();
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    window.scrollTo({ top: 0, behavior: reduce ? "auto" : "smooth" });
   }, [step]);
 
   async function next() {
     const ok = await trigger(STEP_FIELDS[step] ?? [], { shouldFocus: true });
     if (ok) setStep((s) => Math.min(s + 1, 6));
+  }
+
+  const summaryItems: SummaryItem[] = (STEP_FIELDS[step] ?? []).flatMap((p) => {
+    const message = err(p);
+    return message ? [{ id: p, label: FIELD_LABELS[p] ?? p, message }] : [];
+  });
+
+  function focusField(path: string) {
+    const el = document.getElementById(path);
+    if (el) el.focus();
+    else form.setFocus(path as Path);
+  }
+
+  /** Enter avanza al siguiente paso, como en cualquier formulario; no envía hasta la revisión. */
+  function onFormKeyDown(e: React.KeyboardEvent<HTMLFormElement>) {
+    if (e.key !== "Enter" || e.defaultPrevented) return;
+    const target = e.target as HTMLElement;
+    if (target.tagName !== "INPUT" || (target as HTMLInputElement).type === "checkbox" || (target as HTMLInputElement).type === "radio") return;
+    if (step >= 2 && step <= 5) {
+      e.preventDefault();
+      if (step === 2 && namesDecision !== "editing") return;
+      void next();
+    }
   }
 
   function confirmNames() {
@@ -158,7 +211,7 @@ export function UpdateWizard({ registered, privacy, supportContact }: WizardProp
       <div className="sheet mx-auto max-w-xl space-y-4 p-8">
         <h1 className="text-2xl">Tu sesión terminó</h1>
         <Notice tone="warning">{serverError}</Notice>
-        <p className="text-ink-muted">Si necesitas ayuda, comunícate con {supportContact}.</p>
+        <p className="text-ink-muted">Para continuar, abre otra vez el enlace personal que recibiste. Si necesitas ayuda, escribe a {supportContact}.</p>
       </div>
     );
   }
@@ -166,18 +219,25 @@ export function UpdateWizard({ registered, privacy, supportContact }: WizardProp
   const v = getValues();
 
   return (
-    <form onSubmit={onSubmit} noValidate className="mx-auto max-w-2xl space-y-6 px-5 py-8 md:py-12">
+    <form onSubmit={onSubmit} onKeyDown={onFormKeyDown} noValidate className="mx-auto max-w-2xl space-y-6 px-5 py-8 md:py-12">
       <StepCrown current={step} />
 
       {serverError && <Notice tone="error" live title="No se pudo enviar">{serverError}</Notice>}
 
-      <section key={step} className="sheet step-enter space-y-6 p-6 md:p-9" aria-labelledby="step-title">
+      <m.section
+        key={step}
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.25, ease: "easeOut" }}
+        className="sheet space-y-6 p-6 md:p-9"
+        aria-labelledby="step-title"
+      >
         {/* ── Paso 2: Verificación ─────────────────────────────── */}
         {step === 2 && (
           <>
             <header className="space-y-2">
               <h1 id="step-title" ref={headingRef} tabIndex={-1} className="text-[28px]">Datos que tenemos registrados</h1>
-              <p className="text-ink-muted">Revisa que tu nombre esté escrito correctamente.</p>
+              <p className="text-ink-muted">Revisa que tu nombre esté escrito como aparece en tu cédula.</p>
             </header>
             <dl className="divide-y divide-marian-line/70 rounded-xl border border-marian-line/70">
               {[["Nombres", registered.firstNames], ["Apellidos", registered.lastNames], ["Cédula", registered.cedulaMasked]].map(([k, val]) => (
@@ -203,13 +263,15 @@ export function UpdateWizard({ registered, privacy, supportContact }: WizardProp
             ) : (
               <div className="space-y-5">
                 <Notice tone="info">Corrige tus nombres y apellidos tal como constan en tu cédula. Guardaremos el dato anterior como respaldo.</Notice>
+                <ErrorSummary items={summaryItems} onSelect={focusField} />
+                <RequiredLegend />
                 <Field id="names.firstNames" label="Nombres" required error={err("names.firstNames")}>
                   <input {...input("names.firstNames")} autoComplete="given-name" {...register("names.firstNames")} />
                 </Field>
                 <Field id="names.lastNames" label="Apellidos" required error={err("names.lastNames")}>
                   <input {...input("names.lastNames")} autoComplete="family-name" {...register("names.lastNames")} />
                 </Field>
-                <p className="text-sm text-ink-muted">Si tu número de cédula es incorrecto, no continúes y comunícate con {supportContact}.</p>
+                <p className="text-sm text-ink-muted">Si el número de cédula que ves arriba no es el tuyo, no continúes y escribe a {supportContact}.</p>
                 <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-between">
                   <Button type="button" variant="ghost" onClick={() => { setNamesDecision("pending"); confirmNames(); }}>Mantener los datos registrados</Button>
                   <Button type="button" onClick={next}>Continuar</Button>
@@ -226,12 +288,14 @@ export function UpdateWizard({ registered, privacy, supportContact }: WizardProp
               <h1 id="step-title" ref={headingRef} tabIndex={-1} className="text-[28px]">Datos de contacto</h1>
               <p className="text-ink-muted">Los usaremos solo para comunicarnos contigo sobre tus reclamos y reembolsos.</p>
             </header>
+            <ErrorSummary items={summaryItems} onSelect={focusField} />
+            <RequiredLegend />
             <div className="grid gap-5">
               <Field id="contact.primaryEmail" label="Correo electrónico principal" required error={err("contact.primaryEmail")}>
                 <input {...input("contact.primaryEmail")} type="email" inputMode="email" autoComplete="email" {...register("contact.primaryEmail")} />
               </Field>
-              <Field id="contact.primaryEmailConfirm" label="Confirmar correo electrónico" required error={err("contact.primaryEmailConfirm")}>
-                <input {...input("contact.primaryEmailConfirm")} type="email" inputMode="email" autoComplete="off" {...register("contact.primaryEmailConfirm")} />
+              <Field id="contact.primaryEmailConfirm" label="Confirmar correo electrónico" hint="Escríbelo otra vez para evitar errores." required error={err("contact.primaryEmailConfirm")}>
+                <input {...input("contact.primaryEmailConfirm", "hint")} type="email" inputMode="email" autoComplete="off" {...register("contact.primaryEmailConfirm")} />
               </Field>
               <Field id="contact.secondaryEmail" label="Correo electrónico alternativo" error={err("contact.secondaryEmail")}>
                 <input {...input("contact.secondaryEmail")} type="email" inputMode="email" autoComplete="off" {...register("contact.secondaryEmail")} />
@@ -287,12 +351,14 @@ export function UpdateWizard({ registered, privacy, supportContact }: WizardProp
           <>
             <header className="space-y-2">
               <h1 id="step-title" ref={headingRef} tabIndex={-1} className="text-[28px]">Información para reembolsos</h1>
-              <p className="text-ink-muted">Esta información será utilizada para procesar pagos o reembolsos relacionados con sus reclamos cuando corresponda.</p>
+              <p className="text-ink-muted">Usaremos esta información para pagar los reembolsos de tus reclamos, cuando corresponda.</p>
             </header>
-            <div className="flex gap-2 text-sm text-ink-muted">
-              <Lock className="h-4 w-4 shrink-0 translate-y-0.5 text-marian" aria-hidden />
-              El número de cuenta se guarda cifrado y después solo se muestran los últimos 4 dígitos.
+            <div className="flex gap-2 rounded-xl bg-marian-soft/60 px-4 py-3 text-sm">
+              <Lock className="mt-0.5 h-4 w-4 shrink-0 text-marian" aria-hidden />
+              El número de cuenta se guarda cifrado. Después solo se muestran los últimos 4 dígitos.
             </div>
+            <ErrorSummary items={summaryItems} onSelect={focusField} />
+            <RequiredLegend />
             <div className="grid gap-5">
               <Field id="bank.bankName" label="Banco" required error={err("bank.bankName")}>
                 <select {...input("bank.bankName")} {...bindSelect("bank.bankName")}>
@@ -306,16 +372,16 @@ export function UpdateWizard({ registered, privacy, supportContact }: WizardProp
                 </Field>
               )}
               <fieldset className="space-y-2">
-                <legend className="text-[15px] font-semibold">Tipo de cuenta <span className="text-alert" aria-hidden>*</span></legend>
+                <legend className="text-[15px] font-semibold">Tipo de cuenta <span className="text-alert" aria-hidden>*</span><span className="sr-only"> (obligatorio)</span></legend>
                 <div className="grid grid-cols-2 gap-3">
                   {ACCOUNT_TYPES.map((t) => (
-                    <label key={t} className="flex min-h-[52px] cursor-pointer items-center gap-3 rounded-xl border border-ink-faint/60 bg-white px-4 has-[:checked]:border-marian has-[:checked]:bg-marian-soft/60">
+                    <label key={t} className="choice">
                       <input type="radio" value={t} className="h-5 w-5 accent-marian" {...register("bank.accountType")} />
                       {t}
                     </label>
                   ))}
                 </div>
-                {err("bank.accountType") && <p role="alert" className="text-sm font-medium text-alert">{err("bank.accountType")}</p>}
+                {err("bank.accountType") && <p role="alert" id="bank.accountType-error" className="text-sm font-medium text-alert">{err("bank.accountType")}</p>}
               </fieldset>
               <Field id="bank.accountNumber" label="Número de cuenta" required hint="Solo números, sin espacios ni guiones." error={err("bank.accountNumber")}>
                 <input {...input("bank.accountNumber", "hint")} inputMode="numeric" autoComplete="off" spellCheck={false} {...register("bank.accountNumber")} />
@@ -326,8 +392,8 @@ export function UpdateWizard({ registered, privacy, supportContact }: WizardProp
               <Field id="bank.accountHolderName" label="Nombre del titular de la cuenta" required error={err("bank.accountHolderName")}>
                 <input {...input("bank.accountHolderName")} autoComplete="off" {...register("bank.accountHolderName")} />
               </Field>
-              <Field id="bank.accountHolderCedula" label="Cédula del titular" required error={err("bank.accountHolderCedula")}>
-                <input {...input("bank.accountHolderCedula")} inputMode="numeric" autoComplete="off" maxLength={12} {...register("bank.accountHolderCedula")} />
+              <Field id="bank.accountHolderCedula" label="Cédula del titular" hint="Si la cuenta es tuya, es tu misma cédula." required error={err("bank.accountHolderCedula")}>
+                <input {...input("bank.accountHolderCedula", "hint")} inputMode="numeric" autoComplete="off" maxLength={12} {...register("bank.accountHolderCedula")} />
               </Field>
               <Checkbox id="bank.ownershipDeclared" error={err("bank.ownershipDeclared")} label={privacy.consentTexts.BANK_ACCOUNT_AUTHORIZATION} registration={register("bank.ownershipDeclared")} />
             </div>
@@ -340,8 +406,9 @@ export function UpdateWizard({ registered, privacy, supportContact }: WizardProp
           <>
             <header className="space-y-2">
               <h1 id="step-title" ref={headingRef} tabIndex={-1} className="text-[28px]">Privacidad y protección de datos</h1>
-              <p className="text-ink-muted">Lee este resumen antes de dar tu autorización.</p>
+              <p className="text-ink-muted">Lee este resumen y marca las tres autorizaciones para continuar.</p>
             </header>
+            <ErrorSummary items={summaryItems} onSelect={focusField} />
             <div className="max-h-72 overflow-y-auto rounded-xl border border-marian-line/70 bg-paper px-5 py-4 font-serif text-[15.5px] leading-[1.7]" tabIndex={0} aria-label="Resumen del Aviso de Privacidad">
               {privacy.summary.split(/\n{2,}/).map((p, i) => (
                 <p key={i} className={cn("mb-3", i === 0 && "font-semibold")}>{p}</p>
@@ -363,9 +430,10 @@ export function UpdateWizard({ registered, privacy, supportContact }: WizardProp
               <Checkbox id="consents.accuracyDeclared" error={err("consents.accuracyDeclared")} label={privacy.consentTexts.ACCURACY_DECLARATION} registration={register("consents.accuracyDeclared")} />
             </div>
             <p className="text-[15px] text-ink-muted">
-              Puede consultar el Aviso de Privacidad completo antes de continuar.{" "}
+              Puedes consultar el Aviso de Privacidad completo antes de continuar.{" "}
               <a href="/privacidad" target="_blank" rel="noopener noreferrer" className="font-semibold text-marian underline underline-offset-4">
-                Leer Aviso de Privacidad completo
+                Leer el Aviso de Privacidad completo
+                <span className="sr-only"> (se abre en una pestaña nueva)</span>
               </a>
             </p>
             <StepNav onBack={() => setStep(4)} onNext={next} />
@@ -377,7 +445,7 @@ export function UpdateWizard({ registered, privacy, supportContact }: WizardProp
           <>
             <header className="space-y-2">
               <h1 id="step-title" ref={headingRef} tabIndex={-1} className="text-[28px]">Revisa tu información</h1>
-              <p className="text-ink-muted">Confirma que todo esté correcto antes de enviar.</p>
+              <p className="text-ink-muted">Confirma que todo esté correcto. Puedes editar cualquier sección antes de enviar.</p>
             </header>
             <ReviewCard icon={UserRound} title="Datos personales" onEdit={() => setStep(2)}>
               <Row k="Nombres" v={namesConfirmed ? registered.firstNames : v.names.firstNames} />
@@ -396,17 +464,36 @@ export function UpdateWizard({ registered, privacy, supportContact }: WizardProp
               <Row k="Cuenta" v={maskAccount(v.bank.accountNumber.slice(-4))} />
               <Row k="Titular" v={v.bank.accountHolderName} />
             </ReviewCard>
+            <ReviewCard icon={ShieldCheck} title="Autorizaciones" onEdit={() => setStep(5)}>
+              <div className="sm:col-span-2">
+                <ul className="space-y-1.5 text-[15px]">
+                  {[
+                    "Tratamiento de datos según el Aviso de Privacidad",
+                    "Comunicación de datos a AIG para reclamos y reembolsos",
+                    "Declaración de que la información es correcta",
+                  ].map((t) => (
+                    <li key={t} className="flex items-start gap-2"><CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-ok" aria-hidden />{t}</li>
+                  ))}
+                </ul>
+                <p className="mt-2 text-sm text-ink-muted">Versión del aviso: {privacy.version}</p>
+              </div>
+            </ReviewCard>
+            <Notice tone="warning" title="El envío es definitivo">
+              Después de enviar no podrás cambiar estos datos con este enlace. Si algo está mal, usa “Editar” en la sección correspondiente.
+            </Notice>
             <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-between">
-              <Button type="button" variant="secondary" onClick={() => setStep(5)}>Editar</Button>
-              <Button type="submit" loading={formState.isSubmitting}>Continuar y enviar</Button>
+              <Button type="button" variant="ghost" onClick={() => setStep(5)}>Volver</Button>
+              <Button type="submit" loading={formState.isSubmitting}>
+                {formState.isSubmitting ? "Enviando…" : "Enviar mi información"}
+              </Button>
             </div>
           </>
         )}
-      </section>
+      </m.section>
 
       <p className="text-center text-sm text-ink-muted">
         <Lock className="mr-1 inline h-4 w-4 text-marian" aria-hidden />
-        Por seguridad, tu sesión se cierra después de 30 minutos. Tus respuestas no se guardan en este dispositivo.
+        Por seguridad, tu sesión se cierra después de 30 minutos sin actividad. Tus respuestas no se guardan en este dispositivo.
       </p>
     </form>
   );
@@ -435,8 +522,8 @@ function ReviewCard({ icon: Icon, title, onEdit, children }: { icon: typeof Mail
     <div className="rounded-xl border border-marian-line/70 p-5">
       <div className="mb-3 flex items-center justify-between">
         <h2 className="flex items-center gap-2 text-lg"><Icon className="h-5 w-5 text-marian" aria-hidden />{title}</h2>
-        <button type="button" onClick={onEdit} className="min-h-[44px] rounded-lg px-3 text-[15px] font-semibold text-marian hover:bg-marian-soft">
-          Editar<span className="sr-only"> {title.toLowerCase()}</span>
+        <button type="button" onClick={onEdit} className="inline-flex min-h-[44px] items-center gap-1.5 rounded-lg px-3 text-[15px] font-semibold text-marian hover:bg-marian-soft">
+          <Pencil className="h-4 w-4" aria-hidden />Editar<span className="sr-only"> {title.toLowerCase()}</span>
         </button>
       </div>
       <dl className="grid gap-2 sm:grid-cols-2">{children}</dl>
@@ -447,7 +534,7 @@ function ReviewCard({ icon: Icon, title, onEdit, children }: { icon: typeof Mail
 function Checkbox({ id, label, error, registration }: { id: string; label: string; error?: string; registration: UseFormRegisterReturn }) {
   return (
     <div>
-      <label htmlFor={id} className={cn("flex cursor-pointer gap-3 rounded-xl border bg-white p-4 text-[15.5px] leading-snug", error ? "border-alert" : "border-marian-line has-[:checked]:border-marian has-[:checked]:bg-marian-soft/40")}>
+      <label htmlFor={id} className={cn("choice items-start !py-4 text-[15.5px] leading-snug", error && "!border-alert border-2")}>
         <input id={id} type="checkbox" className="mt-0.5 h-6 w-6 shrink-0 accent-marian" aria-invalid={Boolean(error)} aria-describedby={error ? `${id}-error` : undefined} {...registration} />
         <span>{label}</span>
       </label>

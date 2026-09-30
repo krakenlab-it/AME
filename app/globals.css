@@ -6,6 +6,7 @@
   html {
     -webkit-text-size-adjust: 100%;
     text-rendering: optimizeLegibility;
+    scroll-padding-top: 1.5rem;
   }
   body {
     @apply bg-paper font-sans text-ink antialiased;
@@ -16,7 +17,9 @@
     @apply font-serif text-ink;
     font-optical-sizing: auto;
     letter-spacing: -0.01em;
+    text-wrap: balance;
   }
+  /* Indicador de foco visible y de alto contraste en TODOS los controles (incluidos los campos). */
   :focus-visible {
     outline: 3px solid #005289;
     outline-offset: 3px;
@@ -24,6 +27,9 @@
   }
   ::selection {
     background: #c9d8e6;
+  }
+  [tabindex="-1"]:focus {
+    outline: none;
   }
 }
 
@@ -41,21 +47,36 @@
   .field-input[aria-invalid="true"] {
     @apply border-alert ring-4 ring-alert/10;
   }
+  .choice {
+    @apply flex min-h-[52px] cursor-pointer items-center gap-3 rounded-xl border border-marian-line bg-white px-4 py-3
+      transition-colors hover:border-marian has-[:checked]:border-marian has-[:checked]:bg-marian-soft/50
+      has-[:focus-visible]:outline has-[:focus-visible]:outline-[3px] has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-marian;
+  }
+  .choice input:focus-visible {
+    outline: none;
+  }
   .admin-table {
     @apply w-full text-left text-sm;
   }
-  .admin-table th {
-    @apply border-b border-marian-line px-3 py-2 font-semibold text-ink-muted;
+  .admin-table thead th {
+    @apply whitespace-nowrap border-b border-marian-line px-3 py-2 font-semibold text-ink-muted;
   }
-  .admin-table td {
+  .admin-table td,
+  .admin-table tbody th {
     @apply border-b border-marian-line/60 px-3 py-2.5 align-top;
+  }
+  .admin-table tbody tr:last-child td,
+  .admin-table tbody tr:last-child th {
+    @apply border-b-0;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }
 

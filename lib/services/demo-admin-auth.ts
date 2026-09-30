@@ -37,7 +37,9 @@ interface DemoState {
   sessions: Map<string, DemoSession>;
 }
 
-const states = new WeakMap<MemoryRepo, DemoState>();
+/** Compartido vía globalThis: Next puede instanciar este módulo en varios bundles (páginas y acciones). */
+const shared = globalThis as unknown as { __demoAdminStates?: WeakMap<MemoryRepo, DemoState> };
+const states = (shared.__demoAdminStates ??= new WeakMap<MemoryRepo, DemoState>());
 let dummyHash: Promise<string> | null = null;
 
 function state(repo: MemoryRepo): DemoState {
@@ -143,6 +145,23 @@ export async function loginWithPassword(repo: MemoryRepo, email: string, passwor
   };
   state(repo).sessions.set(session.id, session);
   return { ok: true, sessionToken, needsEnrollment: !admin.mfa_enabled };
+}
+
+/** Atajo de pruebas: abre una sesión con MFA ya resuelto. Solo se invoca bajo isDemoMode() sobre la base en memoria. */
+export function startDemoSession(repo: MemoryRepo, adminId: string): string {
+  const sessionToken = randomToken(32);
+  const now = new Date().toISOString();
+  const session: DemoSession = {
+    id: randomUUID(),
+    sessionHash: sha256(sessionToken),
+    adminId,
+    mfaVerified: true,
+    lastSeenAt: now,
+    expiresAt: new Date(Date.now() + ADMIN_ABSOLUTE_HOURS * 3_600_000).toISOString(),
+    revokedAt: null,
+  };
+  state(repo).sessions.set(session.id, session);
+  return sessionToken;
 }
 
 export interface DemoAdminContext {

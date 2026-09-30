@@ -1,10 +1,17 @@
-import { NoticeEditor } from "@/components/admin/notice-editor";
+import dynamic from "next/dynamic";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Notice } from "@/components/ui/notice";
 import { getRepo } from "@/lib/database";
 import { getActivePrivacy } from "@/lib/privacy/active";
 import { DEFAULT_NOTICE_TEMPLATE } from "@/lib/privacy/notice";
 import { requireAdmin } from "@/lib/server/admin-guard";
 import { formatDateTime } from "@/lib/utils";
+
+const NoticeEditor = dynamic(() => import("@/components/admin/notice-editor").then((m) => m.NoticeEditor), {
+  loading: () => <Skeleton className="h-[32rem] rounded-2xl" />,
+});
+
+export const metadata = { title: "Aviso de privacidad" };
 
 export default async function NoticePage() {
   await requireAdmin("notice:manage");

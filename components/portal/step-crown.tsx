@@ -21,7 +21,7 @@ function Star({ state }: { state: "done" | "current" | "todo" }) {
 
 /**
  * Progreso en forma de corona de estrellas (eco de la corona mariana del logo).
- * Accesible: lista ordenada con aria-current y texto "Paso X de 7".
+ * Accesible: lista ordenada con aria-current y texto "Paso X de 7" visible.
  */
 export function StepCrown({ current }: { current: number }) {
   const total = STEPS.length;
@@ -31,11 +31,12 @@ export function StepCrown({ current }: { current: number }) {
         {STEPS.map((label, i) => {
           const n = i + 1;
           const state = n < current ? "done" : n === current ? "current" : "todo";
-          // Arco suave: las estrellas del centro quedan más arriba
           const lift = Math.round(Math.sin((i / (total - 1)) * Math.PI) * 10);
           return (
             <li key={label} style={{ transform: `translateY(-${lift}px)` }} aria-current={state === "current" ? "step" : undefined}>
-              <Star state={state} />
+              <span className="block">
+                <Star state={state} />
+              </span>
               <span className="sr-only">
                 {label}: {state === "done" ? "completado" : state === "current" ? "paso actual" : "pendiente"}
               </span>
@@ -43,9 +44,12 @@ export function StepCrown({ current }: { current: number }) {
           );
         })}
       </ol>
-      <p className="text-sm text-ink-muted" aria-live="polite">
-        Paso {current} de {total} <span aria-hidden>—</span> <span className="font-semibold text-ink">{STEPS[current - 1]}</span>
+      <p className="text-[15px] text-ink-muted" aria-live="polite">
+        Paso {current} de {total} <span aria-hidden>·</span> <span className="font-semibold text-ink">{STEPS[current - 1]}</span>
       </p>
+      <div aria-hidden className="h-1.5 w-full max-w-xs overflow-hidden rounded-full bg-marian-soft">
+        <div className="h-full rounded-full bg-marian transition-[width] duration-500 ease-out" style={{ width: `${(current / total) * 100}%` }} />
+      </div>
     </div>
   );
 }

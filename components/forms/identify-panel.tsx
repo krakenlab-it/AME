@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useEffect, useRef, useState } from "react";
+import { useActionState, useEffect, useRef } from "react";
 import { ShieldCheck } from "lucide-react";
 import { identifyAction, type IdentifyState } from "@/app/verificar/actions";
 import { ProtectedNote } from "@/components/portal/hero";
@@ -10,14 +10,9 @@ import { describedBy, Field } from "@/components/ui/field";
 import { Notice } from "@/components/ui/notice";
 
 export function IdentifyPanel({ token, turnstileSiteKey }: { token: string; turnstileSiteKey: string | null }) {
-  const [started, setStarted] = useState(false);
   const [state, formAction, pending] = useActionState<IdentifyState, FormData>(identifyAction, {});
   const inputRef = useRef<HTMLInputElement>(null);
   const needsCaptcha = Boolean(state.requireCaptcha && turnstileSiteKey);
-
-  useEffect(() => {
-    if (started) inputRef.current?.focus();
-  }, [started]);
 
   useEffect(() => {
     if (!needsCaptcha || document.getElementById("cf-turnstile-script")) return;
@@ -29,27 +24,18 @@ export function IdentifyPanel({ token, turnstileSiteKey }: { token: string; turn
     document.head.appendChild(s);
   }, [needsCaptcha]);
 
-  if (!started) {
-    return (
-      <div className="sheet space-y-5 p-6 md:p-8">
-        <h2 className="text-2xl">Verificación y actualización de información</h2>
-        <p className="text-ink-muted">
-          Por favor verifica y completa tu información para facilitar la gestión de reclamos y reembolsos relacionados con AIG.
-        </p>
-        <Button block onClick={() => setStarted(true)}>Comenzar</Button>
-        <ProtectedNote />
-      </div>
-    );
-  }
-
   const error = state.fieldError ?? (state.error && !state.linkState ? state.error : undefined);
 
+  useEffect(() => {
+    if (error) inputRef.current?.focus();
+  }, [error, state]);
+
   return (
-    <div className="sheet step-enter space-y-6 p-6 md:p-8">
+    <div className="sheet space-y-6 p-6 md:p-8">
       <StepCrown current={1} />
-      <div>
-        <h2 className="text-2xl">Identifícate</h2>
-        <p className="mt-2 text-ink-muted">Para proteger tu información, confirma tu número de cédula antes de ver tus datos.</p>
+      <div className="space-y-2">
+        <h2 className="text-2xl">Confirma que eres tú</h2>
+        <p className="text-ink-muted">Escribe tu número de cédula. Lo usamos para proteger tu información antes de mostrarte tus datos.</p>
       </div>
 
       {state.linkState ? (
@@ -57,13 +43,14 @@ export function IdentifyPanel({ token, turnstileSiteKey }: { token: string; turn
       ) : (
         <form action={formAction} className="space-y-5" noValidate>
           <input type="hidden" name="token" value={token} />
-          <Field id="cedula" label="Número de cédula" required hint="10 números, sin guiones." error={error}>
+          <Field id="cedula" label="Número de cédula" required hint="10 números, sin guiones ni espacios." error={error}>
             <input
               ref={inputRef}
               id="cedula"
               name="cedula"
-              className="field-input tracking-[0.12em]"
+              className="field-input text-xl tracking-[0.12em]"
               inputMode="numeric"
+              enterKeyHint="go"
               autoComplete="off"
               maxLength={12}
               pattern="[0-9 -]*"
@@ -75,11 +62,12 @@ export function IdentifyPanel({ token, turnstileSiteKey }: { token: string; turn
           {needsCaptcha && <div className="cf-turnstile" data-sitekey={turnstileSiteKey!} data-language="es" />}
           <Button type="submit" block loading={pending}>
             <ShieldCheck className="h-5 w-5" aria-hidden />
-            Verificar identidad
+            {pending ? "Verificando…" : "Verificar y continuar"}
           </Button>
-          <p className="text-sm text-ink-muted">Por seguridad, después de varios intentos incorrectos el enlace se desactiva.</p>
+          <p className="text-sm text-ink-muted">Si te equivocas varias veces, el enlace se desactiva por seguridad y tendrás que pedir uno nuevo.</p>
         </form>
       )}
+      <ProtectedNote />
     </div>
   );
 }

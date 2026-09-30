@@ -62,7 +62,7 @@ npm run keys:generate      # pega ENCRYPTION_KEY, HASH_PEPPER y CRON_SECRET en .
 npm run dev
 ```
 
-**Probar sin Supabase (modo demostración).** Agrega `DEMO_MODE=true` en `.env.local` y abre `http://localhost:3000`. La consola del servidor muestra dos enlaces de prueba con sus cédulas ficticias, el usuario `admin@demo.local / Demo-portal-2026` y el secreto TOTP para agregarlo a la app autenticadora del teléfono. Ese login de demostración no usa Supabase Auth: vive en memoria y se pierde al reiniciar. **Nunca** actives `DEMO_MODE` en Vercel: la aplicación se niega a arrancar así en producción.
+**Probar sin Supabase (modo demostración).** Agrega `DEMO_MODE=true` en `.env.local` y abre `http://localhost:3000`. En el inicio y en el ingreso aparece un recuadro con dos botones: **entrar como administrador** (el panel completo) y **entrar como usuario** (la persona que actualiza sus datos). Revisor de fichas y exportación a AIG no son pantallas distintas: son el mismo panel con menos opciones (`revisor@demo.local` y `exportador@demo.local`, contraseña `Demo-portal-2026`). La consola también muestra enlaces de prueba, el usuario `admin@demo.local` y el secreto TOTP. Ese ingreso no usa Supabase Auth: vive en memoria y se pierde al reiniciar. **Nunca** actives `DEMO_MODE` en producción: la aplicación se niega a arrancar así.
 
 ## Supabase: configuración
 
@@ -130,6 +130,32 @@ npm run admin:create -- --email persona@unibrokers.com.ec --name "Nombre Apellid
 - Sin el segundo factor (AAL2) no se entra al panel.
 - Si el correo ya estaba en `admin_users` pero sin `auth_user_id` (los administradores creados antes de este cambio), el mismo comando lo invita y vincula la fila. Hay que volver a configurar el TOTP: el secreto anterior se borra con la migración y no se puede reutilizar.
 - Quien olvide la contraseña usa **Olvidé mi contraseña** en `/admin/login`.
+
+## Semilla de visualización (tres recorridos sintéticos)
+
+El panel necesita fichas que ya recorrieron el producto: enlace, cédula, confirmación de nombres, contacto, banco y consentimientos. Estas tres **no son personas reales**. Sirven para ver el flujo en el panel y, en un caso, para abrir un enlace todavía vigente.
+
+| Nombre | Cédula | Estado | Confirmación |
+|---|---|---|---|
+| Camila Fernanda Viteri Naranjo | 1700000019 | Completado | AIG-K2N6CMP2 |
+| Andrés Mateo Cueva Salazar | 0900000027 | Requiere revisión (corrigió el apellido y la cuenta es de un tercero) | AIG-K2N6RVW3 |
+| Lucía Isabel Romero Calle | 0100000033 | Iniciado (ya verificó la cédula; no envió el formulario) | — |
+
+No van en una migración SQL: la cédula y la cuenta se cifran con `ENCRYPTION_KEY` y el HMAC usa `HASH_PEPPER`. Esos valores cambian por entorno y no se guardan en el repositorio.
+
+Con `.env.local` apuntando al proyecto de Supabase (clave **service_role**, solo en el servidor):
+
+```bash
+npm run seed:product-users                 # muestra las fichas, no escribe
+npm run seed:product-users -- --write      # inserta o actualiza solo estas tres
+```
+
+- Puedes correrlo sobre una base vacía o sobre la base de prueba. La segunda vez reemplaza únicamente estas fichas (tienen un id fijo) y no toca el resto.
+- Si una de estas cédulas ya pertenece a otra persona, el script se detiene y no la pisa.
+- RLS sigue en denegar todo para el navegador. El script usa `service_role`.
+- Al escribir, la consola muestra el enlace de cada ficha. En la base solo queda el hash. El de Lucía sigue vigente 30 días; los otros dos figuran como usados.
+- Los textos legales no se modifican. Si no hay un aviso activo, se crea una versión provisional y se deja constancia de que sigue pendiente de revisión.
+- En la base compartida del portal estas tres fichas ya se pueden ver en el panel (lista, ficha, contacto, banco, consentimientos y auditoría). La cédula y el número de cuenta se cifran recién cuando alguien con la clave del proyecto corre `--write`. Hasta ese momento el detalle no muestra la cédula en claro y la búsqueda por cédula no encuentra la ficha. El enlace de Lucía también queda vigente solo después de ese comando.
 
 ## Carga de la base inicial y generación de links
 

@@ -21,6 +21,8 @@ import type { PersonStatus } from "@/lib/validation/constants";
  * Se usa en las pruebas y en el modo demostración local (DEMO_MODE=true, nunca en producción).
  */
 export class MemoryRepo implements Repo {
+  /** Marca estructural: `instanceof` falla si Next carga el módulo en dos bundles distintos. */
+  readonly isMemoryRepo = true as const;
   people = new Map<string, PersonRecord & { review_reasons: string[]; retention_until: string | null }>();
   tokens = new Map<string, AccessTokenRecord>();
   sessions = new Map<string, RespondentSessionRecord>();
@@ -211,4 +213,8 @@ export class MemoryRepo implements Repo {
   }
   async anonymizeExpired() { return 0; }
   async purgeExpiredSessions() {}
+}
+
+export function isMemoryRepo(repo: Repo): repo is MemoryRepo {
+  return (repo as Partial<MemoryRepo>).isMemoryRepo === true;
 }

@@ -3,7 +3,7 @@
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { getRepo } from "@/lib/database";
-import { MemoryRepo } from "@/lib/database/memory-repo";
+import { isMemoryRepo } from "@/lib/database/memory-repo";
 import { isDemoMode } from "@/lib/demo-mode";
 import { ADMIN_ABSOLUTE_HOURS, ADMIN_COOKIE, cookieOptions } from "@/lib/security/cookies";
 import { ipHash } from "@/lib/security/request";
@@ -43,7 +43,7 @@ export async function loginAction(_prev: AuthState, formData: FormData): Promise
   try {
     if (isDemoMode()) {
       const repo = getRepo();
-      if (!(repo instanceof MemoryRepo)) return { error: UNAVAILABLE_ERROR };
+      if (!isMemoryRepo(repo)) return { error: UNAVAILABLE_ERROR };
       const res = await loginWithPassword(repo, email, password, ipHash(await headers()));
       if (!res.ok) return { error: res.error };
       (await cookies()).set(ADMIN_COOKIE(), res.sessionToken, cookieOptions(ADMIN_ABSOLUTE_HOURS * 3600));
@@ -79,7 +79,7 @@ export async function setPasswordAction(_prev: AuthState, formData: FormData): P
       if (policy) return { error: policy };
       if (password !== confirm) return { error: "Las contraseñas no coinciden." };
       const repo = getRepo();
-      if (!(repo instanceof MemoryRepo)) return { error: UNAVAILABLE_ERROR };
+      if (!isMemoryRepo(repo)) return { error: UNAVAILABLE_ERROR };
       const ctx = await getDemoAdminContext(repo, (await cookies()).get(ADMIN_COOKIE())?.value, { requireMfa: false });
       if (!ctx) redirect("/admin/login");
       await changeDemoPassword(repo, ctx.admin.id, password);
@@ -99,7 +99,7 @@ export async function mfaAction(_prev: AuthState, formData: FormData): Promise<A
   try {
     if (isDemoMode()) {
       const repo = getRepo();
-      if (!(repo instanceof MemoryRepo)) return { error: UNAVAILABLE_ERROR };
+      if (!isMemoryRepo(repo)) return { error: UNAVAILABLE_ERROR };
       const ctx = await getDemoAdminContext(repo, (await cookies()).get(ADMIN_COOKIE())?.value, { requireMfa: false });
       if (!ctx) redirect("/admin/login");
       const res = await verifyMfa(repo, ctx, code, ipHash(await headers()));
