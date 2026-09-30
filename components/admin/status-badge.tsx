@@ -3,7 +3,7 @@ import { STATUS_LABELS, type PersonStatus } from "@/lib/validation/constants";
 export function StatusBadge({ status }: { status: PersonStatus }) {
   const tone: Record<PersonStatus, string> = {
     PENDING: "bg-marian-soft text-ink",
-    STARTED: "bg-warn-soft text-warn",
+    STARTED: "bg-warn-soft text-ink",
     COMPLETED: "bg-ok-soft text-ok",
     NEEDS_REVIEW: "bg-alert-soft text-alert",
   };

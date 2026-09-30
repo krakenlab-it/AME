@@ -25,7 +25,7 @@ export default async function AdminDashboard({ searchParams }: { searchParams: P
   const cards: { label: string; value: number; status: PersonStatus | null; Icon: LucideIcon; tone: string }[] = [
     { label: "Invitados", value: invited, status: null, Icon: Users, tone: "bg-marian-soft text-marian" },
     { label: "Pendientes", value: counts.PENDING, status: "PENDING", Icon: Hourglass, tone: "bg-marian-soft text-ink" },
-    { label: "Iniciados", value: counts.STARTED, status: "STARTED", Icon: Play, tone: "bg-warn-soft text-warn" },
+    { label: "Iniciados", value: counts.STARTED, status: "STARTED", Icon: Play, tone: "bg-warn-soft text-ink" },
     { label: "Completados", value: counts.COMPLETED, status: "COMPLETED", Icon: CheckCircle2, tone: "bg-ok-soft text-ok" },
     { label: "Requieren revisión", value: counts.NEEDS_REVIEW, status: "NEEDS_REVIEW", Icon: ClipboardCheck, tone: "bg-alert-soft text-alert" },
   ];
@@ -98,7 +98,7 @@ export default async function AdminDashboard({ searchParams }: { searchParams: P
                 <Link
                   href={s ? `?estado=${s}` : "?"}
                   aria-current={active ? "true" : undefined}
-                  className={`sheet block h-full p-4 transition-all duration-200 hover:-translate-y-0.5 hover:border-marian hover:shadow-md ${active ? "border-2 border-marian bg-marian-soft/60" : ""}`}
+                  className={`sheet block h-full p-4 transition-colors hover:border-marian ${active ? "border-marian bg-marian-soft/60" : ""}`}
                 >
                   {body}
                 </Link>

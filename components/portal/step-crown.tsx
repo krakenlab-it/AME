@@ -11,7 +11,7 @@ function Star({ state }: { state: "done" | "current" | "todo" }) {
       <path
         d="M12 2.6l2.8 5.9 6.4.8-4.7 4.4 1.2 6.4L12 17l-5.7 3.1 1.2-6.4-4.7-4.4 6.4-.8z"
         className={cn(
-          state === "done" && "fill-crown stroke-crown-deep",
+          state === "done" && "fill-crown stroke-crown",
           state === "current" && "fill-marian stroke-marian",
           state === "todo" && "fill-transparent stroke-ink-faint",
         )}

@@ -15,7 +15,7 @@ export function PortalHero({ action }: { action: ReactNode }) {
         </p>
 
         <section aria-labelledby="que-necesitas" className="mt-8 max-w-md rounded-xl border border-marian-line bg-white p-5">
-          <h2 id="que-necesitas" className="font-sans text-base font-semibold">Ten a mano</h2>
+          <h2 id="que-necesitas" className="text-lg">Ten a mano</h2>
           <ul className="mt-3 space-y-2.5 text-[15.5px]">
             <li className="flex items-center gap-3"><ShieldCheck className="h-5 w-5 shrink-0 text-marian" aria-hidden />Tu número de cédula</li>
             <li className="flex items-center gap-3"><Smartphone className="h-5 w-5 shrink-0 text-marian" aria-hidden />Tu correo y tu celular</li>

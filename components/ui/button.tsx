@@ -6,9 +6,9 @@ type Size = "md" | "sm";
 
 const styles: Record<Variant, string> = {
   primary: "bg-marian text-white hover:bg-marian-deep active:bg-marian-deep disabled:bg-ink-faint",
-  secondary: "border border-marian bg-white text-marian hover:bg-marian-soft/70 disabled:border-ink-faint disabled:text-ink-faint",
+  secondary: "border border-marian/40 bg-white text-marian hover:border-marian hover:bg-marian-soft/60 disabled:border-ink-faint disabled:text-ink-faint",
   ghost: "text-marian hover:bg-marian-soft/70 disabled:text-ink-faint",
-  danger: "border border-alert bg-white text-alert hover:bg-alert-soft disabled:border-ink-faint disabled:text-ink-faint",
+  danger: "border border-alert/40 bg-white text-alert hover:bg-alert-soft disabled:border-ink-faint disabled:text-ink-faint",
 };
 
 const sizes: Record<Size, string> = {

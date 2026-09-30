@@ -12,7 +12,7 @@ export function PortalShell({ children, readiness, organizationName }: { childre
           <strong className="font-semibold">Entorno de prueba.</strong> Los textos legales están pendientes de revisión (LEGAL_REVIEW_REQUIRED). No ingreses datos reales.
         </div>
       )}
-      <header className="sticky top-0 z-20 border-b border-marian-line/60 bg-white/95 backdrop-blur">
+      <header className="sticky top-0 z-20 border-b border-marian-line/60 bg-white">
         <div className="mx-auto flex max-w-5xl items-center justify-between gap-3 px-5 py-3">
           <Link href="/" className="flex items-center gap-3 rounded-lg" aria-label={`${organizationName}, inicio`}>
             <MaristaLogo className="w-10" />

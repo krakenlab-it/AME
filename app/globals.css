@@ -35,22 +35,21 @@
 
 @layer components {
   .sheet {
-    @apply rounded-sheet border border-marian-line bg-white shadow-[0_1px_2px_rgba(19,38,58,0.04),0_10px_28px_-14px_rgba(19,38,58,0.14)];
+    @apply rounded-sheet border border-marian-line/70 bg-white;
   }
   .field-input {
-    @apply block w-full rounded-xl border border-field bg-white px-4 py-3 text-[17px] text-ink
+    @apply block w-full rounded-xl border border-ink-faint/60 bg-white px-4 py-3 text-[17px] text-ink
       placeholder:text-ink-faint transition-colors
-      hover:border-ink-muted
-      focus:border-marian focus-visible:outline-offset-2
+      focus:border-marian focus:outline-none focus:ring-4 focus:ring-marian/15
       disabled:bg-marian-soft/50 disabled:text-ink-muted;
     min-height: 52px;
   }
   .field-input[aria-invalid="true"] {
-    @apply border-alert border-2;
+    @apply border-alert ring-4 ring-alert/10;
   }
   .choice {
-    @apply flex min-h-[52px] cursor-pointer items-center gap-3 rounded-xl border border-field bg-white px-4 py-3
-      transition-colors hover:border-marian has-[:checked]:border-marian has-[:checked]:bg-marian-soft/60
+    @apply flex min-h-[52px] cursor-pointer items-center gap-3 rounded-xl border border-marian-line bg-white px-4 py-3
+      transition-colors hover:border-marian has-[:checked]:border-marian has-[:checked]:bg-marian-soft/50
       has-[:focus-visible]:outline has-[:focus-visible]:outline-[3px] has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-marian;
   }
   .choice input:focus-visible {
@@ -60,14 +59,11 @@
     @apply w-full text-left text-sm;
   }
   .admin-table thead th {
-    @apply whitespace-nowrap border-b border-marian-line bg-marian-soft/40 px-3 py-2.5 text-xs font-semibold uppercase tracking-wide text-ink-muted;
+    @apply whitespace-nowrap border-b border-marian-line px-3 py-2 font-semibold text-ink-muted;
   }
   .admin-table td,
   .admin-table tbody th {
-    @apply border-b border-marian-line/60 px-3 py-3 align-top;
-  }
-  .admin-table tbody tr:hover {
-    @apply bg-marian-soft/30;
+    @apply border-b border-marian-line/60 px-3 py-2.5 align-top;
   }
   .admin-table tbody tr:last-child td,
   .admin-table tbody tr:last-child th {

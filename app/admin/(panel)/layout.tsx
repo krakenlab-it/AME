@@ -41,7 +41,7 @@ export default async function PanelLayout({ children }: { children: React.ReactN
   const items: AdminNavItem[] = NAV.filter((n) => can(admin.role, n.perm)).map(({ href, label, shortLabel, icon }) => ({ href, label, shortLabel, icon }));
   return (
     <div className="min-h-dvh bg-paper lg:grid lg:grid-cols-[272px_1fr]">
-      <aside className="sticky top-0 hidden h-dvh flex-col border-r border-marian-line bg-white lg:flex">
+      <aside className="sticky top-0 hidden h-dvh flex-col border-r border-marian-line/70 bg-white lg:flex">
         <Link href="/admin" className="flex items-center gap-3 px-5 py-5">
           <MaristaLogo className="w-10" />
           <span className="font-serif text-[17px] font-semibold leading-tight text-marian">
@@ -64,7 +64,7 @@ export default async function PanelLayout({ children }: { children: React.ReactN
       </aside>
 
       <div className="min-w-0">
-        <header className="sticky top-0 z-30 flex items-center justify-between gap-3 border-b border-marian-line bg-white/95 px-4 py-2 backdrop-blur lg:hidden">
+        <header className="sticky top-0 z-30 flex items-center justify-between gap-3 border-b border-marian-line/60 bg-white px-4 py-2 lg:hidden">
           <Link href="/admin" className="flex items-center gap-2.5">
             <MaristaLogo className="w-8" />
             <span className="font-serif text-base font-semibold text-marian">Panel de datos</span>
@@ -78,7 +78,7 @@ export default async function PanelLayout({ children }: { children: React.ReactN
           </div>
         </header>
         <main id="contenido" className="mx-auto max-w-6xl px-4 pb-28 pt-6 sm:px-6 lg:px-10 lg:pb-12 lg:pt-10">{children}</main>
-        <div className="fixed inset-x-0 bottom-0 z-30 border-t border-marian-line bg-white/95 pb-[env(safe-area-inset-bottom)] backdrop-blur lg:hidden">
+        <div className="fixed inset-x-0 bottom-0 z-30 border-t border-marian-line/60 bg-white pb-[env(safe-area-inset-bottom)] lg:hidden">
           <AdminNav items={items} variant="tabbar" />
         </div>
       </div>

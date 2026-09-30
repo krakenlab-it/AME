@@ -4,7 +4,7 @@ import { cn } from "@/lib/utils";
 
 const tones = {
   info: { box: "border-marian-line bg-marian-soft/60 text-ink", Icon: Info, icon: "text-marian" },
-  warning: { box: "border-crown/50 bg-warn-soft text-ink", Icon: AlertTriangle, icon: "text-crown-deep" },
+  warning: { box: "border-crown/40 bg-warn-soft text-ink", Icon: AlertTriangle, icon: "text-crown" },
   error: { box: "border-alert/40 bg-alert-soft text-ink", Icon: AlertTriangle, icon: "text-alert" },
   success: { box: "border-ok/40 bg-ok-soft text-ink", Icon: CheckCircle2, icon: "text-ok" },
 };

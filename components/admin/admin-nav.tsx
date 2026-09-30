@@ -50,7 +50,7 @@ export function AdminNav({ items, variant }: { items: AdminNavItem[]; variant: "
                   sidebar
                     ? "min-h-[46px] gap-3 rounded-xl px-3.5 text-[15px]"
                     : "min-h-[60px] flex-col justify-center gap-1 px-1 text-[12px] leading-tight",
-                  sidebar && (current ? "bg-marian text-white shadow-sm" : "text-ink hover:bg-marian-soft"),
+                  sidebar && (current ? "bg-marian-soft text-marian" : "text-ink hover:bg-marian-soft"),
                   !sidebar && (current ? "text-marian" : "text-ink-muted hover:text-marian"),
                 )}
               >

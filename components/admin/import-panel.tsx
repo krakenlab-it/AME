@@ -34,7 +34,7 @@ export function ImportPanel() {
           </p>
         </div>
         <Field id="import-file" label="Archivo de personas" required>
-          <input id="import-file" name="file" type="file" accept=".csv,.xlsx" required className="block w-full rounded-xl border border-field bg-white p-2 text-[15px] file:mr-4 file:min-h-[44px] file:cursor-pointer file:rounded-lg file:border-0 file:bg-marian-soft file:px-4 file:font-semibold file:text-marian hover:border-marian" />
+          <input id="import-file" name="file" type="file" accept=".csv,.xlsx" required className="block w-full rounded-xl border border-marian-line bg-white p-2 text-[15px] file:mr-4 file:min-h-[44px] file:cursor-pointer file:rounded-lg file:border-0 file:bg-marian-soft file:px-4 file:font-semibold file:text-marian hover:border-marian" />
         </Field>
         <label className="choice !items-start text-[15px]">
           <input type="checkbox" name="allowPartial" className="mt-0.5 h-5 w-5 shrink-0 accent-marian" />

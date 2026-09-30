@@ -13,11 +13,11 @@ export function DemoAccess() {
   const user = pickDemoUser([...repo.people.values()]);
 
   return (
-    <aside aria-labelledby="demo-access" className="rounded-2xl border border-dashed border-crown-deep/60 bg-warn-soft p-5">
+    <aside aria-labelledby="demo-access" className="rounded-2xl border border-crown/40 bg-warn-soft p-5">
       <div className="flex items-start gap-3">
-        <FlaskConical className="mt-0.5 h-5 w-5 shrink-0 text-crown-deep" aria-hidden />
+        <FlaskConical className="mt-0.5 h-5 w-5 shrink-0 text-crown" aria-hidden />
         <div>
-          <h2 id="demo-access" className="font-sans text-base font-semibold text-ink">Probar el portal</h2>
+          <h2 id="demo-access" className="text-lg">Probar el portal</h2>
           <p className="mt-1 text-sm text-ink/80">
             Hay dos entradas: el administrador y la persona que actualiza sus datos. Revisor y exportación a AIG son este mismo panel, con menos opciones.
           </p>
