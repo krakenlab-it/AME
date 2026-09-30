@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
+    "check": "npm run lint && npm run typecheck && npm run test && npm run build",
     "admin:create": "tsx scripts/create-admin.ts",
     "seed:product-users": "tsx scripts/seed-product-users.ts",
     "keys:generate": "tsx scripts/generate-keys.ts"
