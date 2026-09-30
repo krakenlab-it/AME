@@ -1,121 +1,238 @@
-import { decrypt, encrypt, randomToken, sha256 } from "@/lib/encryption/crypto";
-import type { AdminRepo, AdminSessionRecord, AdminUserRecord } from "@/lib/database/types";
-import { hashPassword, verifyPassword } from "@/lib/security/password";
-import { generateTotpSecret, verifyTotp } from "@/lib/security/totp";
-import { ADMIN_ABSOLUTE_HOURS, ADMIN_IDLE_MINUTES } from "@/lib/security/cookies";
+import "server-only";
+import type { EmailOtpType, SupabaseClient } from "@supabase/supabase-js";
+import type { AdminRepo } from "@/lib/database/types";
+import { sha256 } from "@/lib/encryption/crypto";
+import { passwordPolicyError } from "@/lib/security/password";
+import { createAuthClient } from "@/lib/supabase/server";
+import {
+  destinationAfterConfirm,
+  gateForAuthUser,
+  normalizeAdminEmail,
+  normalizeTotpCode,
+  totpQrDataUrl,
+  type AuthSnapshot,
+} from "./admin-gate";
 import { settings } from "./settings";
 
 const GENERIC_LOGIN_ERROR = "Correo o contraseña incorrectos.";
-let dummyHash: Promise<string> | null = null;
+const RATE_LIMIT_ERROR = "Demasiados intentos. Espera 15 minutos.";
+const UNAVAILABLE_ERROR = "El servicio no está disponible. Intenta más tarde.";
+const CONFIG_ERROR = "El acceso administrativo no está configurado.";
+const LINK_ERROR = "El enlace no es válido o ya venció. Pide una nueva invitación o restablece la contraseña.";
+export const RESET_SENT_MESSAGE = "Si ese correo tiene un acceso de administrador, enviaremos un enlace para elegir una contraseña nueva.";
 
-export type LoginResult = { ok: true; sessionToken: string; needsEnrollment: boolean } | { ok: false; error: string };
+const EMAIL_OTP_TYPES = ["signup", "invite", "magiclink", "recovery", "email_change", "email"] as const;
 
-export async function loginWithPassword(repo: AdminRepo, email: string, password: string, ipHash: string): Promise<LoginResult> {
-  const normalized = email.trim().toLowerCase().slice(0, 254);
+export async function readAuthSnapshot(): Promise<AuthSnapshot> {
+  const supabase = await createAuthClient();
+  if (!supabase) return { userId: null, currentLevel: null, nextLevel: null };
+  return readSnapshot(supabase);
+}
+
+async function readSnapshot(supabase: SupabaseClient): Promise<AuthSnapshot> {
+  const { data, error } = await supabase.auth.getClaims();
+  if (error || !data?.claims.sub) return { userId: null, currentLevel: null, nextLevel: null };
+  const userId = data.claims.sub;
+  const aal = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+  if (aal.error || !aal.data) return { userId, currentLevel: null, nextLevel: null };
+  return {
+    userId,
+    currentLevel: aal.data.currentLevel === "aal2" ? "aal2" : aal.data.currentLevel === "aal1" ? "aal1" : null,
+    nextLevel: aal.data.nextLevel === "aal2" ? "aal2" : aal.data.nextLevel === "aal1" ? "aal1" : null,
+  };
+}
+
+async function limited(repo: AdminRepo, email: string, ipHash: string): Promise<string | null> {
   const ipLimit = await repo.rateLimitHit(`admin-login-ip:${ipHash}`, settings.adminLoginLimitPerIp, 15 * 60);
-  const emailLimit = await repo.rateLimitHit(`admin-login-email:${sha256(normalized)}`, settings.adminLoginLimitPerEmail, 15 * 60);
+  const emailLimit = await repo.rateLimitHit(`admin-login-email:${sha256(email)}`, settings.adminLoginLimitPerEmail, 15 * 60);
   if (!ipLimit.allowed || !emailLimit.allowed) {
     await repo.logSecurityEvent({ event_type: "ADMIN_LOGIN_RATE_LIMITED", ip_hash: ipHash });
-    return { ok: false, error: "Demasiados intentos. Espera 15 minutos." };
+    return RATE_LIMIT_ERROR;
   }
+  return null;
+}
 
-  const admin = await repo.findAdminByEmail(normalized);
-  if (!admin || !admin.active) {
-    // Igualar tiempos para no revelar si el correo existe
-    dummyHash ??= hashPassword(randomToken(16));
-    await verifyPassword(password, await dummyHash);
+export async function signInAdmin(
+  repo: AdminRepo,
+  email: string,
+  password: string,
+  ipHash: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const normalized = normalizeAdminEmail(email);
+  if (!normalized || !password || password.length > 256) return { ok: false, error: "Ingresa tu correo y contraseña." };
+  const blocked = await limited(repo, normalized, ipHash);
+  if (blocked) return { ok: false, error: blocked };
+
+  const supabase = await createAuthClient();
+  if (!supabase) return { ok: false, error: CONFIG_ERROR };
+  const signed = await supabase.auth.signInWithPassword({ email: normalized, password });
+  if (signed.error || !signed.data.user) {
     await repo.logSecurityEvent({ event_type: "ADMIN_LOGIN_UNKNOWN", ip_hash: ipHash });
     return { ok: false, error: GENERIC_LOGIN_ERROR };
   }
-  if (admin.locked_until && new Date(admin.locked_until).getTime() > Date.now()) {
-    return { ok: false, error: "La cuenta está bloqueada temporalmente. Intenta más tarde." };
-  }
 
-  const valid = await verifyPassword(password, admin.password_hash);
-  if (!valid) {
-    const failed = admin.failed_logins + 1;
-    const lock = failed >= settings.adminMaxFailedLogins;
-    await repo.updateAdmin(admin.id, {
-      failed_logins: lock ? 0 : failed,
-      locked_until: lock ? new Date(Date.now() + settings.adminLockMinutes * 60_000).toISOString() : admin.locked_until,
-    });
-    await repo.audit({ actor_type: "admin", actor_id: admin.id, action: "ADMIN_LOGIN_FAILED", metadata: { locked: lock } });
+  const gate = await gateForAuthUser(repo, await readSnapshot(supabase));
+  if (gate.kind === "anonymous" || gate.kind === "unlinked") {
+    await supabase.auth.signOut();
+    await repo.logSecurityEvent({ event_type: "ADMIN_LOGIN_UNKNOWN", ip_hash: ipHash });
     return { ok: false, error: GENERIC_LOGIN_ERROR };
   }
+  return { ok: true };
+}
 
-  await repo.updateAdmin(admin.id, { failed_logins: 0, locked_until: null });
-  const sessionToken = randomToken(32);
-  await repo.createAdminSession({
-    session_hash: sha256(sessionToken),
-    admin_id: admin.id,
-    expires_at: new Date(Date.now() + ADMIN_ABSOLUTE_HOURS * 3_600_000).toISOString(),
+export async function requestPasswordReset(
+  repo: AdminRepo,
+  email: string,
+  ipHash: string,
+): Promise<{ ok: true; message: string } | { ok: false; error: string }> {
+  const normalized = normalizeAdminEmail(email);
+  if (!normalized) return { ok: false, error: "Ingresa un correo válido." };
+  const blocked = await limited(repo, normalized, ipHash);
+  if (blocked) return { ok: false, error: blocked };
+
+  const admin = await repo.findAdminByEmail(normalized);
+  if (!admin?.active || !admin.auth_user_id) return { ok: true, message: RESET_SENT_MESSAGE };
+
+  const supabase = await createAuthClient();
+  if (!supabase) return { ok: false, error: CONFIG_ERROR };
+  const redirectTo = `${settings.baseUrl()}/admin/auth/confirm?next=${encodeURIComponent("/admin/restablecer")}`;
+  const { error } = await supabase.auth.resetPasswordForEmail(normalized, { redirectTo });
+  if (error) {
+    console.error(`[auth] reset: ${error.code ?? ""}`);
+    return { ok: true, message: RESET_SENT_MESSAGE };
+  }
+  return { ok: true, message: RESET_SENT_MESSAGE };
+}
+
+export async function setAdminPassword(password: string, confirm: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  const policy = passwordPolicyError(password);
+  if (policy) return { ok: false, error: policy };
+  if (password !== confirm) return { ok: false, error: "Las contraseñas no coinciden." };
+  const supabase = await createAuthClient();
+  if (!supabase) return { ok: false, error: CONFIG_ERROR };
+  const snapshot = await readSnapshot(supabase);
+  if (!snapshot.userId) return { ok: false, error: "Abre el enlace de invitación o de restablecimiento que recibiste por correo." };
+  const { error } = await supabase.auth.updateUser({ password });
+  if (error) return { ok: false, error: "No se pudo guardar la contraseña. Pide un enlace nuevo." };
+  return { ok: true };
+}
+
+function asEmailOtpType(value: string | undefined): EmailOtpType | null {
+  if (!value) return null;
+  return EMAIL_OTP_TYPES.some((type) => type === value) ? value : null;
+}
+
+export async function confirmEmailLink(input: {
+  tokenHash?: string;
+  type?: string;
+  code?: string;
+  next?: string;
+}): Promise<{ ok: true; next: string } | { ok: false; error: string }> {
+  const supabase = await createAuthClient();
+  if (!supabase) return { ok: false, error: CONFIG_ERROR };
+  const next = destinationAfterConfirm(input.type, input.next);
+
+  if (input.tokenHash) {
+    const type = asEmailOtpType(input.type);
+    if (!type) return { ok: false, error: LINK_ERROR };
+    const { error } = await supabase.auth.verifyOtp({ token_hash: input.tokenHash, type });
+    if (error) return { ok: false, error: LINK_ERROR };
+    return { ok: true, next };
+  }
+
+  if (input.code) {
+    const { error } = await supabase.auth.exchangeCodeForSession(input.code);
+    if (error) return { ok: false, error: LINK_ERROR };
+    return { ok: true, next };
+  }
+
+  return { ok: false, error: LINK_ERROR };
+}
+
+export async function adoptAuthSession(input: {
+  accessToken: string;
+  refreshToken: string;
+  type?: string;
+}): Promise<{ ok: true; next: string } | { ok: false; error: string }> {
+  if (!input.accessToken || !input.refreshToken || input.accessToken.length > 20_000 || input.refreshToken.length > 20_000) {
+    return { ok: false, error: LINK_ERROR };
+  }
+  const supabase = await createAuthClient();
+  if (!supabase) return { ok: false, error: CONFIG_ERROR };
+  const { error } = await supabase.auth.setSession({ access_token: input.accessToken, refresh_token: input.refreshToken });
+  if (error) return { ok: false, error: LINK_ERROR };
+  return { ok: true, next: destinationAfterConfirm(input.type, null) };
+}
+
+export async function beginTotpEnrollment(): Promise<{ qr: string; secret: string; factorId: string }> {
+  const supabase = await createAuthClient();
+  if (!supabase) throw new Error(CONFIG_ERROR);
+  const listed = await supabase.auth.mfa.listFactors();
+  if (listed.error || !listed.data) throw new Error(UNAVAILABLE_ERROR);
+  for (const factor of listed.data.all) {
+    if (factor.factor_type === "totp" && factor.status !== "verified") {
+      await supabase.auth.mfa.unenroll({ factorId: factor.id });
+    }
+  }
+  const enrolled = await supabase.auth.mfa.enroll({
+    factorType: "totp",
+    friendlyName: "Portal AME",
+    issuer: "Portal AME",
   });
-  return { ok: true, sessionToken, needsEnrollment: !admin.mfa_enabled };
+  if (enrolled.error || !enrolled.data) throw new Error(UNAVAILABLE_ERROR);
+  return {
+    factorId: enrolled.data.id,
+    secret: enrolled.data.totp.secret,
+    qr: totpQrDataUrl(enrolled.data.totp.qr_code),
+  };
 }
 
-export interface AdminContext {
-  admin: AdminUserRecord;
-  session: AdminSessionRecord;
-}
+export async function verifyAdminTotp(
+  repo: AdminRepo,
+  input: { code: string; factorId: string },
+  ipHash: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const code = normalizeTotpCode(input.code);
+  if (!code) return { ok: false, error: "Escribe el código de 6 dígitos." };
+  const supabase = await createAuthClient();
+  if (!supabase) return { ok: false, error: CONFIG_ERROR };
+  const gate = await gateForAuthUser(repo, await readSnapshot(supabase));
+  if (gate.kind === "anonymous" || gate.kind === "unlinked") return { ok: false, error: "Vuelve a ingresar." };
 
-/** Valida la cookie: vigencia absoluta, inactividad y (opcionalmente) MFA completado. */
-export async function getAdminContext(repo: AdminRepo, sessionToken: string | undefined, opts: { requireMfa?: boolean } = {}): Promise<AdminContext | null> {
-  if (!sessionToken || !/^[A-Za-z0-9_-]{32,128}$/.test(sessionToken)) return null;
-  const session = await repo.findAdminSession(sha256(sessionToken));
-  if (!session || session.revoked_at) return null;
-  const now = Date.now();
-  if (new Date(session.expires_at).getTime() <= now) return null;
-  if (now - new Date(session.last_seen_at).getTime() > ADMIN_IDLE_MINUTES * 60_000) {
-    await repo.updateAdminSession(session.id, { revoked_at: new Date().toISOString() });
-    return null;
-  }
-  if ((opts.requireMfa ?? true) && !session.mfa_verified) return null;
-  const admin = await repo.getAdmin(session.admin_id);
-  if (!admin || !admin.active) return null;
-  if (now - new Date(session.last_seen_at).getTime() > 60_000) {
-    await repo.updateAdminSession(session.id, { last_seen_at: new Date().toISOString() });
-  }
-  return { admin, session };
-}
-
-/** Devuelve el secreto TOTP en claro (solo para mostrar el QR durante el enrolamiento). */
-export async function ensureMfaSecret(repo: AdminRepo, admin: AdminUserRecord): Promise<string> {
-  if (admin.mfa_enabled) throw new Error("MFA ya está activo");
-  if (admin.mfa_secret_encrypted) return decrypt(admin.mfa_secret_encrypted);
-  const secret = generateTotpSecret();
-  await repo.updateAdmin(admin.id, { mfa_secret_encrypted: encrypt(secret) });
-  return secret;
-}
-
-/**
- * Verifica el código TOTP. Si es correcto, rota el identificador de sesión
- * (evita session fixation) y marca la sesión como verificada.
- */
-export async function verifyMfa(repo: AdminRepo, ctx: AdminContext, code: string, ipHash: string): Promise<{ ok: true; sessionToken: string } | { ok: false; error: string }> {
-  const limit = await repo.rateLimitHit(`admin-mfa:${ctx.admin.id}`, 6, 15 * 60);
+  const limit = await repo.rateLimitHit(`admin-mfa:${gate.admin.id}`, 6, 15 * 60);
   if (!limit.allowed) {
     await repo.logSecurityEvent({ event_type: "ADMIN_MFA_RATE_LIMITED", ip_hash: ipHash });
-    return { ok: false, error: "Demasiados intentos. Espera 15 minutos." };
+    return { ok: false, error: RATE_LIMIT_ERROR };
   }
-  if (!ctx.admin.mfa_secret_encrypted) return { ok: false, error: "Primero configura tu aplicación autenticadora." };
-  const secret = decrypt(ctx.admin.mfa_secret_encrypted);
-  if (!verifyTotp(secret, code)) {
-    await repo.audit({ actor_type: "admin", actor_id: ctx.admin.id, action: "ADMIN_LOGIN_FAILED", metadata: { step: "mfa" } });
+
+  let factorId = input.factorId.trim();
+  const enrolling = factorId.length > 0;
+  if (!factorId) {
+    const listed = await supabase.auth.mfa.listFactors();
+    factorId = listed.data?.totp[0]?.id ?? "";
+  }
+  if (!factorId) return { ok: false, error: "Primero configura tu aplicación autenticadora." };
+
+  const verified = await supabase.auth.mfa.challengeAndVerify({ factorId, code });
+  if (verified.error) {
+    await repo.audit({ actor_type: "admin", actor_id: gate.admin.id, action: "ADMIN_LOGIN_FAILED", metadata: { step: "mfa" } });
     return { ok: false, error: "El código no es correcto o ya venció." };
   }
-  if (!ctx.admin.mfa_enabled) {
-    await repo.updateAdmin(ctx.admin.id, { mfa_enabled: true });
-    await repo.audit({ actor_type: "admin", actor_id: ctx.admin.id, action: "MFA_ENROLLED" });
-  }
-  const newToken = randomToken(32);
-  await repo.updateAdminSession(ctx.session.id, { session_hash: sha256(newToken), mfa_verified: true, last_seen_at: new Date().toISOString() });
-  await repo.updateAdmin(ctx.admin.id, { last_login_at: new Date().toISOString() });
-  await repo.audit({ actor_type: "admin", actor_id: ctx.admin.id, action: "ADMIN_LOGIN" });
-  return { ok: true, sessionToken: newToken };
+
+  await repo.updateAdmin(gate.admin.id, { mfa_enabled: true, last_login_at: new Date().toISOString() });
+  if (enrolling) await repo.audit({ actor_type: "admin", actor_id: gate.admin.id, action: "MFA_ENROLLED" });
+  await repo.audit({ actor_type: "admin", actor_id: gate.admin.id, action: "ADMIN_LOGIN" });
+  return { ok: true };
 }
 
-export async function logout(repo: AdminRepo, ctx: AdminContext | null): Promise<void> {
-  if (!ctx) return;
-  await repo.updateAdminSession(ctx.session.id, { revoked_at: new Date().toISOString() });
-  await repo.audit({ actor_type: "admin", actor_id: ctx.admin.id, action: "ADMIN_LOGOUT" });
+export async function signOutAdmin(repo: AdminRepo): Promise<void> {
+  const supabase = await createAuthClient();
+  if (!supabase) return;
+  const gate = await gateForAuthUser(repo, await readSnapshot(supabase));
+  if (gate.kind !== "anonymous" && gate.kind !== "unlinked") {
+    await repo.audit({ actor_type: "admin", actor_id: gate.admin.id, action: "ADMIN_LOGOUT" });
+  }
+  await supabase.auth.signOut();
 }
+
+export { CONFIG_ERROR, UNAVAILABLE_ERROR };

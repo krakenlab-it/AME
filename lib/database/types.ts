@@ -124,28 +124,19 @@ export interface RespondentRepo {
 }
 
 // ── Administración ───────────────────────────────────────────────────────────
+/**
+ * Perfil del panel. La contraseña y el secreto TOTP viven en Supabase Auth,
+ * no en esta fila. auth_user_id vincula el usuario de Auth con el rol.
+ */
 export interface AdminUserRecord {
   id: string;
   email: string;
   full_name: string;
   role: AdminRole;
-  password_hash: string;
-  mfa_secret_encrypted: string | null;
+  auth_user_id: string | null;
   mfa_enabled: boolean;
   active: boolean;
-  failed_logins: number;
-  locked_until: string | null;
-}
-
-export interface AdminSessionRecord {
-  id: string;
-  session_hash: string;
-  admin_id: string;
-  mfa_verified: boolean;
-  created_at: string;
-  last_seen_at: string;
-  expires_at: string;
-  revoked_at: string | null;
+  last_login_at: string | null;
 }
 
 export interface PersonListRow {
@@ -229,12 +220,10 @@ export interface AdminRepo {
   logSecurityEvent(e: { event_type: string; ip_hash: string | null; detail?: Record<string, unknown> }): Promise<void>;
   // auth
   findAdminByEmail(email: string): Promise<AdminUserRecord | null>;
+  findAdminByAuthUserId(authUserId: string): Promise<AdminUserRecord | null>;
   getAdmin(id: string): Promise<AdminUserRecord | null>;
-  createAdmin(a: { email: string; full_name: string; role: AdminRole; password_hash: string }): Promise<AdminUserRecord>;
-  updateAdmin(id: string, patch: Partial<Pick<AdminUserRecord, "mfa_secret_encrypted" | "mfa_enabled" | "failed_logins" | "locked_until" | "active">> & { last_login_at?: string }): Promise<void>;
-  createAdminSession(s: { session_hash: string; admin_id: string; expires_at: string }): Promise<AdminSessionRecord>;
-  findAdminSession(hash: string): Promise<AdminSessionRecord | null>;
-  updateAdminSession(id: string, patch: Partial<Pick<AdminSessionRecord, "mfa_verified" | "last_seen_at" | "revoked_at" | "session_hash">>): Promise<void>;
+  createAdmin(a: { email: string; full_name: string; role: AdminRole; auth_user_id: string | null }): Promise<AdminUserRecord>;
+  updateAdmin(id: string, patch: Partial<Pick<AdminUserRecord, "mfa_enabled" | "active" | "auth_user_id" | "full_name" | "role">> & { last_login_at?: string | null }): Promise<void>;
   // people
   statusCounts(): Promise<Record<PersonStatus, number>>;
   listPeople(q: { status?: PersonStatus; search?: string; nationalIdHash?: string; page: number; pageSize: number }): Promise<{ rows: PersonListRow[]; total: number }>;

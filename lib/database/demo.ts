@@ -1,12 +1,13 @@
 import "server-only";
-import { randomToken, sha256, encrypt } from "@/lib/encryption/crypto";
-import { hashPasswordSync } from "@/lib/security/password";
+import { randomToken, sha256 } from "@/lib/encryption/crypto";
+import { seedDemoAdmin } from "@/lib/services/demo-admin-auth";
 import { generateTotpSecret } from "@/lib/security/totp";
 import { MemoryRepo } from "./memory-repo";
 
 /**
  * Modo demostración: base en memoria con datos ficticios para probar el portal sin Supabase.
  * Solo se activa con DEMO_MODE=true y NUNCA en producción (ver lib/database/index.ts).
+ * El panel de demostración no usa Supabase Auth: la contraseña y el TOTP quedan solo en memoria.
  */
 export function createDemoRepo(): MemoryRepo {
   const repo = new MemoryRepo();
@@ -23,8 +24,13 @@ export function createDemoRepo(): MemoryRepo {
     lines.push(`  ${first} ${last} · cédula ${ced}\n    ${base}/verificar/${token}`);
   }
   const secret = generateTotpSecret();
-  const admin = repo.createAdminSync({ email: "admin@demo.local", full_name: "Administración (demo)", role: "ADMIN", password_hash: hashPasswordSync("Demo-portal-2026") });
-  Object.assign(admin, { mfa_secret_encrypted: encrypt(secret), mfa_enabled: true });
+  seedDemoAdmin(repo, {
+    email: "admin@demo.local",
+    full_name: "Administración (demo)",
+    role: "ADMIN",
+    password: "Demo-portal-2026",
+    totpSecret: secret,
+  });
   console.warn(`\n[DEMO_MODE] Base en memoria con datos ficticios. Enlaces:\n${lines.join("\n")}\n  Admin: admin@demo.local / Demo-portal-2026 · TOTP secreto: ${secret}\n`);
   return repo;
 }

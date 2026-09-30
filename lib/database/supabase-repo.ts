@@ -5,7 +5,6 @@ import { PERSON_STATUSES } from "@/lib/validation/constants";
 import {
   RepoError,
   type AccessTokenRecord,
-  type AdminSessionRecord,
   type AdminUserRecord,
   type AuditRow,
   type ExportSourceRow,
@@ -167,6 +166,11 @@ export class SupabaseRepo implements Repo {
     return (data as AdminUserRecord | null) ?? null;
   }
 
+  async findAdminByAuthUserId(authUserId: string) {
+    const data = check(await this.db.from("admin_users").select("*").eq("auth_user_id", authUserId).maybeSingle(), "findAdminByAuthUserId");
+    return (data as AdminUserRecord | null) ?? null;
+  }
+
   async getAdmin(id: string) {
     const data = check(await this.db.from("admin_users").select("*").eq("id", id).maybeSingle(), "getAdmin");
     return (data as AdminUserRecord | null) ?? null;
@@ -179,20 +183,6 @@ export class SupabaseRepo implements Repo {
 
   async updateAdmin(id: string, patch: Parameters<Repo["updateAdmin"]>[1]) {
     check(await this.db.from("admin_users").update(patch).eq("id", id), "updateAdmin");
-  }
-
-  async createAdminSession(s: { session_hash: string; admin_id: string; expires_at: string }) {
-    const data = check(await this.db.from("admin_sessions").insert(s).select().single(), "createAdminSession");
-    return data as AdminSessionRecord;
-  }
-
-  async findAdminSession(hash: string) {
-    const data = check(await this.db.from("admin_sessions").select("*").eq("session_hash", hash).maybeSingle(), "findAdminSession");
-    return (data as AdminSessionRecord | null) ?? null;
-  }
-
-  async updateAdminSession(id: string, patch: Parameters<Repo["updateAdminSession"]>[1]) {
-    check(await this.db.from("admin_sessions").update(patch).eq("id", id), "updateAdminSession");
   }
 
   // ── Administración: personas ──────────────────────────────────────────────
