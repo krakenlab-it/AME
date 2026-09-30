@@ -31,7 +31,17 @@ jobs:
           node-version: "22"
           cache: npm
       - run: npm ci
+      - run: npx playwright install --with-deps chromium
       - run: npm run lint
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
+      - name: Seed three synthetic users in memory and run browser tests
+        run: npm run test:e2e
+        env:
+          # Solo este paso. El build de arriba sigue con DEMO_MODE=false.
+          # El seed vive en memoria. No se inyecta la clave de la base.
+          DEMO_MODE: "true"
+          SEED_PRODUCT_USERS: "true"
+          APP_STAGE: development
+          APP_BASE_URL: http://127.0.0.1:3000

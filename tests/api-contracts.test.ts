@@ -209,11 +209,13 @@ describe("pipeline de CI", () => {
   it("exige lint, tipos, pruebas y build, y no enciende DEMO_MODE", () => {
     const workflow = readFileSync(".github/workflows/ci.yml", "utf8");
     const pkg = JSON.parse(readFileSync("package.json", "utf8")) as { scripts: Record<string, string> };
-    for (const step of ["npm run lint", "npm run typecheck", "npm test", "npm run build"]) {
+    for (const step of ["npm run lint", "npm run typecheck", "npm test", "npm run build", "npm run test:e2e"]) {
       expect(workflow).toContain(step);
     }
     expect(workflow).toContain('DEMO_MODE: "false"');
+    expect(workflow).toContain('SEED_PRODUCT_USERS: "true"');
     expect(workflow).not.toContain("SUPABASE_SERVICE_ROLE_KEY");
+    expect(workflow).not.toContain("seed:product-users -- --write");
     expect(pkg.scripts.check).toContain("npm run lint");
     expect(pkg.scripts.check).toContain("npm run test");
     expect(pkg.scripts.check).toContain("npm run build");

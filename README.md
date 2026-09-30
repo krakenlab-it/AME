@@ -276,7 +276,7 @@ Hay un límite de 20 exportaciones por hora por usuario.
 npm run check
 ```
 
-Ese comando es el mismo que corre GitHub Actions (lint, tipos, pruebas y build). No hace falta ninguna clave real. `DEMO_MODE` no se activa ahí, y en producción la aplicación se niega a arrancar si alguien lo enciende. Detalle de contratos y de CI: [docs/api-contracts.md](docs/api-contracts.md) y [docs/ci.md](docs/ci.md).
+Ese comando es lint, tipos, pruebas y build. GitHub Actions hace lo mismo y después corre el navegador con las tres fichas sintéticas en memoria (`npm run test:e2e`). No hace falta ninguna clave real. `DEMO_MODE` no se activa en el build, y en producción la aplicación se niega a arrancar así. Detalle: [docs/api-contracts.md](docs/api-contracts.md) y [docs/ci.md](docs/ci.md).
 
 Las pruebas cubren:
 
