@@ -29,13 +29,13 @@ test("el panel muestra las tres fichas del seed", async ({ page }) => {
   expect(review).toBeTruthy();
   await page.goto("/admin/login");
   await expect(page.getByRole("heading", { name: "Acceso rápido de pruebas" })).toBeVisible();
-  await page.getByLabel("Correo").fill(PRODUCT_SEED_DEMO_ADMIN.email);
-  await page.getByLabel("Contraseña").fill(PRODUCT_SEED_DEMO_ADMIN.password);
+  await page.locator("#email").fill(PRODUCT_SEED_DEMO_ADMIN.email);
+  await page.locator("#password").fill(PRODUCT_SEED_DEMO_ADMIN.password);
   await page.getByRole("button", { name: "Ingresar" }).click();
   await page.getByLabel("Código de 6 dígitos").fill(totpCode(PRODUCT_SEED_DEMO_TOTP_SECRET));
   await page.getByRole("button", { name: "Verificar" }).click();
   await expect(page.getByRole("heading", { name: "Resumen" })).toBeVisible();
-  await expect(page.getByRole("cell", { name: started!.currentFirstNames })).toBeVisible();
-  await expect(page.getByRole("cell", { name: completed!.currentFirstNames })).toBeVisible();
-  await expect(page.getByRole("cell", { name: review!.currentFirstNames })).toBeVisible();
+  await expect(page.getByRole("cell", { name: started!.currentFirstNames, exact: true })).toBeVisible();
+  await expect(page.getByRole("cell", { name: completed!.currentFirstNames, exact: true })).toBeVisible();
+  await expect(page.getByRole("cell", { name: review!.currentFirstNames, exact: true })).toBeVisible();
 });
