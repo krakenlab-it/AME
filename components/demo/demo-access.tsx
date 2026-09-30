@@ -2,7 +2,7 @@ import { FlaskConical, ShieldCheck, UserRound } from "lucide-react";
 import { demoEnterAdminAction, demoEnterRespondentAction } from "@/app/demo/actions";
 import { DemoSubmit } from "@/components/demo/demo-submit";
 import { getRepo } from "@/lib/database";
-import { MemoryRepo } from "@/lib/database/memory-repo";
+import { isMemoryRepo, type MemoryRepo } from "@/lib/database/memory-repo";
 import { isDemoMode } from "@/lib/demo-mode";
 import { ROLE_LABELS } from "@/lib/admin/labels";
 import { ADMIN_ROLES } from "@/lib/security/rbac";
@@ -12,7 +12,7 @@ import { STATUS_LABELS } from "@/lib/validation/constants";
 export function DemoAccess({ show }: { show: "admin" | "respondent" | "both" }) {
   if (!isDemoMode()) return null;
   const repo = getRepo();
-  if (!(repo instanceof MemoryRepo)) return null;
+  if (!isMemoryRepo(repo)) return null;
   const people = [...repo.people.values()].filter((p) => !p.submitted_at);
 
   return (

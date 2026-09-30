@@ -2,7 +2,7 @@ import "server-only";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { getRepo } from "@/lib/database";
-import { MemoryRepo } from "@/lib/database/memory-repo";
+import { isMemoryRepo } from "@/lib/database/memory-repo";
 import type { AdminUserRecord } from "@/lib/database/types";
 import { isDemoMode } from "@/lib/demo-mode";
 import { ADMIN_COOKIE, cookieOptions } from "@/lib/security/cookies";
@@ -18,7 +18,7 @@ async function readDemoToken() {
 export async function readAdminGate(): Promise<AdminGate> {
   if (isDemoMode()) {
     const repo = getRepo();
-    if (!(repo instanceof MemoryRepo)) return { kind: "anonymous" };
+    if (!isMemoryRepo(repo)) return { kind: "anonymous" };
     const ctx = await getDemoAdminContext(repo, await readDemoToken(), { requireMfa: false });
     if (!ctx) return { kind: "anonymous" };
     if (ctx.session.mfaVerified) return { kind: "panel", admin: ctx.admin };
@@ -31,7 +31,7 @@ export async function readAdminGate(): Promise<AdminGate> {
 async function endSession(): Promise<void> {
   if (isDemoMode()) {
     const repo = getRepo();
-    if (repo instanceof MemoryRepo) await logoutDemo(repo, await readDemoToken());
+    if (isMemoryRepo(repo)) await logoutDemo(repo, await readDemoToken());
     (await cookies()).set(ADMIN_COOKIE(), "", cookieOptions(0));
     return;
   }

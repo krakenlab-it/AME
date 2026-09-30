@@ -1,7 +1,7 @@
 import "server-only";
 import QRCode from "qrcode";
 import { getRepo } from "@/lib/database";
-import { MemoryRepo } from "@/lib/database/memory-repo";
+import { isMemoryRepo } from "@/lib/database/memory-repo";
 import { isDemoMode } from "@/lib/demo-mode";
 import { ADMIN_COOKIE } from "@/lib/security/cookies";
 import { cookies } from "next/headers";
@@ -40,7 +40,7 @@ export async function getMfaScreen(): Promise<MfaScreen> {
 async function enrollScreen(): Promise<MfaScreen> {
   if (isDemoMode()) {
     const repo = getRepo();
-    if (!(repo instanceof MemoryRepo)) return { mode: "error", message: "El modo demostración no está disponible." };
+    if (!isMemoryRepo(repo)) return { mode: "error", message: "El modo demostración no está disponible." };
     const ctx = await getDemoAdminContext(repo, (await cookies()).get(ADMIN_COOKIE())?.value, { requireMfa: false });
     if (!ctx) return { redirectTo: "/admin/login" };
     try {

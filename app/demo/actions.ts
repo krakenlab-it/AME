@@ -3,7 +3,7 @@
 import { cookies } from "next/headers";
 import { notFound, redirect } from "next/navigation";
 import { getRepo } from "@/lib/database";
-import { MemoryRepo } from "@/lib/database/memory-repo";
+import { isMemoryRepo, type MemoryRepo } from "@/lib/database/memory-repo";
 import { isDemoMode } from "@/lib/demo-mode";
 import { randomToken, sha256 } from "@/lib/encryption/crypto";
 import { ADMIN_ABSOLUTE_HOURS, ADMIN_COOKIE, cookieOptions, RESPONDENT_COOKIE, RESPONDENT_SESSION_MINUTES } from "@/lib/security/cookies";
@@ -17,7 +17,7 @@ import { startDemoSession } from "@/lib/services/demo-admin-auth";
 function demoRepoOrNotFound(): MemoryRepo {
   if (!isDemoMode()) notFound();
   const repo = getRepo();
-  if (!(repo instanceof MemoryRepo)) notFound();
+  if (!isMemoryRepo(repo)) notFound();
   return repo;
 }
 

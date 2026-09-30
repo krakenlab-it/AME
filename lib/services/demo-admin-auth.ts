@@ -37,7 +37,9 @@ interface DemoState {
   sessions: Map<string, DemoSession>;
 }
 
-const states = new WeakMap<MemoryRepo, DemoState>();
+/** Compartido vía globalThis: Next puede instanciar este módulo en varios bundles (páginas y acciones). */
+const shared = globalThis as unknown as { __demoAdminStates?: WeakMap<MemoryRepo, DemoState> };
+const states = (shared.__demoAdminStates ??= new WeakMap<MemoryRepo, DemoState>());
 let dummyHash: Promise<string> | null = null;
 
 function state(repo: MemoryRepo): DemoState {

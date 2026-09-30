@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { isDemoMode } from "@/lib/demo-mode";
+import { isMemoryRepo, MemoryRepo } from "@/lib/database/memory-repo";
 import { createDemoRepo } from "@/lib/database/demo";
 import { getDemoAdminContext, startDemoSession } from "@/lib/services/demo-admin-auth";
 import { can } from "@/lib/security/rbac";
@@ -64,5 +65,11 @@ describe("acceso rápido de pruebas (solo modo demostración)", () => {
     vi.spyOn(console, "warn").mockImplementation(() => undefined);
     const repo = createDemoRepo();
     expect(await getDemoAdminContext(repo, "x".repeat(43))).toBeNull();
+  });
+
+  it("isMemoryRepo reconoce el repositorio en memoria sin depender de instanceof", () => {
+    const repo = new MemoryRepo();
+    expect(isMemoryRepo(repo)).toBe(true);
+    expect(isMemoryRepo({ ...repo, isMemoryRepo: undefined } as unknown as MemoryRepo)).toBe(false);
   });
 });
