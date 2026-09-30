@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { actorLabel, AUDIT_ACTIONS, AUDIT_LABELS, auditLabel, isAuditAction, ROLE_LABELS } from "@/lib/admin/labels";
+import { actorLabel, AUDIT_ACTIONS, AUDIT_LABELS, auditLabel, isAuditAction, ROLE_LABELS, ROLE_SCOPE } from "@/lib/admin/labels";
 
 describe("etiquetas del panel administrativo", () => {
   it("cada evento de auditoría tiene un texto legible en español", () => {
@@ -24,7 +24,10 @@ describe("etiquetas del panel administrativo", () => {
     expect(actorLabel("otro")).toBe("otro");
   });
 
-  it("los tres roles tienen nombre", () => {
+  it("los tres roles tienen nombre y una frase que dice que es el mismo panel", () => {
     expect(Object.keys(ROLE_LABELS).sort()).toEqual(["ADMIN", "EXPORTER", "REVIEWER"]);
+    expect(Object.keys(ROLE_SCOPE).sort()).toEqual(["ADMIN", "EXPORTER", "REVIEWER"]);
+    expect(ROLE_SCOPE.REVIEWER).toMatch(/mismo panel/i);
+    expect(ROLE_SCOPE.EXPORTER).toMatch(/mismo panel/i);
   });
 });

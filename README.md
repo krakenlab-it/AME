@@ -62,7 +62,7 @@ npm run keys:generate      # pega ENCRYPTION_KEY, HASH_PEPPER y CRON_SECRET en .
 npm run dev
 ```
 
-**Probar sin Supabase (modo demostración).** Agrega `DEMO_MODE=true` en `.env.local` y abre `http://localhost:3000`. La consola del servidor muestra dos enlaces de prueba con sus cédulas ficticias, el usuario `admin@demo.local / Demo-portal-2026` y el secreto TOTP para agregarlo a la app autenticadora del teléfono. Ese login de demostración no usa Supabase Auth: vive en memoria y se pierde al reiniciar. **Nunca** actives `DEMO_MODE` en Vercel: la aplicación se niega a arrancar así en producción.
+**Probar sin Supabase (modo demostración).** Agrega `DEMO_MODE=true` en `.env.local` y abre `http://localhost:3000`. En el inicio y en el ingreso aparece un recuadro con dos botones: **entrar como administrador** (el panel completo) y **entrar como usuario** (la persona que actualiza sus datos). Revisor de fichas y exportación a AIG no son pantallas distintas: son el mismo panel con menos opciones (`revisor@demo.local` y `exportador@demo.local`, contraseña `Demo-portal-2026`). La consola también muestra enlaces de prueba, el usuario `admin@demo.local` y el secreto TOTP. Ese ingreso no usa Supabase Auth: vive en memoria y se pierde al reiniciar. **Nunca** actives `DEMO_MODE` en producción: la aplicación se niega a arrancar así.
 
 ## Supabase: configuración
 

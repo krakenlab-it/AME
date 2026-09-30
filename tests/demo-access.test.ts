@@ -3,6 +3,7 @@ import { isDemoMode } from "@/lib/demo-mode";
 import { isMemoryRepo, MemoryRepo } from "@/lib/database/memory-repo";
 import { createDemoRepo } from "@/lib/database/demo";
 import { getDemoAdminContext, startDemoSession } from "@/lib/services/demo-admin-auth";
+import { pickDemoUser } from "@/lib/demo/enter";
 import { can } from "@/lib/security/rbac";
 
 vi.mock("server-only", () => ({}));
@@ -65,6 +66,17 @@ describe("acceso rápido de pruebas (solo modo demostración)", () => {
     vi.spyOn(console, "warn").mockImplementation(() => undefined);
     const repo = createDemoRepo();
     expect(await getDemoAdminContext(repo, "x".repeat(43))).toBeNull();
+  });
+
+  it("la puerta de usuario abre a quien está a mitad del formulario", () => {
+    const people = [
+      { id: "pendiente", status: "PENDING" as const, submitted_at: null, first_names: "Ana", last_names: "Paz" },
+      { id: "listo", status: "COMPLETED" as const, submitted_at: "2026-09-01", first_names: "Luis", last_names: "Paz" },
+      { id: "camino", status: "STARTED" as const, submitted_at: null, first_names: "Lucía", last_names: "Paz" },
+    ];
+    expect(pickDemoUser(people)?.id).toBe("camino");
+    expect(pickDemoUser(people.filter((person) => person.id !== "camino"))?.id).toBe("pendiente");
+    expect(pickDemoUser(people.filter((person) => person.submitted_at))).toBeNull();
   });
 
   it("isMemoryRepo reconoce el repositorio en memoria sin depender de instanceof", () => {

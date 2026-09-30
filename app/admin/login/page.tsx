@@ -41,7 +41,7 @@ export default async function AdminLoginPage() {
       <p className="text-sm text-ink-muted">
         El acceso es solo por invitación. <AdminAuthLink href="/admin/recuperar">Olvidé mi contraseña</AdminAuthLink>
       </p>
-      <DemoAccess show="admin" />
+      <DemoAccess />
     </AdminAuthCard>
   );
 }

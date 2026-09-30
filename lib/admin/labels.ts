@@ -46,8 +46,15 @@ export function actorLabel(actor: string): string {
 
 export const ROLE_LABELS: Record<AdminRole, string> = {
   ADMIN: "Administrador",
-  REVIEWER: "Revisor",
-  EXPORTER: "Exportador",
+  REVIEWER: "Revisor de fichas",
+  EXPORTER: "Exportación a AIG",
+};
+
+/** Una frase para dejar claro que es el mismo panel, con un trabajo más chico. */
+export const ROLE_SCOPE: Record<AdminRole, string> = {
+  ADMIN: "Panel completo",
+  REVIEWER: "Mismo panel: solo revisar fichas",
+  EXPORTER: "Mismo panel: solo el archivo para AIG",
 };
 
 export const REVIEW_REASON_LABELS: Record<string, string> = {

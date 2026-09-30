@@ -37,7 +37,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
               </>
             )}
             <ProtectedNote />
-            <DemoAccess show="respondent" />
+            <DemoAccess />
           </div>
         }
       />

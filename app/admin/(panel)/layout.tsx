@@ -3,7 +3,7 @@ import { LogOut } from "lucide-react";
 import { MaristaLogo } from "@/components/brand/logos";
 import { AdminNav, type AdminNavItem } from "@/components/admin/admin-nav";
 import { logoutAction } from "@/app/admin/auth-actions";
-import { ROLE_LABELS } from "@/lib/admin/labels";
+import { ROLE_LABELS, ROLE_SCOPE } from "@/lib/admin/labels";
 import { can, type Permission } from "@/lib/security/rbac";
 import { requireAdmin } from "@/lib/server/admin-guard";
 
@@ -57,6 +57,7 @@ export default async function PanelLayout({ children }: { children: React.ReactN
           <p className="px-3.5 pb-1 leading-tight">
             <span className="block truncate text-sm font-semibold text-ink">{admin.full_name}</span>
             <span className="block text-sm text-ink-muted">{ROLE_LABELS[admin.role]}</span>
+            <span className="mt-1 block text-xs leading-snug text-ink-muted">{ROLE_SCOPE[admin.role]}</span>
           </p>
           <LogoutButton name={admin.full_name} />
         </div>
@@ -71,7 +72,7 @@ export default async function PanelLayout({ children }: { children: React.ReactN
           <div className="flex items-center gap-1">
             <p className="text-right text-xs leading-tight">
               <span className="block max-w-[9rem] truncate font-semibold text-ink">{admin.full_name}</span>
-              <span className="block text-ink-muted">{ROLE_LABELS[admin.role]}</span>
+              <span className="block text-ink-muted">{ROLE_SCOPE[admin.role]}</span>
             </p>
             <LogoutButton name={admin.full_name} compact />
           </div>
