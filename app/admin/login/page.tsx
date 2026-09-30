@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { AdminAuthCard, AdminAuthLink } from "@/components/admin/auth-card";
 import { LoginForm } from "@/components/admin/auth-form";
+import { DemoAccess } from "@/components/demo/demo-access";
 import { Notice } from "@/components/ui/notice";
 import { isDemoMode } from "@/lib/demo-mode";
 import { readAdminGate, signOutAndClear } from "@/lib/server/admin-guard";
@@ -40,6 +41,7 @@ export default async function AdminLoginPage() {
       <p className="text-sm text-ink-muted">
         El acceso es solo por invitación. <AdminAuthLink href="/admin/recuperar">Olvidé mi contraseña</AdminAuthLink>
       </p>
+      <DemoAccess show="admin" />
     </AdminAuthCard>
   );
 }
