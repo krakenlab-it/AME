@@ -2,7 +2,8 @@ import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes, 
 
 /**
  * Cifrado a nivel de aplicación (AES-256-GCM) para campos de riesgo elevado:
- * cédula, número de cuenta, cédula del titular y secretos MFA.
+ * cédula, número de cuenta y cédula del titular.
+ * El secreto TOTP del panel ya no se guarda aquí: vive en Supabase Auth.
  *
  * Formato almacenado:  v1.<iv>.<authTag>.<ciphertext>  (base64url)
  * Para rotar la llave: mover la actual a ENCRYPTION_KEY_PREVIOUS y poner una nueva en ENCRYPTION_KEY.

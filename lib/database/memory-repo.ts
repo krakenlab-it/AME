@@ -3,7 +3,6 @@ import { encrypt, keyedHash } from "@/lib/encryption/crypto";
 import {
   RepoError,
   type AccessTokenRecord,
-  type AdminSessionRecord,
   type AdminUserRecord,
   type AuditEvent,
   type AuditRow,
@@ -30,7 +29,6 @@ export class MemoryRepo implements Repo {
   securityEvents: { event_type: string; ip_hash: string | null }[] = [];
   buckets = new Map<string, number>();
   admins = new Map<string, AdminUserRecord>();
-  adminSessions = new Map<string, AdminSessionRecord>();
   exports: { admin_id: string; record_count: number; fields: string[]; purpose: string }[] = [];
   notices: NoticeRecord[] = [];
   exportRows: ExportSourceRow[] = [];
@@ -56,7 +54,8 @@ export class MemoryRepo implements Repo {
   }
 
   // ── comunes ──
-  async rateLimitHit(bucket: string, limit: number) {
+  async rateLimitHit(bucket: string, limit: number, windowSeconds: number) {
+    void windowSeconds;
     const hits = (this.buckets.get(bucket) ?? 0) + 1;
     this.buckets.set(bucket, hits);
     return { allowed: hits <= limit, hits };
@@ -108,24 +107,30 @@ export class MemoryRepo implements Repo {
 
   // ── administración ──
   async findAdminByEmail(email: string) { return [...this.admins.values()].find((a) => a.email === email.toLowerCase()) ?? null; }
+  async findAdminByAuthUserId(authUserId: string) { return [...this.admins.values()].find((a) => a.auth_user_id === authUserId) ?? null; }
   async getAdmin(id: string) { return this.admins.get(id) ?? null; }
-  async createAdmin(a: { email: string; full_name: string; role: AdminUserRecord["role"]; password_hash: string }) {
+  async createAdmin(a: { email: string; full_name: string; role: AdminUserRecord["role"]; auth_user_id: string | null }) {
     return this.createAdminSync(a);
   }
-  createAdminSync(a: { email: string; full_name: string; role: AdminUserRecord["role"]; password_hash: string }) {
-    const rec: AdminUserRecord = { id: randomUUID(), mfa_secret_encrypted: null, mfa_enabled: false, active: true, failed_logins: 0, locked_until: null, ...a };
+  createAdminSync(a: { email: string; full_name: string; role: AdminUserRecord["role"]; auth_user_id: string | null }) {
+    const rec: AdminUserRecord = {
+      id: randomUUID(),
+      email: a.email.toLowerCase(),
+      full_name: a.full_name,
+      role: a.role,
+      auth_user_id: a.auth_user_id,
+      mfa_enabled: false,
+      active: true,
+      last_login_at: null,
+    };
     this.admins.set(rec.id, rec);
     return rec;
   }
-  async updateAdmin(id: string, patch: Partial<AdminUserRecord>) { Object.assign(this.admins.get(id)!, patch); }
-  async createAdminSession(s: { session_hash: string; admin_id: string; expires_at: string }) {
-    const now = new Date().toISOString();
-    const rec: AdminSessionRecord = { id: randomUUID(), mfa_verified: false, created_at: now, last_seen_at: now, revoked_at: null, ...s };
-    this.adminSessions.set(rec.id, rec);
-    return rec;
+  async updateAdmin(id: string, patch: Partial<AdminUserRecord>) {
+    const admin = this.admins.get(id);
+    if (!admin) return;
+    Object.assign(admin, patch);
   }
-  async findAdminSession(hash: string) { return [...this.adminSessions.values()].find((s) => s.session_hash === hash) ?? null; }
-  async updateAdminSession(id: string, patch: Partial<AdminSessionRecord>) { Object.assign(this.adminSessions.get(id)!, patch); }
   async statusCounts() {
     const c: Record<PersonStatus, number> = { PENDING: 0, STARTED: 0, COMPLETED: 0, NEEDS_REVIEW: 0 };
     for (const p of this.people.values()) c[p.status]++;

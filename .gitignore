@@ -7,6 +7,7 @@ coverage
 .env.*.local
 *.log
 .vercel
+supabase/.temp
 # Nunca subir datos reales
 data/
 *.real.csv

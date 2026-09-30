@@ -20,7 +20,7 @@ Portal privado para que cada asegurado de la **Agrupación Marista Ecuatoriana**
    - Revisión
    - Confirmación con número `AIG-XXXXXXXX`
 5. El envío es definitivo. El enlace queda usado, se registra la evidencia del consentimiento y se envía un correo sin datos sensibles.
-6. El panel `/admin` tiene MFA y tres roles (ADMIN, REVIEWER, EXPORTER). Desde ahí se ven los estados, se revisan los casos marcados y se genera el archivo para AIG, con registro de cada exportación.
+6. El panel `/admin` entra con Supabase Auth (invitación, contraseña y TOTP en el teléfono) y tres roles (ADMIN, REVIEWER, EXPORTER). Desde ahí se ven los estados, se revisan los casos marcados y se genera el archivo para AIG, con registro de cada exportación.
 
 No existe búsqueda pública. Ninguna ruta devuelve datos personales sin enlace y cédula válidos.
 
@@ -43,7 +43,7 @@ Navegador ──HTTPS──> Next.js en Vercel (Server Components + Server Actio
 | `config/privacy.ts` | Datos legales configurables (placeholders hasta completarlos) |
 | `lib/database/` | Interfaces del repositorio, implementación Supabase, repositorio en memoria (pruebas y demo) |
 | `lib/services/` | Lógica: identificación, envío, importación, enlaces, exportación, autenticación admin, correo |
-| `lib/security/` | Cookies, RBAC, TOTP, contraseñas (scrypt), enmascarado, CAPTCHA |
+| `lib/security/` | Cookies del titular, RBAC, TOTP de demostración, contraseñas (scrypt, solo demo), enmascarado, CAPTCHA |
 | `lib/validation/` | Cédula, teléfono, esquemas Zod, sanitización |
 | `lib/privacy/` | Aviso, consentimientos, detector de placeholders, bloqueo de producción |
 | `supabase/migrations/` | Esquema SQL, RLS y funciones |
@@ -62,18 +62,23 @@ npm run keys:generate      # pega ENCRYPTION_KEY, HASH_PEPPER y CRON_SECRET en .
 npm run dev
 ```
 
-**Probar sin Supabase (modo demostración).** Agrega `DEMO_MODE=true` en `.env.local` y abre `http://localhost:3000`. La consola del servidor muestra dos enlaces de prueba con sus cédulas ficticias, el usuario `admin@demo.local / Demo-portal-2026` y el secreto TOTP para agregarlo a tu app autenticadora. Los datos viven en memoria y se pierden al reiniciar. **Nunca** actives `DEMO_MODE` en Vercel: la aplicación se niega a arrancar así en producción.
+**Probar sin Supabase (modo demostración).** Agrega `DEMO_MODE=true` en `.env.local` y abre `http://localhost:3000`. La consola del servidor muestra dos enlaces de prueba con sus cédulas ficticias, el usuario `admin@demo.local / Demo-portal-2026` y el secreto TOTP para agregarlo a la app autenticadora del teléfono. Ese login de demostración no usa Supabase Auth: vive en memoria y se pierde al reiniciar. **Nunca** actives `DEMO_MODE` en Vercel: la aplicación se niega a arrancar así en producción.
 
 ## Supabase: configuración
 
 1. Crea un proyecto en [supabase.com](https://supabase.com). Se recomienda la región **São Paulo (sa-east-1)**, cerca de Ecuador; `vercel.json` usa la región `gru1`, que está en la misma zona.
-2. En **SQL Editor**, pega y ejecuta el contenido de `supabase/migrations/20260929000000_initial_schema.sql`. Si usas la CLI de Supabase, ejecuta `supabase db push`.
-3. En **Project Settings → API**, copia la **Project URL** en `SUPABASE_URL` y la clave **service_role** en `SUPABASE_SERVICE_ROLE_KEY`.
-   - La clave `service_role` solo va en variables de servidor. Nunca uses el prefijo `NEXT_PUBLIC_`.
-   - La app **no usa** la clave `anon`. Todas las tablas tienen RLS forzado, sin políticas, y se revocan los permisos de `anon` y `authenticated`, así que el navegador no puede leer nada aunque alguien obtenga esa clave.
-4. Opcional pero recomendado:
-   - En **Database → Network Restrictions**, limita el acceso directo a la base.
-   - En **Authentication**, desactiva el registro público. El panel usa su propio sistema de usuarios.
+2. En **SQL Editor**, pega y ejecuta `supabase/migrations/20260929000000_initial_schema.sql` y después `supabase/migrations/20260930164720_admin_supabase_auth.sql`. Si usas la CLI de Supabase, ejecuta `supabase db push`.
+3. En **Project Settings → API**, copia la **Project URL** en `SUPABASE_URL` y en `NEXT_PUBLIC_SUPABASE_URL`. Copia la clave **service_role** en `SUPABASE_SERVICE_ROLE_KEY` y la clave **anon** (o publishable) en `NEXT_PUBLIC_SUPABASE_ANON_KEY`.
+   - La clave `service_role` solo va en variables de servidor. Nunca uses el prefijo `NEXT_PUBLIC_` con ella.
+   - La clave anon solo inicia la sesión de Supabase Auth del panel. Todas las tablas de datos personales tienen RLS forzado, sin políticas, y se revocan los permisos de `anon` y `authenticated`. El navegador no puede leer `people` ni `access_tokens` aunque alguien obtenga esa clave. Después de comprobar la sesión y el segundo factor, el servidor sigue leyendo con `service_role`.
+4. En **Authentication**:
+   - Desactiva el registro público (Allow new users to sign up = off). El alta es solo por invitación.
+   - Activa **MFA → TOTP** (App Authenticator).
+   - **URL Configuration**: Site URL = `APP_BASE_URL`. En Redirect URLs agrega `https://tu-dominio/admin/auth/confirm` (y el equivalente de preview).
+   - Plantillas de correo **Invite user** y **Reset password**: el enlace tiene que llegar al servidor, no solo como fragmento `#access_token`. Usa una URL así:
+     `{{ .SiteURL }}/admin/auth/confirm?token_hash={{ .TokenHash }}&type={{ .EmailActionType }}`
+     Con `type=invite` la persona crea su contraseña; con `type=recovery` la restablece. Si dejas la plantilla por defecto, la página de confirmación también acepta el regreso con `?code=` o el fragmento `#access_token`.
+5. En **Database → Network Restrictions**, limita el acceso directo a la base.
 
 ## Variables de entorno
 
@@ -83,7 +88,8 @@ Todas están documentadas en `.env.example`.
 
 | Variable | Uso |
 |---|---|
-| `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` | Conexión a la base (solo servidor) |
+| `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` | Conexión a la base (solo servidor), después de comprobar Auth |
+| `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Sesión de Supabase Auth del panel. No leen datos personales |
 | `ENCRYPTION_KEY` | 32 bytes en base64 para AES-256-GCM. **Si se pierde, los datos cifrados no se recuperan.** Guárdala en un gestor de secretos. |
 | `HASH_PEPPER` | Pepper del HMAC de cédulas e IP. No lo cambies después de importar la base. |
 | `APP_BASE_URL` | Dominio público con el que se construyen los enlaces, por ejemplo `https://actualizacion.dominio.com` |
@@ -106,22 +112,24 @@ Todas están documentadas en `.env.example`.
 
 Están en `supabase/migrations/`, con nombres por fecha. Cada cambio de esquema debe ir en un archivo nuevo; no se edita uno ya aplicado. La migración inicial crea:
 
-- Tablas: `people`, `contact_information`, `bank_information`, `consents`, `access_tokens`, `audit_logs`, `name_change_history`, `privacy_notices`, `respondent_sessions`, `admin_users`, `admin_sessions`, `exports`, `import_batches`, `security_events`, `rate_limits`.
-- RLS forzado en todas.
+- Tablas: `people`, `contact_information`, `bank_information`, `consents`, `access_tokens`, `audit_logs`, `name_change_history`, `privacy_notices`, `respondent_sessions`, `admin_users`, `exports`, `import_batches`, `security_events`, `rate_limits`.
+- `admin_sessions` se elimina en `20260930164720_admin_supabase_auth.sql`. La sesión del panel es la de Supabase Auth.
+- RLS forzado en todas. Esa migración no abre `people` ni `access_tokens` a `authenticated`.
 - Funciones transaccionales: `submit_person_data`, `rate_limit_hit`, `register_token_failure`, `anonymize_expired_people`, `purge_expired_sessions`, `people_status_counts`. Solo `service_role` puede ejecutarlas.
 
-## Crear el primer administrador
+## Crear un administrador
 
-Con `.env.local` (o `.env`) apuntando a Supabase:
+Con `.env.local` (o `.env`) apuntando a Supabase, y con la migración de Auth ya aplicada:
 
 ```bash
 npm run admin:create -- --email persona@unibrokers.com.ec --name "Nombre Apellido" --role ADMIN
 ```
 
-- La contraseña se pide por consola: mínimo 12 caracteres, con letras y números.
+- No pide contraseña. Supabase envía un correo de invitación. La persona abre el enlace, elige su contraseña en `/admin/registro` y configura el TOTP en el teléfono antes de entrar al panel.
 - Roles disponibles: `ADMIN` (todo), `REVIEWER` (ver y revisar registros), `EXPORTER` (resumen y exportación).
-- En el primer ingreso a `/admin`, el sistema muestra un código QR para configurar la verificación en dos pasos (TOTP). Sin MFA no se entra al panel.
-- Seguridad de las sesiones: se cierran tras 30 minutos de inactividad o 8 horas en total. La cuenta se bloquea 15 minutos después de 5 contraseñas incorrectas.
+- Sin el segundo factor (AAL2) no se entra al panel.
+- Si el correo ya estaba en `admin_users` pero sin `auth_user_id` (los administradores creados antes de este cambio), el mismo comando lo invita y vincula la fila. Hay que volver a configurar el TOTP: el secreto anterior se borra con la migración y no se puede reutilizar.
+- Quien olvide la contraseña usa **Olvidé mi contraseña** en `/admin/login`.
 
 ## Carga de la base inicial y generación de links
 
@@ -178,9 +186,8 @@ El archivo de enlaces da acceso a los formularios. Compártelo solo con quien ha
 - Los nombres "confirmados" no se pueden alterar en el envío.
 
 **Sesiones**
-- Cookies `__Host-`, `HttpOnly`, `Secure`, `SameSite=Strict`.
-- Sesión del titular: 30 minutos.
-- Sesión del panel: rotación del identificador al completar MFA, expiración por inactividad y total.
+- El titular sigue con cookie `__Host-`, `HttpOnly`, `Secure`, `SameSite=Strict`, 30 minutos.
+- El panel usa la cookie de Supabase Auth (`@supabase/ssr`): `HttpOnly`, `Secure` fuera de desarrollo y `SameSite=Lax`, para que el enlace del correo pueda completar el ingreso. El middleware exige sesión verificada en `/admin` y AAL2 (TOTP) antes del panel.
 
 **Inyecciones**
 - Consultas parametrizadas: sin SQL dinámico con datos de usuario.
@@ -248,7 +255,7 @@ Las pruebas cubren:
 - **Validaciones:** cédula; correos y cuentas que no coinciden; campos obligatorios; mass assignment.
 - **Identificación y enlaces:** identificación; token vencido, revocado y usado; intento de abrir el registro de otra persona; bloqueo tras 5 intentos; rate limiting contra búsquedas masivas; CAPTCHA.
 - **Envío:** actualización de datos; consentimiento obligatorio; nombres corregidos y cuenta de tercero, que pasan a revisión; ausencia de datos personales en la auditoría.
-- **Panel:** RBAC; exportador sin permiso; perfiles de exportación; fórmulas; importación sin descarte silencioso; login con MFA, rotación de sesión y bloqueo.
+- **Panel:** RBAC; exportador sin permiso; perfiles de exportación; fórmulas; importación sin descarte silencioso; el panel exige sesión de Auth vinculada y TOTP (AAL2); el modo demostración conserva contraseña, TOTP y bloqueo.
 - **Cifrado y rotación de llave.**
 - **Placeholders legales y bloqueo en producción.**
 

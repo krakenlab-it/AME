@@ -1,12 +1,14 @@
 /**
- * Crea un usuario administrativo. Uso:
+ * Invita a un administrador por Supabase Auth y lo vincula en admin_users.
+ * Uso:
  *   npm run admin:create -- --email persona@dominio.com --name "Nombre Apellido" --role ADMIN
- * Roles: ADMIN | REVIEWER | EXPORTER. La contraseña se pide por consola (no queda en el historial).
- * En el primer ingreso, el sistema obliga a configurar la verificación en dos pasos (TOTP).
+ * Roles: ADMIN | REVIEWER | EXPORTER.
+ * No pide contraseña: la persona la elige al abrir el correo de invitación
+ * y configura TOTP en el primer ingreso.
+ * Si el correo ya está en admin_users sin auth_user_id, vincula esa fila
+ * (sirve para migrar los administradores que existían antes de Supabase Auth).
  */
 import { createClient } from "@supabase/supabase-js";
-import { createInterface } from "node:readline";
-import { hashPassword, passwordPolicyError } from "../lib/security/password";
 import { ADMIN_ROLES, type AdminRole } from "../lib/security/rbac";
 
 function arg(name: string): string | undefined {
@@ -14,21 +16,14 @@ function arg(name: string): string | undefined {
   return i >= 0 ? process.argv[i + 1] : undefined;
 }
 
-async function askHidden(question: string): Promise<string> {
-  const rl = createInterface({ input: process.stdin, output: process.stdout, terminal: true });
-  const out = rl as unknown as { _writeToOutput: (s: string) => void; output: NodeJS.WriteStream };
-  let muted = false;
-  out._writeToOutput = (s: string) => { if (!muted) out.output.write(s); };
-  return new Promise((resolve) => {
-    rl.question(question, (answer) => { rl.close(); process.stdout.write("\n"); resolve(answer); });
-    muted = true;
-  });
-}
-
 function loadEnv() {
   for (const f of [".env.local", ".env"]) {
     try { process.loadEnvFile(f); } catch { /* archivo opcional */ }
   }
+}
+
+function baseUrl(): string {
+  return (process.env.APP_BASE_URL ?? "http://localhost:3000").replace(/\/$/, "");
 }
 
 async function main() {
@@ -47,22 +42,55 @@ async function main() {
   const url = process.env.SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !key) {
-    console.error("Configura SUPABASE_URL y SUPABASE_SERVICE_ROLE_KEY (por ejemplo con: node --env-file=.env ...).");
+    console.error("Configura SUPABASE_URL y SUPABASE_SERVICE_ROLE_KEY.");
     process.exit(1);
   }
-  const password = process.env.ADMIN_PASSWORD ?? (await askHidden("Contraseña (mínimo 12 caracteres, letras y números): "));
-  const policy = passwordPolicyError(password);
-  if (policy) {
-    console.error(policy);
+
+  const db = createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } });
+  const existing = await db.from("admin_users").select("id, auth_user_id").eq("email", email).maybeSingle();
+  if (existing.error) {
+    console.error(`No se pudo leer admin_users: ${existing.error.message}`);
     process.exit(1);
   }
-  const db = createClient(url, key, { auth: { persistSession: false } });
-  const { error } = await db.from("admin_users").insert({ email, full_name: name, role, password_hash: await hashPassword(password) });
-  if (error) {
-    console.error(`No se pudo crear el usuario: ${error.message}`);
+  if (existing.data?.auth_user_id) {
+    console.error(`Ese correo ya está vinculado a Supabase Auth. Para una clave nueva usa /admin/recuperar.`);
     process.exit(1);
   }
-  console.log(`Usuario ${email} creado con rol ${role}. Al ingresar en /admin se le pedirá configurar MFA.`);
+
+  const redirectTo = `${baseUrl()}/admin/auth/confirm?next=${encodeURIComponent("/admin/registro")}`;
+  const invited = await db.auth.admin.inviteUserByEmail(email, { redirectTo, data: { full_name: name } });
+  let authUserId = invited.data.user?.id ?? null;
+  let actionLink: string | null = null;
+
+  if (invited.error || !authUserId) {
+    const recovery = await db.auth.admin.generateLink({
+      type: "recovery",
+      email,
+      options: { redirectTo: `${baseUrl()}/admin/auth/confirm?next=${encodeURIComponent("/admin/restablecer")}` },
+    });
+    if (recovery.error || !recovery.data.user) {
+      console.error(`No se pudo invitar: ${invited.error?.message ?? recovery.error?.message ?? "sin usuario"}`);
+      process.exit(1);
+    }
+    authUserId = recovery.data.user.id;
+    actionLink = recovery.data.properties?.action_link ?? null;
+  }
+
+  const row = { email, full_name: name, role, auth_user_id: authUserId, active: true };
+  const saved = existing.data
+    ? await db.from("admin_users").update(row).eq("id", existing.data.id)
+    : await db.from("admin_users").insert(row);
+  if (saved.error) {
+    console.error(`Auth quedó creado (${authUserId}) pero no se pudo guardar admin_users: ${saved.error.message}`);
+    process.exit(1);
+  }
+
+  console.log(`Usuario ${email} vinculado con rol ${role}.`);
+  console.log("Supabase envía el correo de invitación. Al abrirlo elige contraseña y configura el TOTP del teléfono en /admin/mfa.");
+  if (actionLink) {
+    console.log("Ese correo ya existía en Auth. Enlace de un solo uso para elegir contraseña (no lo reenvíes en masa):");
+    console.log(actionLink);
+  }
 }
 
 main();

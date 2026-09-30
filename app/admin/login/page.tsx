@@ -1,27 +1,45 @@
 import { redirect } from "next/navigation";
-import { MaristaLogo } from "@/components/brand/logos";
+import { AdminAuthCard, AdminAuthLink } from "@/components/admin/auth-card";
 import { LoginForm } from "@/components/admin/auth-form";
-import { getRepo } from "@/lib/database";
-import { getAdminContext } from "@/lib/services/admin-auth";
-import { readAdminToken } from "@/lib/server/admin-guard";
+import { Notice } from "@/components/ui/notice";
+import { isDemoMode } from "@/lib/demo-mode";
+import { readAdminGate, signOutAndClear } from "@/lib/server/admin-guard";
+import { supabasePublicConfig } from "@/lib/supabase/public-env";
 import { loginAction } from "../auth-actions";
 
 export const metadata = { title: "Administración | Ingreso" };
 
 export default async function AdminLoginPage() {
-  if (await getAdminContext(getRepo(), await readAdminToken())) redirect("/admin");
+  const gate = await readAdminGate();
+  switch (gate.kind) {
+    case "panel":
+      redirect("/admin");
+    case "mfa_enroll":
+    case "mfa_verify":
+      redirect("/admin/mfa");
+    case "unlinked":
+      await signOutAndClear();
+      break;
+    case "anonymous":
+      break;
+    default: {
+      const unreachable: never = gate;
+      return unreachable;
+    }
+  }
+
+  const configured = isDemoMode() || supabasePublicConfig() !== null;
   return (
-    <main id="contenido" className="flex min-h-dvh items-center justify-center bg-marian-soft/40 px-5 py-12">
-      <div className="sheet w-full max-w-md space-y-6 p-8">
-        <div className="flex items-center gap-3">
-          <MaristaLogo className="w-12" />
-          <div>
-            <h1 className="text-2xl">Panel administrativo</h1>
-            <p className="text-sm text-ink-muted">Acceso restringido. Requiere verificación en dos pasos.</p>
-          </div>
-        </div>
-        <LoginForm action={loginAction} />
-      </div>
-    </main>
+    <AdminAuthCard title="Panel administrativo" subtitle="Acceso restringido. Requiere verificación en dos pasos.">
+      {!configured && (
+        <Notice tone="warning" title="Falta configurar Supabase Auth">
+          Agrega NEXT_PUBLIC_SUPABASE_URL y NEXT_PUBLIC_SUPABASE_ANON_KEY. La clave service_role no se usa en el navegador.
+        </Notice>
+      )}
+      <LoginForm action={loginAction} />
+      <p className="text-sm text-ink-muted">
+        El acceso es solo por invitación. <AdminAuthLink href="/admin/recuperar">Olvidé mi contraseña</AdminAuthLink>
+      </p>
+    </AdminAuthCard>
   );
 }

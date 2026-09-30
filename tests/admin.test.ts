@@ -1,15 +1,11 @@
 import { describe, expect, it } from "vitest";
 import ExcelJS from "exceljs";
 import { encrypt, sha256 } from "@/lib/encryption/crypto";
+import { MemoryRepo } from "@/lib/database/memory-repo";
 import type { ExportSourceRow } from "@/lib/database/types";
 import { can, ForbiddenError } from "@/lib/security/rbac";
 import { buildExportTable, createAigExport, neutralizeFormula } from "@/lib/services/export";
 import { importPeople, parseImportFile, validateImportRows } from "@/lib/services/import";
-import { hashPassword } from "@/lib/security/password";
-import { totpCode } from "@/lib/security/totp";
-import { decrypt } from "@/lib/encryption/crypto";
-import { getAdminContext, ensureMfaSecret, loginWithPassword, verifyMfa } from "@/lib/services/admin-auth";
-import { MemoryRepo } from "@/lib/database/memory-repo";
 import { makeCedula } from "./helpers/cedula";
 
 const C1 = "1710034065";
@@ -144,46 +140,5 @@ describe("importación inicial", () => {
     expect(await parseImportFile(csv.buffer as ArrayBuffer, "x.csv")).toEqual([{ row: 2, first_names: "Juan", last_names: "Pérez", national_id: C1 }]);
     const bad = new TextEncoder().encode("nombre,cedula\nJuan,1\n");
     await expect(parseImportFile(bad.buffer as ArrayBuffer, "x.csv")).rejects.toThrow(/columnas/);
-  });
-});
-
-describe("acceso administrativo", () => {
-  it("requiere contraseña + MFA y bloquea tras intentos fallidos", async () => {
-    const repo = new MemoryRepo();
-    const admin = await repo.createAdmin({ email: "admin@test.ec", full_name: "Admin", role: "ADMIN", password_hash: await hashPassword("Clave-segura-2026") });
-
-    expect((await loginWithPassword(repo, "admin@test.ec", "incorrecta", "ip")).ok).toBe(false);
-    const login = await loginWithPassword(repo, "admin@test.ec", "Clave-segura-2026", "ip");
-    expect(login.ok).toBe(true);
-    if (!login.ok) return;
-    expect(login.needsEnrollment).toBe(true);
-
-    // Sin MFA no hay acceso al panel
-    expect(await getAdminContext(repo, login.sessionToken)).toBeNull();
-    const pre = await getAdminContext(repo, login.sessionToken, { requireMfa: false });
-    const secret = await ensureMfaSecret(repo, pre!.admin);
-    const refreshed = await getAdminContext(repo, login.sessionToken, { requireMfa: false });
-    expect(decrypt(refreshed!.admin.mfa_secret_encrypted!)).toBe(secret);
-    const mfa = await verifyMfa(repo, refreshed!, totpCode(secret), "ip");
-    expect(mfa.ok).toBe(true);
-    if (!mfa.ok) return;
-    // Rotación de sesión: el token anterior deja de servir
-    expect(await getAdminContext(repo, login.sessionToken)).toBeNull();
-    expect((await getAdminContext(repo, mfa.sessionToken))?.admin.id).toBe(admin.id);
-
-    repo.buckets.clear();
-    for (let i = 0; i < 5; i++) await loginWithPassword(repo, "admin@test.ec", "mala", `ip-${i}`);
-    // El límite por correo ya frena el ataque; además la cuenta queda bloqueada aunque cambie la ventana
-    expect(await loginWithPassword(repo, "admin@test.ec", "Clave-segura-2026", "ip-y")).toMatchObject({ ok: false });
-    repo.buckets.clear();
-    expect(await loginWithPassword(repo, "admin@test.ec", "Clave-segura-2026", "ip-z")).toMatchObject({ ok: false, error: expect.stringContaining("bloqueada") });
-  });
-
-  it("no revela si un correo existe", async () => {
-    const repo = new MemoryRepo();
-    await repo.createAdmin({ email: "a@test.ec", full_name: "A", role: "ADMIN", password_hash: await hashPassword("Clave-segura-2026") });
-    const a = await loginWithPassword(repo, "a@test.ec", "mala-clave-123", "ip1");
-    const b = await loginWithPassword(repo, "noexiste@test.ec", "mala-clave-123", "ip2");
-    expect(a).toEqual(b);
   });
 });
