@@ -2,7 +2,7 @@ import { FlaskConical, ShieldCheck, UserRound } from "lucide-react";
 import { demoEnterAdminAction, demoEnterRespondentAction } from "@/app/demo/actions";
 import { DemoSubmit } from "@/components/demo/demo-submit";
 import { getRepo } from "@/lib/database";
-import { isMemoryRepo, type MemoryRepo } from "@/lib/database/memory-repo";
+import { isMemoryRepo } from "@/lib/database/memory-repo";
 import { isDemoMode } from "@/lib/demo-mode";
 import { ROLE_LABELS } from "@/lib/admin/labels";
 import { ADMIN_ROLES } from "@/lib/security/rbac";
