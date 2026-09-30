@@ -1,0 +1,68 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+    text-rendering: optimizeLegibility;
+  }
+  body {
+    @apply bg-paper font-sans text-ink antialiased;
+    font-size: 17px;
+    line-height: 1.55;
+  }
+  h1, h2, h3 {
+    @apply font-serif text-ink;
+    font-optical-sizing: auto;
+    letter-spacing: -0.01em;
+  }
+  :focus-visible {
+    outline: 3px solid #005289;
+    outline-offset: 3px;
+    border-radius: 6px;
+  }
+  ::selection {
+    background: #c9d8e6;
+  }
+}
+
+@layer components {
+  .sheet {
+    @apply rounded-sheet border border-marian-line/70 bg-white;
+  }
+  .field-input {
+    @apply block w-full rounded-xl border border-ink-faint/60 bg-white px-4 py-3 text-[17px] text-ink
+      placeholder:text-ink-faint transition-colors
+      focus:border-marian focus:outline-none focus:ring-4 focus:ring-marian/15
+      disabled:bg-marian-soft/50 disabled:text-ink-muted;
+    min-height: 52px;
+  }
+  .field-input[aria-invalid="true"] {
+    @apply border-alert ring-4 ring-alert/10;
+  }
+  .admin-table {
+    @apply w-full text-left text-sm;
+  }
+  .admin-table th {
+    @apply border-b border-marian-line px-3 py-2 font-semibold text-ink-muted;
+  }
+  .admin-table td {
+    @apply border-b border-marian-line/60 px-3 py-2.5 align-top;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+@keyframes settle {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+.step-enter {
+  animation: settle 260ms ease-out;
+}

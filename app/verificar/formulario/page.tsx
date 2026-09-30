@@ -1,0 +1,44 @@
+import { UpdateWizard } from "@/components/forms/update-wizard";
+import { PortalShell, PortalUnavailable } from "@/components/portal/shell";
+import { Notice } from "@/components/ui/notice";
+import { getRepo } from "@/lib/database";
+import { getActivePrivacy } from "@/lib/privacy/active";
+import { registeredView } from "@/lib/services/respondent";
+import { currentRespondent } from "@/lib/server/respondent-session";
+
+export default async function FormPage() {
+  const privacy = await getActivePrivacy(getRepo());
+  if (privacy.readiness.blockPortal) return <PortalUnavailable />;
+  const ctx = await currentRespondent();
+  const { config } = privacy;
+
+  return (
+    <PortalShell readiness={privacy.readiness} organizationName={config.organizationName}>
+      {!ctx ? (
+        <div className="mx-auto max-w-xl space-y-4 px-5 py-16">
+          <h1 className="text-3xl">Tu sesión no está activa</h1>
+          <Notice tone="warning">
+            Por seguridad, la sesión se cierra después de 30 minutos o al terminar el proceso. Vuelve a abrir el enlace personal que recibiste.
+          </Notice>
+        </div>
+      ) : (
+        <UpdateWizard
+          registered={registeredView(ctx.person)}
+          supportContact={config.supportContact}
+          privacy={{
+            version: privacy.version,
+            summary: privacy.text,
+            consentTexts: privacy.consentTexts,
+            responsibleLegalName: config.responsibleLegalName,
+            responsibleRuc: config.responsibleRuc,
+            responsibleAddress: config.responsibleAddress,
+            privacyEmail: config.privacyEmail,
+            privacyPhone: config.privacyPhone,
+            dataProtectionOfficer: config.dataProtectionOfficer,
+            recipientLegalName: config.recipientLegalName,
+          }}
+        />
+      )}
+    </PortalShell>
+  );
+}

@@ -1,0 +1,55 @@
+{
+  "name": "portal-actualizacion-ame",
+  "version": "1.0.0",
+  "description": "Portal seguro de verificación y actualización de datos — AME / Unibrokers / AIG",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint . --max-warnings=0",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "admin:create": "tsx scripts/create-admin.ts",
+    "keys:generate": "tsx scripts/generate-keys.ts"
+  },
+  "license": "UNLICENSED",
+  "dependencies": {
+    "@fontsource/figtree": "^5.3.0",
+    "@fontsource/literata": "^5.3.0",
+    "@hookform/resolvers": "^5.9.1",
+    "@supabase/supabase-js": "^2.117.2",
+    "clsx": "^2.1.1",
+    "exceljs": "^4.4.0",
+    "lucide-react": "^1.48.0",
+    "next": "^15.5.26",
+    "papaparse": "^5.7.0",
+    "qrcode": "^1.5.4",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "react-hook-form": "^7.89.0",
+    "server-only": "^0.0.1",
+    "tailwind-merge": "^3.7.0",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@eslint/eslintrc": "^3.3.7",
+    "@types/node": "^26.6.3",
+    "@types/papaparse": "^5.5.2",
+    "@types/qrcode": "^1.5.6",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "autoprefixer": "^10.6.1",
+    "eslint": "^9.39.5",
+    "eslint-config-next": "^15.5.26",
+    "postcss": "^8.5.28",
+    "tailwindcss": "^3.4.19",
+    "tsx": "^4.23.15",
+    "typescript": "^6.0.3",
+    "vitest": "^5.0.2"
+  },
+  "private": true,
+  "engines": {
+    "node": ">=20.9"
+  }
+}

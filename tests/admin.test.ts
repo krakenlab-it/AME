@@ -1,0 +1,189 @@
+import { describe, expect, it } from "vitest";
+import ExcelJS from "exceljs";
+import { encrypt, sha256 } from "@/lib/encryption/crypto";
+import type { ExportSourceRow } from "@/lib/database/types";
+import { can, ForbiddenError } from "@/lib/security/rbac";
+import { buildExportTable, createAigExport, neutralizeFormula } from "@/lib/services/export";
+import { importPeople, parseImportFile, validateImportRows } from "@/lib/services/import";
+import { hashPassword } from "@/lib/security/password";
+import { totpCode } from "@/lib/security/totp";
+import { decrypt } from "@/lib/encryption/crypto";
+import { getAdminContext, ensureMfaSecret, loginWithPassword, verifyMfa } from "@/lib/services/admin-auth";
+import { MemoryRepo } from "@/lib/database/memory-repo";
+import { makeCedula } from "./helpers/cedula";
+
+const C1 = "1710034065";
+const C2 = makeCedula("010203040");
+
+function exportRow(overrides: Partial<ExportSourceRow> = {}): ExportSourceRow {
+  return {
+    person_id: "p1", confirmation_code: "AIG-ABCDEFGH", first_names: "Juan", last_names: "Pérez", national_id_encrypted: encrypt(C1),
+    submitted_at: "2026-09-29T00:00:00Z", primary_email: "juan@correo.com", secondary_email: null, mobile_phone: "+593991234567",
+    address_line_1: "Av. 1", address_line_2: null, city: "Quito", province: "Pichincha", country: "Ecuador", postal_code: null,
+    bank_name: "Banco Pichincha", bank_other_name: null, account_type: "Ahorros", account_number_encrypted: encrypt("0022004821"),
+    account_holder_name: "Juan Pérez", account_holder_national_id_encrypted: encrypt(C1), consent_accepted_at: "2026-09-29T00:00:00Z",
+    privacy_notice_version: "1.0", ...overrides,
+  };
+}
+
+describe("permisos administrativos (RBAC)", () => {
+  it("aplica la matriz de roles", () => {
+    expect(can("ADMIN", "export:create")).toBe(true);
+    expect(can("EXPORTER", "export:create")).toBe(true);
+    expect(can("REVIEWER", "export:create")).toBe(false);
+    expect(can("EXPORTER", "people:view")).toBe(false);
+    expect(can("REVIEWER", "people:review")).toBe(true);
+    expect(can("REVIEWER", "people:import")).toBe(false);
+    expect(can(null, "dashboard:view")).toBe(false);
+  });
+
+  it("un empleado sin permiso no puede exportar", async () => {
+    const repo = new MemoryRepo();
+    repo.exportRows = [exportRow()];
+    await expect(
+      createAigExport(repo, { adminId: "a", role: "REVIEWER", profile: "REEMBOLSOS", format: "csv", purpose: "Envío mensual a AIG", ipHash: "x" }),
+    ).rejects.toBeInstanceOf(ForbiddenError);
+    expect(repo.exports).toHaveLength(0);
+  });
+});
+
+describe("exportación para AIG", () => {
+  it("el perfil de reclamos no incluye datos bancarios", () => {
+    const t = buildExportTable([exportRow()], "RECLAMOS");
+    expect(t.fields).not.toContain("account_number");
+    expect(JSON.stringify(t.data)).not.toContain("0022004821");
+    expect(t.data[0]).toContain(C1);
+  });
+
+  it("el perfil de reembolsos incluye la cuenta completa y conserva ceros iniciales", () => {
+    const t = buildExportTable([exportRow()], "REEMBOLSOS");
+    expect(t.data[0]).toContain("0022004821");
+  });
+
+  it("excluye registros sin consentimiento vigente", () => {
+    const t = buildExportTable([exportRow(), exportRow({ person_id: "p2", consent_accepted_at: null })], "RECLAMOS");
+    expect(t.data).toHaveLength(1);
+  });
+
+  it("neutraliza fórmulas de Excel", () => {
+    expect(neutralizeFormula("=HYPERLINK(\"x\")")).toBe("'=HYPERLINK(\"x\")");
+    expect(neutralizeFormula("+593")).toBe("'+593");
+    expect(neutralizeFormula("Quito")).toBe("Quito");
+  });
+
+  it("registra quién exportó, cuándo, cuántos registros y la finalidad", async () => {
+    const repo = new MemoryRepo();
+    repo.exportRows = [exportRow(), exportRow({ person_id: "p2" })];
+    const file = await createAigExport(repo, { adminId: "adm", role: "EXPORTER", profile: "REEMBOLSOS", format: "xlsx", purpose: "Pago de reembolsos septiembre", ipHash: "x" });
+    expect(file.count).toBe(2);
+    expect(repo.exports[0]).toMatchObject({ admin_id: "adm", record_count: 2, purpose: "Pago de reembolsos septiembre" });
+    expect(repo.auditLog.at(-1)).toMatchObject({ action: "EXPORT_CREATED", actor_id: "adm" });
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(new Uint8Array(file.buffer).buffer as ArrayBuffer);
+    expect(wb.worksheets[0]!.rowCount).toBe(3);
+  });
+
+  it("exige una finalidad", async () => {
+    const repo = new MemoryRepo();
+    await expect(createAigExport(repo, { adminId: "a", role: "ADMIN", profile: "RECLAMOS", format: "csv", purpose: "x", ipHash: "x" })).rejects.toThrow();
+  });
+});
+
+describe("importación inicial", () => {
+  const rows = [
+    { row: 2, first_names: "Juan Carlos", last_names: "Pérez López", national_id: C1 },
+    { row: 3, first_names: "María", last_names: "Andrade", national_id: C2.slice(1) }, // Excel quitó el 0 inicial
+    { row: 4, first_names: "Pedro", last_names: "Duplicado", national_id: C1 },
+    { row: 5, first_names: "Ana", last_names: "Inválida", national_id: "1234567890" },
+    { row: 6, first_names: "", last_names: "Sin nombre", national_id: makeCedula("171234567") },
+  ];
+
+  it("detecta duplicados, cédulas inválidas y campos vacíos", () => {
+    const v = validateImportRows(rows);
+    expect(v.valid.map((r) => r.row)).toEqual([2, 3]);
+    expect(v.valid[1]!.national_id).toBe(C2);
+    expect(v.errors.map((e) => e.row)).toEqual([4, 5, 6]);
+    expect(v.errors[0]!.reason).toContain("duplicada");
+    expect(JSON.stringify(v.errors)).not.toContain(C1); // el reporte enmascara la cédula
+  });
+
+  it("no importa nada si hay errores y no se autorizó la importación parcial", async () => {
+    const repo = new MemoryRepo();
+    const out = await importPeople(repo, { rows, filename: "base.csv", adminId: "a", allowPartial: false });
+    expect(out).toMatchObject({ committed: false, imported: 0 });
+    expect(repo.people.size).toBe(0);
+  });
+
+  it("importa solo las filas válidas, genera tokens y reporta las rechazadas", async () => {
+    const repo = new MemoryRepo();
+    const out = await importPeople(repo, { rows, filename: "base.csv", adminId: "a", allowPartial: true });
+    expect(out.imported).toBe(2);
+    expect(out.rejected).toHaveLength(3);
+    expect(repo.tokens.size).toBe(2);
+    const urls = out.linksCsv!.match(/https:\/\/portal\.test\/verificar\/[A-Za-z0-9_-]+/g)!;
+    expect(urls).toHaveLength(2);
+    // el token no contiene la cédula y en la base solo se guarda su hash
+    const token = urls[0]!.split("/").at(-1)!;
+    expect(token).not.toContain(C1);
+    expect([...repo.tokens.values()].some((t) => t.token_hash === sha256(token))).toBe(true);
+    // cédula cifrada
+    const p = [...repo.people.values()][0]!;
+    expect(p.national_id_encrypted).not.toContain(C1);
+  });
+
+  it("rechaza cédulas que ya existen en la base", async () => {
+    const repo = new MemoryRepo();
+    repo.addPerson("Juan", "Pérez", C1);
+    const out = await importPeople(repo, { rows: rows.slice(0, 1), filename: "b.csv", adminId: "a", allowPartial: false });
+    expect(out.committed).toBe(false);
+    expect(out.rejected[0]!.reason).toContain("ya existe");
+  });
+
+  it("lee archivos CSV y exige las columnas de la plantilla", async () => {
+    const csv = new TextEncoder().encode(`first_names,last_names,national_id\nJuan,Pérez,${C1}\n`);
+    expect(await parseImportFile(csv.buffer as ArrayBuffer, "x.csv")).toEqual([{ row: 2, first_names: "Juan", last_names: "Pérez", national_id: C1 }]);
+    const bad = new TextEncoder().encode("nombre,cedula\nJuan,1\n");
+    await expect(parseImportFile(bad.buffer as ArrayBuffer, "x.csv")).rejects.toThrow(/columnas/);
+  });
+});
+
+describe("acceso administrativo", () => {
+  it("requiere contraseña + MFA y bloquea tras intentos fallidos", async () => {
+    const repo = new MemoryRepo();
+    const admin = await repo.createAdmin({ email: "admin@test.ec", full_name: "Admin", role: "ADMIN", password_hash: await hashPassword("Clave-segura-2026") });
+
+    expect((await loginWithPassword(repo, "admin@test.ec", "incorrecta", "ip")).ok).toBe(false);
+    const login = await loginWithPassword(repo, "admin@test.ec", "Clave-segura-2026", "ip");
+    expect(login.ok).toBe(true);
+    if (!login.ok) return;
+    expect(login.needsEnrollment).toBe(true);
+
+    // Sin MFA no hay acceso al panel
+    expect(await getAdminContext(repo, login.sessionToken)).toBeNull();
+    const pre = await getAdminContext(repo, login.sessionToken, { requireMfa: false });
+    const secret = await ensureMfaSecret(repo, pre!.admin);
+    const refreshed = await getAdminContext(repo, login.sessionToken, { requireMfa: false });
+    expect(decrypt(refreshed!.admin.mfa_secret_encrypted!)).toBe(secret);
+    const mfa = await verifyMfa(repo, refreshed!, totpCode(secret), "ip");
+    expect(mfa.ok).toBe(true);
+    if (!mfa.ok) return;
+    // Rotación de sesión: el token anterior deja de servir
+    expect(await getAdminContext(repo, login.sessionToken)).toBeNull();
+    expect((await getAdminContext(repo, mfa.sessionToken))?.admin.id).toBe(admin.id);
+
+    repo.buckets.clear();
+    for (let i = 0; i < 5; i++) await loginWithPassword(repo, "admin@test.ec", "mala", `ip-${i}`);
+    // El límite por correo ya frena el ataque; además la cuenta queda bloqueada aunque cambie la ventana
+    expect(await loginWithPassword(repo, "admin@test.ec", "Clave-segura-2026", "ip-y")).toMatchObject({ ok: false });
+    repo.buckets.clear();
+    expect(await loginWithPassword(repo, "admin@test.ec", "Clave-segura-2026", "ip-z")).toMatchObject({ ok: false, error: expect.stringContaining("bloqueada") });
+  });
+
+  it("no revela si un correo existe", async () => {
+    const repo = new MemoryRepo();
+    await repo.createAdmin({ email: "a@test.ec", full_name: "A", role: "ADMIN", password_hash: await hashPassword("Clave-segura-2026") });
+    const a = await loginWithPassword(repo, "a@test.ec", "mala-clave-123", "ip1");
+    const b = await loginWithPassword(repo, "noexiste@test.ec", "mala-clave-123", "ip2");
+    expect(a).toEqual(b);
+  });
+});

@@ -1,0 +1,15 @@
+node_modules
+.next
+out
+coverage
+.env
+.env.local
+.env.*.local
+*.log
+.vercel
+# Nunca subir datos reales
+data/
+*.real.csv
+*.xlsx
+!templates/*.xlsx
+*.tsbuildinfo
