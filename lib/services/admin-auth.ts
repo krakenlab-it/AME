@@ -1,11 +1,11 @@
 import "server-only";
-import type { EmailOtpType, SupabaseClient } from "@supabase/supabase-js";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import { parseAdoptSession, parseMagicLinkVerify } from "@/lib/contracts/magic-link";
 import type { AdminRepo } from "@/lib/database/types";
 import { sha256 } from "@/lib/encryption/crypto";
 import { passwordPolicyError } from "@/lib/security/password";
 import { createAuthClient } from "@/lib/supabase/server";
 import {
-  destinationAfterConfirm,
   gateForAuthUser,
   normalizeAdminEmail,
   normalizeTotpCode,
@@ -20,8 +20,6 @@ const UNAVAILABLE_ERROR = "El servicio no está disponible. Intenta más tarde."
 const CONFIG_ERROR = "El acceso administrativo no está configurado.";
 const LINK_ERROR = "El enlace no es válido o ya venció. Pide una nueva invitación o restablece la contraseña.";
 export const RESET_SENT_MESSAGE = "Si ese correo tiene un acceso de administrador, enviaremos un enlace para elegir una contraseña nueva.";
-
-const EMAIL_OTP_TYPES = ["signup", "invite", "magiclink", "recovery", "email_change", "email"] as const;
 
 export async function readAuthSnapshot(): Promise<AuthSnapshot> {
   const supabase = await createAuthClient();
@@ -117,36 +115,33 @@ export async function setAdminPassword(password: string, confirm: string): Promi
   return { ok: true };
 }
 
-function asEmailOtpType(value: string | undefined): EmailOtpType | null {
-  if (!value) return null;
-  return EMAIL_OTP_TYPES.some((type) => type === value) ? value : null;
-}
-
 export async function confirmEmailLink(input: {
   tokenHash?: string;
   type?: string;
   code?: string;
   next?: string;
 }): Promise<{ ok: true; next: string } | { ok: false; error: string }> {
+  const parsed = parseMagicLinkVerify(input);
+  if (!parsed.ok) return { ok: false, error: LINK_ERROR };
   const supabase = await createAuthClient();
   if (!supabase) return { ok: false, error: CONFIG_ERROR };
-  const next = destinationAfterConfirm(input.type, input.next);
 
-  if (input.tokenHash) {
-    const type = asEmailOtpType(input.type);
-    if (!type) return { ok: false, error: LINK_ERROR };
-    const { error } = await supabase.auth.verifyOtp({ token_hash: input.tokenHash, type });
-    if (error) return { ok: false, error: LINK_ERROR };
-    return { ok: true, next };
+  switch (parsed.verify.method) {
+    case "otp": {
+      const { error } = await supabase.auth.verifyOtp({ token_hash: parsed.verify.tokenHash, type: parsed.verify.type });
+      if (error) return { ok: false, error: LINK_ERROR };
+      return { ok: true, next: parsed.verify.next };
+    }
+    case "code": {
+      const { error } = await supabase.auth.exchangeCodeForSession(parsed.verify.code);
+      if (error) return { ok: false, error: LINK_ERROR };
+      return { ok: true, next: parsed.verify.next };
+    }
+    default: {
+      const unreachable: never = parsed.verify;
+      return unreachable;
+    }
   }
-
-  if (input.code) {
-    const { error } = await supabase.auth.exchangeCodeForSession(input.code);
-    if (error) return { ok: false, error: LINK_ERROR };
-    return { ok: true, next };
-  }
-
-  return { ok: false, error: LINK_ERROR };
 }
 
 export async function adoptAuthSession(input: {
@@ -154,14 +149,13 @@ export async function adoptAuthSession(input: {
   refreshToken: string;
   type?: string;
 }): Promise<{ ok: true; next: string } | { ok: false; error: string }> {
-  if (!input.accessToken || !input.refreshToken || input.accessToken.length > 20_000 || input.refreshToken.length > 20_000) {
-    return { ok: false, error: LINK_ERROR };
-  }
+  const parsed = parseAdoptSession(input);
+  if (!parsed.ok) return { ok: false, error: LINK_ERROR };
   const supabase = await createAuthClient();
   if (!supabase) return { ok: false, error: CONFIG_ERROR };
-  const { error } = await supabase.auth.setSession({ access_token: input.accessToken, refresh_token: input.refreshToken });
+  const { error } = await supabase.auth.setSession({ access_token: parsed.accessToken, refresh_token: parsed.refreshToken });
   if (error) return { ok: false, error: LINK_ERROR };
-  return { ok: true, next: destinationAfterConfirm(input.type, null) };
+  return { ok: true, next: parsed.next };
 }
 
 export async function beginTotpEnrollment(): Promise<{ qr: string; secret: string; factorId: string }> {
