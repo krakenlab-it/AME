@@ -130,11 +130,6 @@ export function UpdateWizard({ registered, privacy, supportContact }: WizardProp
   const country = watch("contact.country");
   const bankName = watch("bank.bankName");
 
-  const previousStep = useRef(step);
-  useEffect(() => {
-    previousStep.current = step;
-  }, [step]);
-
   useEffect(() => {
     headingRef.current?.focus();
     const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -222,7 +217,6 @@ export function UpdateWizard({ registered, privacy, supportContact }: WizardProp
   }
 
   const v = getValues();
-  const direction = step >= previousStep.current ? 1 : -1;
 
   return (
     <form onSubmit={onSubmit} onKeyDown={onFormKeyDown} noValidate className="mx-auto max-w-2xl space-y-6 px-5 py-8 md:py-12">
@@ -232,9 +226,9 @@ export function UpdateWizard({ registered, privacy, supportContact }: WizardProp
 
       <m.section
         key={step}
-        initial={{ opacity: 0, x: direction * 28 }}
-        animate={{ opacity: 1, x: 0 }}
-        transition={{ duration: 0.3 }}
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.25, ease: "easeOut" }}
         className="sheet space-y-6 p-6 md:p-9"
         aria-labelledby="step-title"
       >
