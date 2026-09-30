@@ -131,6 +131,32 @@ npm run admin:create -- --email persona@unibrokers.com.ec --name "Nombre Apellid
 - Si el correo ya estaba en `admin_users` pero sin `auth_user_id` (los administradores creados antes de este cambio), el mismo comando lo invita y vincula la fila. Hay que volver a configurar el TOTP: el secreto anterior se borra con la migración y no se puede reutilizar.
 - Quien olvide la contraseña usa **Olvidé mi contraseña** en `/admin/login`.
 
+## Semilla de visualización (tres recorridos sintéticos)
+
+El panel necesita fichas que ya recorrieron el producto: enlace, cédula, confirmación de nombres, contacto, banco y consentimientos. Estas tres **no son personas reales**. Sirven para ver el flujo en el panel y, en un caso, para abrir un enlace todavía vigente.
+
+| Nombre | Cédula | Estado | Confirmación |
+|---|---|---|---|
+| Camila Fernanda Viteri Naranjo | 1700000019 | Completado | AIG-K2N6CMP2 |
+| Andrés Mateo Cueva Salazar | 0900000027 | Requiere revisión (corrigió el apellido y la cuenta es de un tercero) | AIG-K2N6RVW3 |
+| Lucía Isabel Romero Calle | 0100000033 | Iniciado (ya verificó la cédula; no envió el formulario) | — |
+
+No van en una migración SQL: la cédula y la cuenta se cifran con `ENCRYPTION_KEY` y el HMAC usa `HASH_PEPPER`. Esos valores cambian por entorno y no se guardan en el repositorio.
+
+Con `.env.local` apuntando al proyecto de Supabase (clave **service_role**, solo en el servidor):
+
+```bash
+npm run seed:product-users                 # muestra las fichas, no escribe
+npm run seed:product-users -- --write      # inserta o actualiza solo estas tres
+```
+
+- Puedes correrlo sobre una base vacía o sobre la base de prueba. La segunda vez reemplaza únicamente estas fichas (tienen un id fijo) y no toca el resto.
+- Si una de estas cédulas ya pertenece a otra persona, el script se detiene y no la pisa.
+- RLS sigue en denegar todo para el navegador. El script usa `service_role`.
+- Al escribir, la consola muestra el enlace de cada ficha. En la base solo queda el hash. El de Lucía sigue vigente 30 días; los otros dos figuran como usados.
+- Los textos legales no se modifican. Si no hay un aviso activo, se crea una versión provisional y se deja constancia de que sigue pendiente de revisión.
+- En la base compartida del portal estas tres fichas ya se pueden ver en el panel (lista, ficha, contacto, banco, consentimientos y auditoría). La cédula y el número de cuenta se cifran recién cuando alguien con la clave del proyecto corre `--write`. Hasta ese momento el detalle no muestra la cédula en claro y la búsqueda por cédula no encuentra la ficha. El enlace de Lucía también queda vigente solo después de ese comando.
+
 ## Carga de la base inicial y generación de links
 
 1. Descarga la plantilla `templates/initial_people.csv` (también disponible en el panel). Tiene tres columnas: `first_names`, `last_names`, `national_id`.
