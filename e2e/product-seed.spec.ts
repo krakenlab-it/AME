@@ -28,7 +28,7 @@ test("un enlace ya usado no abre el formulario", async ({ page }) => {
 test("el panel muestra las tres fichas del seed", async ({ page }) => {
   expect(review).toBeTruthy();
   await page.goto("/admin/login");
-  await expect(page.getByRole("heading", { name: "Acceso rápido de pruebas" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Probar el portal" })).toBeVisible();
   await page.locator("#email").fill(PRODUCT_SEED_DEMO_ADMIN.email);
   await page.locator("#password").fill(PRODUCT_SEED_DEMO_ADMIN.password);
   await page.getByRole("button", { name: "Ingresar" }).click();
