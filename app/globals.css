@@ -35,7 +35,7 @@
 
 @layer components {
   .sheet {
-    @apply rounded-sheet border border-marian-line bg-white;
+    @apply rounded-sheet border border-marian-line bg-white shadow-[0_1px_2px_rgba(19,38,58,0.04),0_10px_28px_-14px_rgba(19,38,58,0.14)];
   }
   .field-input {
     @apply block w-full rounded-xl border border-field bg-white px-4 py-3 text-[17px] text-ink

@@ -1,3 +1,6 @@
+"use client";
+
+import * as m from "motion/react-m";
 import { cn } from "@/lib/utils";
 
 export const STEPS = ["Identificación", "Verificación", "Contacto", "Información bancaria", "Privacidad", "Revisión", "Confirmación"] as const;
@@ -34,7 +37,14 @@ export function StepCrown({ current }: { current: number }) {
           const lift = Math.round(Math.sin((i / (total - 1)) * Math.PI) * 10);
           return (
             <li key={label} style={{ transform: `translateY(-${lift}px)` }} aria-current={state === "current" ? "step" : undefined}>
-              <Star state={state} />
+              <m.span
+                className="block"
+                initial={false}
+                animate={{ scale: state === "current" ? 1.12 : 1, rotate: state === "done" ? [0, -12, 0] : 0 }}
+                transition={{ type: "spring", stiffness: 380, damping: 18 }}
+              >
+                <Star state={state} />
+              </m.span>
               <span className="sr-only">
                 {label}: {state === "done" ? "completado" : state === "current" ? "paso actual" : "pendiente"}
               </span>
@@ -45,6 +55,9 @@ export function StepCrown({ current }: { current: number }) {
       <p className="text-[15px] text-ink-muted" aria-live="polite">
         Paso {current} de {total} <span aria-hidden>·</span> <span className="font-semibold text-ink">{STEPS[current - 1]}</span>
       </p>
+      <div aria-hidden className="h-1.5 w-full max-w-xs overflow-hidden rounded-full bg-marian-soft">
+        <m.div className="h-full rounded-full bg-marian" initial={false} animate={{ width: `${(current / total) * 100}%` }} transition={{ duration: 0.5, ease: "easeOut" }} />
+      </div>
     </div>
   );
 }

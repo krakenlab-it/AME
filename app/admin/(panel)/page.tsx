@@ -1,5 +1,7 @@
+import { CheckCircle2, Clock, Hourglass, Play, Users, ClipboardCheck, Search, X, type LucideIcon } from "lucide-react";
 import Link from "next/link";
 import { StatusBadge } from "@/components/admin/status-badge";
+import { AnimatedNumber, Meter, Stagger, StaggerItem } from "@/components/motion/primitives";
 import { Button } from "@/components/ui/button";
 import { Notice } from "@/components/ui/notice";
 import { getRepo } from "@/lib/database";
@@ -20,13 +22,14 @@ export default async function AdminDashboard({ searchParams }: { searchParams: P
   const counts = await repo.statusCounts();
   const invited = Object.values(counts).reduce((a, b) => a + b, 0);
 
-  const cards: [string, number, PersonStatus | null][] = [
-    ["Invitados", invited, null],
-    ["Pendientes", counts.PENDING, "PENDING"],
-    ["Iniciados", counts.STARTED, "STARTED"],
-    ["Completados", counts.COMPLETED, "COMPLETED"],
-    ["Requieren revisión", counts.NEEDS_REVIEW, "NEEDS_REVIEW"],
+  const cards: { label: string; value: number; status: PersonStatus | null; Icon: LucideIcon; tone: string }[] = [
+    { label: "Invitados", value: invited, status: null, Icon: Users, tone: "bg-marian-soft text-marian" },
+    { label: "Pendientes", value: counts.PENDING, status: "PENDING", Icon: Hourglass, tone: "bg-marian-soft text-ink" },
+    { label: "Iniciados", value: counts.STARTED, status: "STARTED", Icon: Play, tone: "bg-warn-soft text-warn" },
+    { label: "Completados", value: counts.COMPLETED, status: "COMPLETED", Icon: CheckCircle2, tone: "bg-ok-soft text-ok" },
+    { label: "Requieren revisión", value: counts.NEEDS_REVIEW, status: "NEEDS_REVIEW", Icon: ClipboardCheck, tone: "bg-alert-soft text-alert" },
   ];
+  const completionPct = invited ? (counts.COMPLETED / invited) * 100 : 0;
 
   const canView = can(admin.role, "people:view");
   const status = PERSON_STATUSES.includes(sp.estado as PersonStatus) ? (sp.estado as PersonStatus) : undefined;
@@ -65,32 +68,47 @@ export default async function AdminDashboard({ searchParams }: { searchParams: P
         </Notice>
       )}
 
-      <ul className="grid grid-cols-2 gap-3 md:grid-cols-5" aria-label="Totales por estado">
-        {cards.map(([label, value, s]) => {
+      <section aria-label="Avance general" className="sheet flex flex-col gap-3 p-5 sm:flex-row sm:items-center sm:gap-6">
+        <div className="shrink-0">
+          <p className="text-sm font-medium text-ink-muted">Avance de actualización</p>
+          <p className="font-serif text-4xl font-semibold text-marian"><AnimatedNumber value={Math.round(completionPct)} />%</p>
+        </div>
+        <div className="flex-1 space-y-2">
+          <Meter percent={completionPct} label="Porcentaje de personas que completaron su actualización" />
+          <p className="flex items-center gap-1.5 text-sm text-ink-muted">
+            <Clock className="h-4 w-4" aria-hidden />
+            {counts.COMPLETED.toLocaleString("es-EC")} de {invited.toLocaleString("es-EC")} personas completaron el proceso.
+          </p>
+        </div>
+      </section>
+
+      <Stagger as="ul" className="grid grid-cols-2 gap-3 md:grid-cols-5">
+        {cards.map(({ label, value, status: s, Icon, tone }) => {
           const active = canView && (s ? status === s : !status);
           const body = (
             <>
-              <span className="block text-sm font-medium text-ink-muted">{label}</span>
-              <span className="mt-1 block font-serif text-3xl font-semibold text-marian">{value.toLocaleString("es-EC")}</span>
+              <span className={`flex h-9 w-9 items-center justify-center rounded-xl ${tone}`}><Icon className="h-5 w-5" aria-hidden /></span>
+              <span className="mt-3 block text-sm font-medium text-ink-muted">{label}</span>
+              <AnimatedNumber value={value} className="mt-0.5 block font-serif text-3xl font-semibold text-marian" />
             </>
           );
           return (
-            <li key={label}>
+            <StaggerItem as="li" key={label}>
               {canView ? (
                 <Link
                   href={s ? `?estado=${s}` : "?"}
                   aria-current={active ? "true" : undefined}
-                  className={`sheet block h-full p-4 transition-colors hover:border-marian ${active ? "border-2 border-marian bg-marian-soft/60" : ""}`}
+                  className={`sheet block h-full p-4 transition-all duration-200 hover:-translate-y-0.5 hover:border-marian hover:shadow-md ${active ? "border-2 border-marian bg-marian-soft/60" : ""}`}
                 >
                   {body}
                 </Link>
               ) : (
                 <div className="sheet h-full p-4">{body}</div>
               )}
-            </li>
+            </StaggerItem>
           );
         })}
-      </ul>
+      </Stagger>
 
       {list && (
         <section className="space-y-4" aria-labelledby="personas">
@@ -111,8 +129,8 @@ export default async function AdminDashboard({ searchParams }: { searchParams: P
                   {PERSON_STATUSES.map((s) => <option key={s} value={s}>{STATUS_LABELS[s]}</option>)}
                 </select>
               </div>
-              <Button type="submit" size="sm">Buscar</Button>
-              {(q || status) && <Link className="inline-flex min-h-[44px] items-center px-2 text-sm font-semibold text-marian underline underline-offset-2" href="?">Quitar filtros</Link>}
+              <Button type="submit" size="sm"><Search className="h-4 w-4" aria-hidden />Buscar</Button>
+              {(q || status) && <Link className="inline-flex min-h-[44px] items-center px-2 text-sm font-semibold text-marian underline underline-offset-2" href="?"><X className="mr-1 h-4 w-4" aria-hidden />Quitar filtros</Link>}
             </form>
           </div>
           <div className="sheet overflow-x-auto">

@@ -1,7 +1,14 @@
-import { ExportPanel } from "@/components/admin/export-panel";
+import dynamic from "next/dynamic";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Notice } from "@/components/ui/notice";
 import { EXPORT_PROFILES } from "@/lib/services/export";
 import { requireAdmin } from "@/lib/server/admin-guard";
+
+const ExportPanel = dynamic(() => import("@/components/admin/export-panel").then((m) => m.ExportPanel), {
+  loading: () => <Skeleton className="h-96 rounded-2xl" />,
+});
+
+export const metadata = { title: "Archivo para AIG" };
 
 export default async function ExportPage() {
   await requireAdmin("export:create");

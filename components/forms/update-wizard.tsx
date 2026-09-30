@@ -1,5 +1,6 @@
 "use client";
 
+import * as m from "motion/react-m";
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useForm, type FieldPath, type UseFormRegisterReturn } from "react-hook-form";
@@ -129,6 +130,11 @@ export function UpdateWizard({ registered, privacy, supportContact }: WizardProp
   const country = watch("contact.country");
   const bankName = watch("bank.bankName");
 
+  const previousStep = useRef(step);
+  useEffect(() => {
+    previousStep.current = step;
+  }, [step]);
+
   useEffect(() => {
     headingRef.current?.focus();
     const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -216,6 +222,7 @@ export function UpdateWizard({ registered, privacy, supportContact }: WizardProp
   }
 
   const v = getValues();
+  const direction = step >= previousStep.current ? 1 : -1;
 
   return (
     <form onSubmit={onSubmit} onKeyDown={onFormKeyDown} noValidate className="mx-auto max-w-2xl space-y-6 px-5 py-8 md:py-12">
@@ -223,7 +230,14 @@ export function UpdateWizard({ registered, privacy, supportContact }: WizardProp
 
       {serverError && <Notice tone="error" live title="No se pudo enviar">{serverError}</Notice>}
 
-      <section key={step} className="sheet step-enter space-y-6 p-6 md:p-9" aria-labelledby="step-title">
+      <m.section
+        key={step}
+        initial={{ opacity: 0, x: direction * 28 }}
+        animate={{ opacity: 1, x: 0 }}
+        transition={{ duration: 0.3 }}
+        className="sheet space-y-6 p-6 md:p-9"
+        aria-labelledby="step-title"
+      >
         {/* ── Paso 2: Verificación ─────────────────────────────── */}
         {step === 2 && (
           <>
@@ -481,7 +495,7 @@ export function UpdateWizard({ registered, privacy, supportContact }: WizardProp
             </div>
           </>
         )}
-      </section>
+      </m.section>
 
       <p className="text-center text-sm text-ink-muted">
         <Lock className="mr-1 inline h-4 w-4 text-marian" aria-hidden />

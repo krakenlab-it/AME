@@ -50,6 +50,7 @@ describe("contraste de la paleta (WCAG 2.1 AA)", () => {
     ["warn", "warn.soft"],
     ["crown.deep", "warn.soft"],
     ["ink", "warn.soft"],
+    ["marian.soft", "marian.deep"],
   ];
   it.each(onSoft)("texto %s sobre fondo %s llega a 4.5:1", (fg, bg) => {
     expect(ratio(token(fg), token(bg))).toBeGreaterThanOrEqual(AA_TEXT);

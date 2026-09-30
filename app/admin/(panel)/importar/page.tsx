@@ -1,5 +1,12 @@
-import { ImportPanel } from "@/components/admin/import-panel";
+import dynamic from "next/dynamic";
+import { Skeleton } from "@/components/ui/skeleton";
 import { requireAdmin } from "@/lib/server/admin-guard";
+
+const ImportPanel = dynamic(() => import("@/components/admin/import-panel").then((m) => m.ImportPanel), {
+  loading: () => <Skeleton className="h-72 rounded-2xl" />,
+});
+
+export const metadata = { title: "Importar y enlaces" };
 
 export default async function ImportPage() {
   await requireAdmin("people:import");

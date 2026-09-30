@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
-import { CheckCircle2 } from "lucide-react";
 import { finishAction } from "@/app/verificar/actions";
+import { Reveal } from "@/components/motion/primitives";
+import { SuccessCheck } from "@/components/motion/success-check";
 import { StepCrown } from "@/components/portal/step-crown";
 import { PortalShell } from "@/components/portal/shell";
 import { Button } from "@/components/ui/button";
@@ -17,8 +18,9 @@ export default async function ConfirmationPage() {
     <PortalShell readiness={privacy.readiness} organizationName={privacy.config.organizationName}>
       <div className="mx-auto max-w-xl space-y-6 px-5 py-10 md:py-14">
         <StepCrown current={7} />
-        <section className="sheet step-enter space-y-6 p-7 text-center md:p-10" aria-labelledby="ok-title">
-          <CheckCircle2 className="mx-auto h-14 w-14 text-ok" aria-hidden />
+        <Reveal className="sheet space-y-6 p-7 text-center md:p-10">
+        <section className="space-y-6" aria-labelledby="ok-title">
+          <SuccessCheck className="mx-auto h-16 w-16" />
           <h1 id="ok-title" className="text-[30px] leading-tight">Listo, registramos tu información</h1>
           <p className="text-lg">Gracias. Recibimos la actualización de tus datos.</p>
           <div className="rounded-xl bg-marian-soft/60 px-5 py-4">
@@ -33,6 +35,7 @@ export default async function ConfirmationPage() {
             <Button type="submit" block>Terminar y cerrar sesión</Button>
           </form>
         </section>
+        </Reveal>
       </div>
     </PortalShell>
   );

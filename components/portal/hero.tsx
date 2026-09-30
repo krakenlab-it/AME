@@ -1,11 +1,12 @@
 import { CreditCard, Clock3, Lock, ShieldCheck, Smartphone } from "lucide-react";
 import type { ReactNode } from "react";
 import { MaristaLogo } from "@/components/brand/logos";
+import { Reveal } from "@/components/motion/primitives";
 
 export function PortalHero({ action }: { action: ReactNode }) {
   return (
     <section className="mx-auto grid max-w-5xl gap-10 px-5 pb-6 pt-8 md:grid-cols-[1.1fr_0.9fr] md:items-start md:pt-14">
-      <div className="step-enter">
+      <Reveal>
         <MaristaLogo className="mb-6 w-24 md:mb-8 md:w-36" />
         <h1 className="text-[32px] leading-[1.12] md:text-[44px]">Actualización de información</h1>
         <p className="mt-4 max-w-[34ch] font-serif text-xl leading-relaxed text-ink">Verifica y actualiza tus datos de manera segura.</p>
@@ -24,8 +25,8 @@ export function PortalHero({ action }: { action: ReactNode }) {
             <Clock3 className="h-4 w-4 shrink-0 text-marian" aria-hidden />Toma de 3 a 5 minutos.
           </p>
         </section>
-      </div>
-      <div className="md:pl-4">{action}</div>
+      </Reveal>
+      <Reveal className="md:pl-4" delay={0.12}>{action}</Reveal>
     </section>
   );
 }

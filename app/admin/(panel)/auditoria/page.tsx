@@ -6,6 +6,8 @@ import { requireAdmin } from "@/lib/server/admin-guard";
 import { formatDateTime } from "@/lib/utils";
 
 const PAGE_SIZE = 50;
+export const metadata = { title: "Auditoría" };
+
 export default async function AuditPage({ searchParams }: { searchParams: Promise<{ accion?: string; p?: string }> }) {
   await requireAdmin("audit:view");
   const sp = await searchParams;

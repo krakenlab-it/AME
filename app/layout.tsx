@@ -6,6 +6,7 @@ import "@fontsource/figtree/600.css";
 import "@fontsource/literata/400.css";
 import "@fontsource/literata/600.css";
 import "./globals.css";
+import { MotionProvider } from "@/components/motion/provider";
 
 export const metadata: Metadata = {
   title: "Actualización de información | Agrupación Marista Ecuatoriana",
@@ -30,7 +31,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         <a href="#contenido" className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-50 focus:rounded-lg focus:bg-white focus:px-4 focus:py-2">
           Saltar al contenido
         </a>
-        {children}
+        <MotionProvider>{children}</MotionProvider>
       </body>
     </html>
   );
