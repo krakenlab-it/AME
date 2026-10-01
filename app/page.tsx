@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { CedulaCta } from "@/components/forms/cedula-cta";
-import { PortalHero, ProtectedNote } from "@/components/portal/hero";
+import { LandingEntryCard, LandingIntro, LandingProtectedPanel, LandingStaffFooter } from "@/components/portal/landing-entry-card";
 import { PortalShell, PortalUnavailable } from "@/components/portal/shell";
 import { DemoAccess } from "@/components/demo/demo-access";
 import { ButtonLink } from "@/components/ui/button";
@@ -28,33 +28,28 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
 
   return (
     <PortalShell readiness={privacy.readiness} organizationName={privacy.config.organizationName}>
-      <PortalHero
-        action={
-          <div className="sheet space-y-5 p-6 md:p-8">
-            {fin ? (
-              <Notice tone="success" title={fin === "cuenta" ? "Sesión cerrada" : "Proceso finalizado"}>
-                Su sesión se cerró de forma segura. Ya puede cerrar esta ventana.
-              </Notice>
-            ) : (
-              <p className="text-[15px] leading-relaxed text-ink">
-                Usted ha ingresado desde un enlace seguro enviado para la protección de sus datos personales. Confirme su cédula a continuación para continuar con la actualización.
-              </p>
-            )}
-            {!fin && (
-              <ProtectedNote>
-                <CedulaCta turnstileSiteKey={process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY ?? null} />
-              </ProtectedNote>
-            )}
-            <div className="border-t border-marian-line/70 pt-5">
-              <p className="text-sm text-ink-muted">Si forma parte del equipo, ingrese con su correo institucional.</p>
-              <ButtonLink href="/admin/login" variant="ghost" size="sm" className="mt-2">
+      <LandingEntryCard>
+        {fin ? (
+          <Notice tone="success" title={fin === "cuenta" ? "Sesión cerrada" : "Proceso finalizado"}>
+            Su sesión se cerró de forma segura. Ya puede cerrar esta ventana.
+          </Notice>
+        ) : (
+          <>
+            <LandingIntro>
+              Usted ha ingresado desde un enlace seguro enviado para la protección de sus datos personales. Confirme su cédula a continuación para continuar con la actualización.
+            </LandingIntro>
+            <LandingProtectedPanel>
+              <CedulaCta turnstileSiteKey={process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY ?? null} />
+            </LandingProtectedPanel>
+            <LandingStaffFooter>
+              <ButtonLink href="/admin/login" variant="ghost" size="sm">
                 Iniciar sesión con correo
               </ButtonLink>
-            </div>
-            <DemoAccess />
-          </div>
-        }
-      />
+            </LandingStaffFooter>
+          </>
+        )}
+        <DemoAccess />
+      </LandingEntryCard>
     </PortalShell>
   );
 }

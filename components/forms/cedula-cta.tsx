@@ -28,24 +28,25 @@ export function CedulaCta({ turnstileSiteKey }: { turnstileSiteKey: string | nul
   }, [error, state]);
 
   return (
-    <div className="space-y-4">
+    <div className="w-full space-y-4">
       {state.linkState ? (
-        <p className="text-sm text-alert" role="alert">{state.error}</p>
+        <p className="text-center text-sm text-alert" role="alert">{state.error}</p>
       ) : (
-        <form action={formAction} className="space-y-4" noValidate>
+        <form action={formAction} className="w-full space-y-4" noValidate>
           <Field
             id="landing-cedula"
             label="Digita su número de cédula para empezar"
             required
             hint="10 números, sin guiones ni espacios."
             error={error}
+            className="w-full"
           >
             <input
               ref={inputRef}
               id="landing-cedula"
               name="cedula"
-              className="field-input text-lg tracking-[0.12em]"
-              placeholder="Digite su número de cédula para empezar"
+              className="field-input w-full text-lg tracking-[0.12em]"
+              placeholder="Digite su número de cédula"
               inputMode="numeric"
               enterKeyHint="go"
               autoComplete="off"
@@ -56,8 +57,8 @@ export function CedulaCta({ turnstileSiteKey }: { turnstileSiteKey: string | nul
               aria-describedby={describedBy("landing-cedula", { hint: "x", error })}
             />
           </Field>
-          {needsCaptcha && <div className="cf-turnstile" data-sitekey={turnstileSiteKey!} data-language="es" />}
-          <Button type="submit" block loading={pending}>
+          {needsCaptcha && <div className="cf-turnstile flex justify-center" data-sitekey={turnstileSiteKey!} data-language="es" />}
+          <Button type="submit" block loading={pending} className="w-full">
             <ShieldCheck className="h-5 w-5" aria-hidden />
             {pending ? "Verificando…" : "Continuar"}
           </Button>
