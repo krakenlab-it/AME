@@ -30,6 +30,9 @@ describe("permisos administrativos (RBAC)", () => {
     expect(can("EXPORTER", "people:view")).toBe(false);
     expect(can("REVIEWER", "people:review")).toBe(true);
     expect(can("REVIEWER", "people:import")).toBe(false);
+    expect(can("ADMIN", "staff:invite")).toBe(true);
+    expect(can("REVIEWER", "staff:invite")).toBe(false);
+    expect(can("EXPORTER", "staff:invite")).toBe(false);
     expect(can(null, "dashboard:view")).toBe(false);
   });
 

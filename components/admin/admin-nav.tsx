@@ -1,11 +1,11 @@
 "use client";
 
-import { FileDown, FileUp, History, LayoutDashboard, ScrollText, type LucideIcon } from "lucide-react";
+import { FileDown, FileUp, History, LayoutDashboard, ScrollText, UserPlus, type LucideIcon } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 
-export type AdminNavIcon = "summary" | "import" | "export" | "audit" | "notice";
+export type AdminNavIcon = "summary" | "import" | "export" | "audit" | "notice" | "invite";
 
 export interface AdminNavItem {
   href: string;
@@ -20,6 +20,7 @@ const ICONS: Record<AdminNavIcon, LucideIcon> = {
   export: FileDown,
   audit: History,
   notice: ScrollText,
+  invite: UserPlus,
 };
 
 function isCurrent(pathname: string, href: string): boolean {

@@ -12,6 +12,15 @@ import {
   totpQrDataUrl,
 } from "@/lib/services/admin-gate";
 import { createDemoAdmin, ensureMfaSecret, getDemoAdminContext, loginWithPassword, verifyMfa } from "@/lib/services/demo-admin-auth";
+import { ForbiddenError } from "@/lib/security/rbac";
+import {
+  inviteStaffMember,
+  portalConfirmUrl,
+  staffConfirmRedirect,
+  STAFF_ALREADY_LINKED_ERROR,
+  type StaffAuthAdmin,
+  type StaffDirectory,
+} from "@/lib/services/staff-invite";
 
 describe("barrera de Supabase Auth para el panel", () => {
   const linked = { active: true, auth_user_id: "user-1" };
@@ -94,6 +103,88 @@ describe("migración de admin Auth", () => {
     expect(sql).toMatch(/revoke all on table people from anon, authenticated/i);
     expect(sql).toMatch(/revoke all on table access_tokens from anon, authenticated/i);
     expect(sql).toMatch(/revoke all on table admin_users from anon, authenticated/i);
+  });
+});
+
+describe("invitación de personal desde el panel", () => {
+  const base = "https://portal.test";
+
+  function setup(existing: { id: string; auth_user_id: string | null } | null = null) {
+    const saved: { role?: string; auth_user_id?: string; existingId?: string | null } = {};
+    const seen = { inviteRedirect: "", recoveryRedirect: "", recoveryCalls: 0, inviteCalls: 0 };
+    const directory: StaffDirectory = {
+      findByEmail: async () => existing,
+      link: async (row) => {
+        saved.role = row.role;
+        saved.auth_user_id = row.auth_user_id;
+        saved.existingId = row.existingId;
+      },
+    };
+    const auth: StaffAuthAdmin & { inviteResult: Awaited<ReturnType<StaffAuthAdmin["inviteByEmail"]>>; recoveryResult: Awaited<ReturnType<StaffAuthAdmin["generateRecoveryLink"]>> } = {
+      inviteResult: { userId: "auth-new", failed: false },
+      recoveryResult: { userId: null, hashedToken: null, actionLink: null, failed: true },
+      inviteByEmail: async (_email, redirectTo) => {
+        seen.inviteCalls += 1;
+        seen.inviteRedirect = redirectTo;
+        return auth.inviteResult;
+      },
+      generateRecoveryLink: async (_email, redirectTo) => {
+        seen.recoveryCalls += 1;
+        seen.recoveryRedirect = redirectTo;
+        return auth.recoveryResult;
+      },
+    };
+    return { directory, auth, saved, seen };
+  }
+
+  it("solo un administrador puede invitar, y el correo nuevo va a registro", async () => {
+    const { directory, auth, saved, seen } = setup();
+    await expect(inviteStaffMember(directory, auth, "REVIEWER", { email: "nueva@ame.ec", fullName: "Ana Pérez", role: "REVIEWER" }, base)).rejects.toBeInstanceOf(ForbiddenError);
+    await expect(inviteStaffMember(directory, auth, "EXPORTER", { email: "nueva@ame.ec", fullName: "Ana Pérez", role: "EXPORTER" }, base)).rejects.toBeInstanceOf(ForbiddenError);
+    expect(seen.inviteCalls).toBe(0);
+
+    const ok = await inviteStaffMember(directory, auth, "ADMIN", { email: " Nueva@AME.ec ", fullName: "Ana Pérez", role: "reviewer" }, base);
+    expect(ok).toMatchObject({ ok: true, emailed: true, email: "nueva@ame.ec", role: "REVIEWER", confirmUrl: null });
+    expect(saved).toMatchObject({ role: "REVIEWER", auth_user_id: "auth-new", existingId: null });
+    expect(seen.recoveryCalls).toBe(0);
+    expect(seen.inviteRedirect).toBe(staffConfirmRedirect(base, "/admin/registro"));
+    expect(seen.inviteRedirect).toContain("next=%2Fadmin%2Fregistro");
+  });
+
+  it("si el correo ya está vinculado, pide recuperación y no llama a Auth", async () => {
+    const { directory, auth, seen } = setup({ id: "row-1", auth_user_id: "ya-vinculado" });
+    const result = await inviteStaffMember(directory, auth, "ADMIN", { email: "ana@ame.ec", fullName: "Ana Pérez", role: "ADMIN" }, base);
+    expect(result).toEqual({ ok: false, error: STAFF_ALREADY_LINKED_ERROR });
+    expect(seen.inviteCalls).toBe(0);
+    expect(seen.recoveryCalls).toBe(0);
+  });
+
+  it("si Auth ya tiene el correo, muestra el enlace del portal con el token de un solo uso", async () => {
+    const { directory, auth, saved, seen } = setup({ id: "legacy", auth_user_id: null });
+    auth.inviteResult = { userId: null, failed: true };
+    auth.recoveryResult = { userId: "auth-viejo", hashedToken: "token/uno", actionLink: "https://proyecto.supabase.co/auth/v1/verify?token=secreto", failed: false };
+
+    const result = await inviteStaffMember(directory, auth, "ADMIN", { email: "ana@ame.ec", fullName: "Ana Pérez", role: "EXPORTER" }, base);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.emailed).toBe(false);
+    expect(result.role).toBe("EXPORTER");
+    expect(result.confirmUrl).toBe(portalConfirmUrl(base, "token/uno", "recovery"));
+    expect(result.confirmUrl).toContain("/admin/auth/confirm?");
+    expect(result.confirmUrl).toContain("token_hash=token%2Funo");
+    expect(result.confirmUrl).toContain("type=recovery");
+    expect(result.confirmUrl).toContain("next=%2Fadmin%2Frestablecer");
+    expect(result.confirmUrl).not.toContain("supabase.co");
+    expect(saved).toMatchObject({ existingId: "legacy", auth_user_id: "auth-viejo", role: "EXPORTER" });
+    expect(seen.recoveryRedirect).toContain("next=%2Fadmin%2Frestablecer");
+  });
+
+  it("no guarda el rol si no se pudo invitar ni recuperar", async () => {
+    const { directory, auth, saved } = setup();
+    auth.inviteResult = { userId: null, failed: true };
+    const result = await inviteStaffMember(directory, auth, "ADMIN", { email: "ana@ame.ec", fullName: "Ana Pérez", role: "ADMIN" }, base);
+    expect(result).toMatchObject({ ok: false });
+    expect(saved.auth_user_id).toBeUndefined();
   });
 });
 

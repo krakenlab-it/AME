@@ -7,8 +7,11 @@
  * y configura TOTP en el primer ingreso.
  * Si el correo ya está en admin_users sin auth_user_id, vincula esa fila
  * (sirve para migrar los administradores que existían antes de Supabase Auth).
+ * El mismo flujo está en el panel: /admin/invitar (solo rol ADMIN).
  */
 import { createClient } from "@supabase/supabase-js";
+import { staffAuthFromSupabase } from "../lib/services/staff-auth-admin";
+import { inviteStaffMember } from "../lib/services/staff-invite";
 import { ADMIN_ROLES, type AdminRole } from "../lib/security/rbac";
 
 function arg(name: string): string | undefined {
@@ -47,49 +50,45 @@ async function main() {
   }
 
   const db = createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } });
-  const existing = await db.from("admin_users").select("id, auth_user_id").eq("email", email).maybeSingle();
-  if (existing.error) {
-    console.error(`No se pudo leer admin_users: ${existing.error.message}`);
-    process.exit(1);
-  }
-  if (existing.data?.auth_user_id) {
-    console.error(`Ese correo ya está vinculado a Supabase Auth. Para una clave nueva usa /admin/recuperar.`);
-    process.exit(1);
-  }
+  const result = await inviteStaffMember(
+    {
+      findByEmail: async (normalized) => {
+        const existing = await db.from("admin_users").select("id, auth_user_id").eq("email", normalized).maybeSingle();
+        if (existing.error) {
+          console.error(`No se pudo leer admin_users: ${existing.error.message}`);
+          throw new Error("lookup");
+        }
+        return existing.data ? { id: existing.data.id, auth_user_id: existing.data.auth_user_id } : null;
+      },
+      link: async (row) => {
+        const payload = { email: row.email, full_name: row.full_name, role: row.role, auth_user_id: row.auth_user_id, active: true };
+        const saved = row.existingId
+          ? await db.from("admin_users").update(payload).eq("id", row.existingId)
+          : await db.from("admin_users").insert(payload);
+        if (saved.error) {
+          console.error(`Auth quedó creado (${row.auth_user_id}) pero no se pudo guardar admin_users: ${saved.error.message}`);
+          throw new Error("save");
+        }
+      },
+    },
+    staffAuthFromSupabase(db),
+    "ADMIN",
+    { email, fullName: name, role },
+    baseUrl(),
+  );
 
-  const redirectTo = `${baseUrl()}/admin/auth/confirm?next=${encodeURIComponent("/admin/registro")}`;
-  const invited = await db.auth.admin.inviteUserByEmail(email, { redirectTo, data: { full_name: name } });
-  let authUserId = invited.data.user?.id ?? null;
-  let actionLink: string | null = null;
-
-  if (invited.error || !authUserId) {
-    const recovery = await db.auth.admin.generateLink({
-      type: "recovery",
-      email,
-      options: { redirectTo: `${baseUrl()}/admin/auth/confirm?next=${encodeURIComponent("/admin/restablecer")}` },
-    });
-    if (recovery.error || !recovery.data.user) {
-      console.error(`No se pudo invitar: ${invited.error?.message ?? recovery.error?.message ?? "sin usuario"}`);
-      process.exit(1);
-    }
-    authUserId = recovery.data.user.id;
-    actionLink = recovery.data.properties?.action_link ?? null;
-  }
-
-  const row = { email, full_name: name, role, auth_user_id: authUserId, active: true };
-  const saved = existing.data
-    ? await db.from("admin_users").update(row).eq("id", existing.data.id)
-    : await db.from("admin_users").insert(row);
-  if (saved.error) {
-    console.error(`Auth quedó creado (${authUserId}) pero no se pudo guardar admin_users: ${saved.error.message}`);
+  if (!result.ok) {
+    console.error(result.error);
     process.exit(1);
   }
 
-  console.log(`Usuario ${email} vinculado con rol ${role}.`);
-  console.log("Supabase envía el correo de invitación. Al abrirlo elige contraseña y configura el TOTP del teléfono en /admin/mfa.");
-  if (actionLink) {
+  console.log(`Usuario ${result.email} vinculado con rol ${result.role}.`);
+  if (result.emailed) {
+    console.log("Supabase envía el correo de invitación. Al abrirlo elige contraseña y configura el TOTP del teléfono en /admin/mfa.");
+  }
+  if (result.confirmUrl) {
     console.log("Ese correo ya existía en Auth. Enlace de un solo uso para elegir contraseña (no lo reenvíes en masa):");
-    console.log(actionLink);
+    console.log(result.confirmUrl);
   }
 }
 
