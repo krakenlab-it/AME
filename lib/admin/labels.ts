@@ -61,8 +61,8 @@ export const ROLE_SCOPE: Record<AdminRole, string> = {
 };
 
 export const REVIEW_REASON_LABELS: Record<string, string> = {
-  NAMES_CORRECTED: "El titular corrigió nombres o apellidos",
-  THIRD_PARTY_ACCOUNT: "La cuenta bancaria pertenece a otra persona",
+  NAMES_CORRECTED: "El titular corrigió nombres o apellidos.",
+  THIRD_PARTY_ACCOUNT: "La cuenta bancaria pertenece a otra persona.",
 };
 
 export const CONSENT_LABELS: Record<string, string> = {

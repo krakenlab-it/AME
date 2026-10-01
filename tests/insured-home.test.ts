@@ -87,7 +87,9 @@ describe("mi cuenta del asegurado", () => {
     const titles = home.notifications.map((item) => item.title);
     expect(titles).toContain("En revisión");
     expect(titles).toContain("Hay un aviso de privacidad nuevo");
-    expect(home.notifications.find((item) => item.id === "status-review")?.body).toContain("corrigió nombres");
+    const reviewBody = home.notifications.find((item) => item.id === "status-review")?.body ?? "";
+    expect(reviewBody).toContain("corrigió nombres");
+    expect(reviewBody).toMatch(/otra persona\.\s+No hace falta/);
   });
 
   it("un enlace ya usado abre la cuenta de esa persona y no el formulario", async () => {
