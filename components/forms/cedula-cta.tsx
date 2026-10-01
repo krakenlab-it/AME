@@ -40,6 +40,7 @@ export function CedulaCta({ turnstileSiteKey }: { turnstileSiteKey: string | nul
             hint="10 números, sin guiones ni espacios."
             error={error}
             className="w-full"
+            justifyText
           >
             <input
               ref={inputRef}

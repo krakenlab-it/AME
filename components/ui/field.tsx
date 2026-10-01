@@ -3,11 +3,12 @@ import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
 
 export function Field({
-  id, label, required, hint, error, children, className,
-}: { id: string; label: string; required?: boolean; hint?: string; error?: string; children: ReactNode; className?: string }) {
+  id, label, required, hint, error, children, className, justifyText,
+}: { id: string; label: string; required?: boolean; hint?: string; error?: string; children: ReactNode; className?: string; justifyText?: boolean }) {
+  const textAlign = justifyText ? "text-justify hyphens-auto" : "";
   return (
     <div className={cn("space-y-1.5", className)}>
-      <label htmlFor={id} className="block text-[15px] font-semibold text-ink">
+      <label htmlFor={id} className={cn("block text-[15px] font-semibold text-ink", textAlign)}>
         {label}
         {required ? (
           <>
@@ -18,7 +19,7 @@ export function Field({
           <span className="font-normal text-ink-muted"> (opcional)</span>
         )}
       </label>
-      {hint && <p id={`${id}-hint`} className="text-sm text-ink-muted">{hint}</p>}
+      {hint && <p id={`${id}-hint`} className={cn("text-sm text-ink-muted", textAlign)}>{hint}</p>}
       {children}
       {error && (
         <p id={`${id}-error`} role="alert" className="flex items-start gap-1.5 text-sm font-medium text-alert">
