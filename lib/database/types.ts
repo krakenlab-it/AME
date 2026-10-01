@@ -9,7 +9,8 @@ export type AuditAction =
   | "RECORD_OPENED" | "IDENTITY_VERIFIED" | "IDENTITY_FAILED" | "DATA_UPDATED" | "NAMES_CORRECTED"
   | "CONSENT_ACCEPTED" | "FORM_SUBMITTED" | "ADMIN_VIEWED" | "ADMIN_LOGIN" | "ADMIN_LOGIN_FAILED"
   | "ADMIN_LOGOUT" | "MFA_ENROLLED" | "EXPORT_CREATED" | "IMPORT_CREATED" | "LINK_CREATED"
-  | "LINK_REVOKED" | "RECORD_REVIEWED" | "NOTICE_PUBLISHED" | "RETENTION_APPLIED";
+  | "LINK_REVOKED" | "LINK_EMAIL_SENT" | "RECORD_REVIEWED" | "NOTICE_PUBLISHED" | "RETENTION_APPLIED"
+  | "MANUAL_EDIT" | "UNIBROKERS_EXPORT_CREATED";
 
 export interface AuditEvent {
   person_id?: string | null;
@@ -190,6 +191,8 @@ export interface PersonDetail {
   nameChanges: { original_first_names: string; original_last_names: string; new_first_names: string; new_last_names: string; created_at: string }[];
   tokens: { id: string; expires_at: string; used_at: string | null; revoked_at: string | null; revoked_reason: string | null; failed_attempts: number; created_at: string }[];
   audit: AuditRow[];
+  /** Correo para enviar el enlace personal. No reemplaza el correo que declara el titular. */
+  outreach_email: string | null;
 }
 
 export interface AuditRow {
@@ -209,6 +212,51 @@ export interface NewPersonRow {
   national_id_encrypted: string;
   national_id_hash: string;
   national_id_last2: string;
+  outreach_email?: string | null;
+}
+
+/** Corrección hecha por un administrador, después de confirmar el código TOTP. */
+export interface ManualPersonPatch {
+  first_names: string;
+  last_names: string;
+  outreach_email: string | null;
+  contact: {
+    primary_email: string;
+    secondary_email: string | null;
+    mobile_phone: string;
+    address_line_1: string;
+    address_line_2: string | null;
+    city: string;
+    province: string;
+    country: string;
+    postal_code: string | null;
+  } | null;
+}
+
+export interface LinkMailTarget {
+  id: string;
+  first_names: string;
+  last_names: string;
+  email: string | null;
+  national_id_last2: string | null;
+  status: PersonStatus;
+  has_active_token: boolean;
+}
+
+/** Carga de contacto para operaciones. Sin número de cuenta. */
+export interface UnibrokersSourceRow {
+  person_id: string;
+  status: PersonStatus;
+  confirmation_code: string | null;
+  first_names: string;
+  last_names: string;
+  national_id_encrypted: string | null;
+  outreach_email: string | null;
+  primary_email: string | null;
+  mobile_phone: string | null;
+  city: string | null;
+  province: string | null;
+  submitted_at: string | null;
 }
 
 export interface ExportSourceRow {
@@ -258,6 +306,9 @@ export interface AdminRepo {
   createAccessTokens(items: { person_id: string; token_hash: string; expires_at: string; created_by: string }[]): Promise<void>;
   revokeTokensForPerson(personId: string, reason: string): Promise<number>;
   listPersonIdsWithoutActiveToken(personIds?: string[]): Promise<string[]>;
+  applyManualEdit(personId: string, patch: ManualPersonPatch): Promise<{ changed: string[] } | null>;
+  listLinkMailTargets(): Promise<LinkMailTarget[]>;
+  getUnibrokersRows(): Promise<UnibrokersSourceRow[]>;
   // export
   getExportRows(): Promise<ExportSourceRow[]>;
   recordExport(e: { admin_id: string; purpose: string; profile: string; record_count: number; fields: string[]; format: string }): Promise<void>;

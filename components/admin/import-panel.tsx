@@ -2,7 +2,7 @@
 
 import { useActionState, useState, useTransition } from "react";
 import { Download, Upload } from "lucide-react";
-import { importAction, issueMissingLinksAction, type ImportState } from "@/app/admin/panel-actions";
+import { importAction, issueMissingLinksAction, sendLinkEmailsAction, type ImportState, type LinkMailState } from "@/app/admin/panel-actions";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
 import { Notice } from "@/components/ui/notice";
@@ -17,10 +17,12 @@ function download(csv: string, name: string) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-export function ImportPanel() {
+export function ImportPanel({ resendKeySet }: { resendKeySet: boolean }) {
   const [state, formAction, pending] = useActionState<ImportState, FormData>(importAction, {});
   const [linksMsg, setLinksMsg] = useState<string | null>(null);
-  const [linksPending, start] = useTransition();
+  const [mail, setMail] = useState<LinkMailState | null>(null);
+  const [linksPending, startLinks] = useTransition();
+  const [mailPending, startMail] = useTransition();
   const stamp = new Date().toISOString().slice(0, 10);
 
   return (
@@ -29,8 +31,9 @@ export function ImportPanel() {
         <div className="space-y-1">
           <h2 className="text-xl">1. Cargar base inicial</h2>
           <p className="text-[15px] text-ink-muted">
-            Sube un archivo .csv o .xlsx (máximo 5 MB). La plantilla recomendada usa las columnas <code>first_names</code>, <code>last_names</code> y <code>national_id</code>.
-            Si el archivo trae el nombre y una cédula de 10 dígitos con otros títulos, también se importa.
+            Sube un archivo .csv o .xlsx (máximo 5 MB). Lo único obligatorio en cada fila es la <strong>cédula</strong> de 10 dígitos.
+            La plantilla recomendada usa las columnas Nombres, Apellidos y Cédula. Esos mismos datos también se aceptan como <code>first_names</code>, <code>last_names</code> y <code>national_id</code> (la cédula).
+            Si el archivo trae el nombre y la cédula con otros títulos, también se importa. Un correo, si viene en el archivo, sirve para enviar el enlace.
             ¿No sabes cómo armarlo? Descarga la <a className="font-semibold text-marian underline underline-offset-2" href="/templates/initial_people.csv" download>plantilla de ejemplo</a>.
           </p>
         </div>
@@ -48,7 +51,8 @@ export function ImportPanel() {
 
       {state.total !== undefined && !state.error && (
         <section className="sheet space-y-4 p-6" aria-live="polite">
-          <h2 className="text-xl">Reporte de importación</h2>
+          <h2 className="text-xl">{state.noteTitle ?? "Nota de novedades"}</h2>
+          <p>{state.noteBody}</p>
           <p>
             Filas leídas: <strong>{state.total}</strong>. Importadas: <strong>{state.imported}</strong>. Rechazadas: <strong>{state.rejected?.length ?? 0}</strong>.
           </p>
@@ -68,9 +72,18 @@ export function ImportPanel() {
           {(state.rejected?.length ?? 0) > 0 && (
             <div className="max-h-96 overflow-auto">
               <table className="admin-table">
-                <caption className="sr-only">Filas rechazadas</caption>
-                <thead><tr><th scope="col">Fila</th><th scope="col">Cédula</th><th scope="col">Motivo</th></tr></thead>
+                <caption className="sr-only">Filas con novedades que no se importaron</caption>
+                <thead><tr><th scope="col">Fila</th><th scope="col">Cédula</th><th scope="col">Novedad</th></tr></thead>
                 <tbody>{state.rejected!.map((e) => <tr key={`${e.row}-${e.reason}`}><td>{e.row}</td><td className="tabular-nums">{e.cedula}</td><td>{e.reason}</td></tr>)}</tbody>
+              </table>
+            </div>
+          )}
+          {(state.notes?.length ?? 0) > 0 && (
+            <div className="max-h-96 overflow-auto">
+              <table className="admin-table">
+                <caption className="sr-only">Observaciones de filas importadas</caption>
+                <thead><tr><th scope="col">Fila</th><th scope="col">Cédula</th><th scope="col">Observación</th></tr></thead>
+                <tbody>{state.notes!.map((note) => <tr key={`${note.row}-${note.text}`}><td>{note.row}</td><td className="tabular-nums">{note.cedula}</td><td>{note.text}</td></tr>)}</tbody>
               </table>
             </div>
           )}
@@ -80,13 +93,34 @@ export function ImportPanel() {
       <section className="sheet space-y-4 p-6">
         <h2 className="text-xl">2. Enlaces para registros sin enlace vigente</h2>
         <p className="text-[15px] text-ink-muted">Genera enlaces nuevos para personas pendientes o iniciadas cuyo enlace venció, fue revocado o se perdió.</p>
-        <Button variant="secondary" loading={linksPending} onClick={() => start(async () => {
+        <Button variant="secondary" loading={linksPending} onClick={() => startLinks(async () => {
           const r = await issueMissingLinksAction();
           if (r.error) setLinksMsg(r.error);
           else if (!r.count) setLinksMsg("Todos los registros pendientes tienen un enlace vigente.");
           else { download(r.csv!, `enlaces_nuevos_${stamp}.csv`); setLinksMsg(`Se generaron ${r.count} enlaces y se descargó el archivo.`); }
         })}>Generar enlaces faltantes</Button>
         {linksMsg && <Notice live>{linksMsg}</Notice>}
+      </section>
+
+      <section className="sheet space-y-4 p-6">
+        <h2 className="text-xl">3. Enviar el enlace por correo</h2>
+        <p className="text-[15px] text-ink-muted">
+          Envía el enlace personal para que la persona complete sus datos. Solo se escribe a quien tiene correo y todavía no tiene un enlace vigente, para no anular uno que ya se entregó.
+          Quien no tiene correo sigue en el paso 2.
+        </p>
+        {!resendKeySet && <Notice tone="warning">RESEND_API_KEY no está configurada.</Notice>}
+        <Button variant="secondary" loading={mailPending} onClick={() => startMail(async () => {
+          const result = await sendLinkEmailsAction();
+          setMail(result);
+          if (result.csv) download(result.csv, `enlaces_correo_${stamp}.csv`);
+        })}>Enviar enlaces por correo</Button>
+        {mail?.error && <Notice tone="error" live>{mail.error}</Notice>}
+        {mail && !mail.error && (
+          <Notice tone={mail.failed ? "warning" : "success"} live title={mail.sent ? "Correos enviados" : "Nota de envío"}>
+            Se enviaron {mail.sent ?? 0}. No se pudieron enviar {mail.failed ?? 0}. Sin correo: {mail.skippedNoEmail ?? 0}. Ya tenían enlace vigente: {mail.skippedHasLink ?? 0}.
+            {mail.csv ? " Se descargó el archivo de los enlaces nuevos, por si algún correo no llega." : ""}
+          </Notice>
+        )}
       </section>
     </div>
   );

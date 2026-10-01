@@ -72,14 +72,14 @@ describe("otros formatos de columnas", () => {
     row.getCell(2).value = "0401301346";
     const buffer = await wb.xlsx.writeBuffer();
     const parsed = await parseImportFile(buffer as ArrayBuffer, "jaime.xlsx");
-    expect(parsed).toEqual([{ row: 2, first_names: "JOSE ALBERTO", last_names: "ACUÑA VITE", national_id: "0401301346" }]);
+    expect(parsed).toEqual([{ row: 2, first_names: "JOSE ALBERTO", last_names: "ACUÑA VITE", national_id: "0401301346", outreach_email: "" }]);
     expect(validateImportRows(parsed).valid).toHaveLength(1);
   });
 
   it("detecta nombre y cédula por el contenido aunque los títulos no digan nada útil", async () => {
     const csv = new TextEncoder().encode(`Persona,Documento\nACUÑA VITE JOSE ALBERTO,${cedula}\n`);
     const parsed = await parseImportFile(csv.buffer as ArrayBuffer, "suelto.csv");
-    expect(parsed).toEqual([{ row: 2, first_names: "JOSE ALBERTO", last_names: "ACUÑA VITE", national_id: cedula }]);
+    expect(parsed).toEqual([{ row: 2, first_names: "JOSE ALBERTO", last_names: "ACUÑA VITE", national_id: cedula, outreach_email: "" }]);
     expect(validateImportRows(parsed).valid).toHaveLength(1);
   });
 

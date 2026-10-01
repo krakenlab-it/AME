@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { ManualEditForm } from "@/components/admin/manual-edit-form";
 import { PersonActions } from "@/components/admin/person-actions";
 import { StatusBadge } from "@/components/admin/status-badge";
 import { actorLabel, auditLabel, CONSENT_LABELS, REVIEW_REASON_LABELS } from "@/lib/admin/labels";
@@ -41,6 +42,26 @@ export default async function PersonPage({ params }: { params: Promise<{ id: str
       )}
 
       <PersonActions personId={person.id} canLinks={can(admin.role, "links:manage")} canReview={can(admin.role, "people:review")} needsReview={person.status === "NEEDS_REVIEW"} />
+
+      {can(admin.role, "people:edit") && (
+        <ManualEditForm
+          personId={person.id}
+          firstNames={person.first_names}
+          lastNames={person.last_names}
+          outreachEmail={detail.outreach_email ?? ""}
+          contact={contact ? {
+            primaryEmail: contact.primary_email ?? "",
+            secondaryEmail: contact.secondary_email ?? "",
+            mobilePhone: contact.mobile_phone ?? "",
+            addressLine1: contact.address_line_1 ?? "",
+            addressLine2: contact.address_line_2 ?? "",
+            city: contact.city ?? "",
+            province: contact.province ?? "",
+            country: contact.country ?? "Ecuador",
+            postalCode: contact.postal_code ?? "",
+          } : null}
+        />
+      )}
 
       <div className="grid gap-5 md:grid-cols-2">
         <Card title="Identificación">

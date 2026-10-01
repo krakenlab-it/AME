@@ -5,8 +5,12 @@ import { createHash } from "node:crypto";
 import { getRepo } from "@/lib/database";
 import { adminForAction } from "@/lib/server/admin-guard";
 import { hasPlaceholder } from "@/lib/privacy/placeholders";
-import { ImportFileError, importPeople, parseImportFile, type ImportError } from "@/lib/services/import";
+import { ImportFileError, importPeople, parseImportFile, type ImportError, type ImportNote } from "@/lib/services/import";
 import { issueLinks, linksToCsv, regenerateLink, revokeLinks } from "@/lib/services/links";
+import { emailConfigured, deliverEmail } from "@/lib/services/email";
+import { sendMissingLinkEmails } from "@/lib/services/link-mail";
+import { applyManualPersonEdit, parseManualEdit, type ManualEditDraft } from "@/lib/services/manual-edit";
+import { reconfirmAdminTotp } from "@/lib/server/reconfirm-totp";
 import { maskCedula } from "@/lib/security/masking";
 import { decrypt } from "@/lib/encryption/crypto";
 
@@ -18,7 +22,10 @@ export interface ImportState {
   total?: number;
   imported?: number;
   rejected?: ImportError[];
+  notes?: ImportNote[];
   linksCsv?: string | null;
+  noteTitle?: string;
+  noteBody?: string;
 }
 
 export async function importAction(_prev: ImportState, formData: FormData): Promise<ImportState> {
@@ -54,6 +61,66 @@ export async function issueMissingLinksAction(): Promise<{ error?: string; csv?:
     }),
   );
   return { csv: linksToCsv(rows), count: rows.length };
+}
+
+export interface LinkMailState {
+  error?: string;
+  sent?: number;
+  failed?: number;
+  skippedNoEmail?: number;
+  skippedHasLink?: number;
+  csv?: string | null;
+}
+
+export async function sendLinkEmailsAction(): Promise<LinkMailState> {
+  const ctx = await adminForAction("links:manage");
+  if (!ctx) return { error: DENIED };
+  if (!emailConfigured()) {
+    return { error: process.env.RESEND_API_KEY ? "EMAIL_FROM no está configurada." : "RESEND_API_KEY no está configurada." };
+  }
+  const organization = process.env.ORGANIZATION_NAME?.trim() || "Agrupación Marista Ecuatoriana";
+  const result = await sendMissingLinkEmails(getRepo(), { adminId: ctx.admin.id, organization, deliver: deliverEmail });
+  return result;
+}
+
+export interface ManualEditState {
+  error?: string;
+  ok?: boolean;
+}
+
+export async function manualEditAction(_prev: ManualEditState, formData: FormData): Promise<ManualEditState> {
+  const ctx = await adminForAction("people:edit");
+  if (!ctx) return { error: DENIED };
+  const personId = String(formData.get("personId") ?? "");
+  if (!/^[0-9a-f-]{36}$/i.test(personId)) return { error: "Registro no válido." };
+  const hasContact = formData.get("hasContact") === "1";
+  const draft: ManualEditDraft = {
+    firstNames: String(formData.get("firstNames") ?? ""),
+    lastNames: String(formData.get("lastNames") ?? ""),
+    outreachEmail: String(formData.get("outreachEmail") ?? ""),
+    contact: hasContact
+      ? {
+          primary_email: String(formData.get("primaryEmail") ?? ""),
+          secondary_email: String(formData.get("secondaryEmail") ?? ""),
+          mobile_phone: String(formData.get("mobilePhone") ?? ""),
+          address_line_1: String(formData.get("addressLine1") ?? ""),
+          address_line_2: String(formData.get("addressLine2") ?? ""),
+          city: String(formData.get("city") ?? ""),
+          province: String(formData.get("province") ?? ""),
+          country: String(formData.get("country") ?? ""),
+          postal_code: String(formData.get("postalCode") ?? ""),
+        }
+      : null,
+  };
+  const parsed = parseManualEdit(draft);
+  if (!parsed.ok) return { error: parsed.error };
+  const totp = await reconfirmAdminTotp(String(formData.get("totp") ?? ""));
+  if (!totp.ok) return { error: totp.error };
+  const saved = await applyManualPersonEdit(getRepo(), { personId, adminId: ctx.admin.id, patch: parsed.patch, mfaConfirmed: true });
+  if (!saved.ok) return { error: saved.error };
+  revalidatePath(`/admin/personas/${personId}`);
+  revalidatePath("/admin");
+  return { ok: true };
 }
 
 export async function regenerateLinkAction(personId: string): Promise<{ error?: string; url?: string; expiresAt?: string }> {

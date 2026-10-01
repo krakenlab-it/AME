@@ -19,7 +19,10 @@ export const AUDIT_LABELS: Record<AuditAction, string> = {
   IMPORT_CREATED: "Importó una base de personas",
   LINK_CREATED: "Se creó un enlace personal",
   LINK_REVOKED: "Se revocó un enlace personal",
+  LINK_EMAIL_SENT: "Envió enlaces personales por correo",
   RECORD_REVIEWED: "Marcó el registro como revisado",
+  MANUAL_EDIT: "Corrigió la ficha manualmente",
+  UNIBROKERS_EXPORT_CREATED: "Generó la carga de contacto para Unibrokers",
   NOTICE_PUBLISHED: "Publicó una versión del aviso de privacidad",
   RETENTION_APPLIED: "Se anonimizaron registros por vencimiento",
 };
