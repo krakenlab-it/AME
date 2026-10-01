@@ -9,7 +9,8 @@ import { cookieOptions, RESPONDENT_COOKIE, RESPONDENT_SESSION_MINUTES } from "@/
 import { clientIp, ipHash } from "@/lib/security/request";
 import { sendConfirmationEmail } from "@/lib/services/email";
 import { identify, openInsuredHome, resumeImportedPersonByCedula, submitResponse, type LinkState } from "@/lib/services/respondent";
-import { readRespondentToken, currentRespondent } from "@/lib/server/respondent-session";
+import { endRespondentSession } from "@/lib/server/end-respondent-session";
+import { readRespondentToken } from "@/lib/server/respondent-session";
 
 export interface IdentifyState {
   error?: string;
@@ -123,8 +124,6 @@ export async function submitAction(values: unknown): Promise<SubmitState> {
 }
 
 export async function finishAction(): Promise<void> {
-  const ctx = await currentRespondent({ allowSubmitted: true });
-  if (ctx) await getRepo().revokeRespondentSession(ctx.session.id);
-  (await cookies()).set(RESPONDENT_COOKIE(), "", cookieOptions(0));
+  await endRespondentSession();
   redirect("/?fin=1");
 }

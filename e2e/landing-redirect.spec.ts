@@ -50,3 +50,14 @@ test("una sesión del asegurado vuelve a mi cuenta desde la portada", async ({ p
   await expect(page).toHaveURL(/\/mi-cuenta$/);
   await expect(page.getByRole("heading", { name: "Mi registro" })).toBeVisible();
 });
+
+test("el enlace /empezar reinicia en la portada aunque haya sesión de mi cuenta", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: /Entrar a mi cuenta/ }).click();
+  await expect(page).toHaveURL(/\/mi-cuenta$/);
+
+  await page.goto("/empezar");
+  await expect(page).toHaveURL(/\/$/);
+  await expect(page.getByText(/enlace seguro enviado para la protección de sus datos personales/i)).toBeVisible();
+  await expect(page.getByLabel(/Digita su número de cédula para empezar/i)).toBeVisible();
+});
