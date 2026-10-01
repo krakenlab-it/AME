@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { Mail } from "lucide-react";
+import { CedulaCta } from "@/components/forms/cedula-cta";
 import { PortalHero, ProtectedNote } from "@/components/portal/hero";
 import { PortalShell, PortalUnavailable } from "@/components/portal/shell";
 import { DemoAccess } from "@/components/demo/demo-access";
@@ -57,7 +58,9 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
                 Iniciar sesión con correo
               </ButtonLink>
             </div>
-            <ProtectedNote />
+            <ProtectedNote>
+              <CedulaCta turnstileSiteKey={process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY ?? null} />
+            </ProtectedNote>
             <DemoAccess />
           </div>
         }

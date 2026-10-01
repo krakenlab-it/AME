@@ -45,6 +45,14 @@ export const identifySchema = z
   })
   .strict();
 
+/** Retomar desde el inicio público con cédula (solo personas ya importadas). */
+export const cedulaResumeSchema = z
+  .object({
+    cedula: cedulaField,
+    captchaToken: z.string().max(4096).optional(),
+  })
+  .strict();
+
 // ── Pasos 2–5: formulario ────────────────────────────────────────────────────
 export const namesSchema = z
   .object({

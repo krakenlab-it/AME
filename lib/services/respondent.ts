@@ -1,7 +1,7 @@
 import { encrypt, decrypt, keyedHash, randomToken, safeEqual, sha256 } from "@/lib/encryption/crypto";
 import { RepoError, type PersonRecord, type RespondentRepo, type RespondentSessionRecord } from "@/lib/database/types";
 import { GENERIC_IDENTIFY_ERROR } from "@/lib/validation/constants";
-import { flattenIssues, identifySchema, submissionSchema } from "@/lib/validation/schemas";
+import { flattenIssues, cedulaResumeSchema, identifySchema, submissionSchema } from "@/lib/validation/schemas";
 import { cleanText, sanitizeDeep } from "@/lib/validation/sanitize";
 import { normalizePhone } from "@/lib/validation/phone";
 import { maskCedula } from "@/lib/security/masking";
@@ -123,6 +123,67 @@ export async function identify(repo: RespondentRepo, rawInput: unknown, deps: Id
 /** Misma verificación de enlace + cédula, también si el enlace ya se usó, para abrir /mi-cuenta en lectura. */
 export function openInsuredHome(repo: RespondentRepo, rawInput: unknown, deps: IdentifyDeps): Promise<IdentifyResult> {
   return identify(repo, rawInput, deps, "home");
+}
+
+/** Inicio público: cédula de una persona ya importada + enlace vigente → sesión del formulario. */
+export async function resumeImportedPersonByCedula(repo: RespondentRepo, rawInput: unknown, deps: IdentifyDeps): Promise<IdentifyResult> {
+  const parsed = cedulaResumeSchema.safeParse(sanitizeDeep(rawInput));
+  if (!parsed.success) {
+    const fieldErrors = flattenIssues(parsed.error);
+    return { ok: false, error: fieldErrors.cedula ?? GENERIC_IDENTIFY_ERROR, fieldErrors };
+  }
+  const { cedula, captchaToken } = parsed.data;
+
+  const limit = await repo.rateLimitHit(`identify:${deps.ipHash}`, settings.identifyLimitPerIp, settings.identifyWindowSeconds);
+  if (!limit.allowed) {
+    await repo.logSecurityEvent({ event_type: "IDENTIFY_RATE_LIMITED", ip_hash: deps.ipHash, detail: { hits: limit.hits, surface: "landing-cedula" } });
+    return { ok: false, error: "Hiciste demasiados intentos. Espera 15 minutos y vuelve a intentarlo." };
+  }
+
+  if (deps.captchaEnabled && limit.hits > settings.captchaAfterAttempts) {
+    const human = await deps.verifyCaptcha(captchaToken);
+    if (!human) return { ok: false, error: "Confirma que no eres un robot para continuar.", requireCaptcha: true };
+  }
+
+  const person = await repo.findPersonByNationalIdHash(keyedHash(cedula, "national_id"));
+  if (!person) {
+    await repo.logSecurityEvent({ event_type: "LANDING_CEDULA_UNKNOWN", ip_hash: deps.ipHash });
+    return { ok: false, error: GENERIC_IDENTIFY_ERROR, requireCaptcha: deps.captchaEnabled && limit.hits >= settings.captchaAfterAttempts };
+  }
+
+  if (!canContinueForm(person)) {
+    await repo.logSecurityEvent({ event_type: "LANDING_CEDULA_NOT_EDITABLE", ip_hash: deps.ipHash, detail: { person_id: person.id } });
+    return { ok: false, error: GENERIC_IDENTIFY_ERROR, requireCaptcha: deps.captchaEnabled && limit.hits >= settings.captchaAfterAttempts };
+  }
+
+  const token = await repo.findResumableAccessToken(person.id);
+  if (!token) {
+    await repo.logSecurityEvent({ event_type: "LANDING_CEDULA_NO_TOKEN", ip_hash: deps.ipHash, detail: { person_id: person.id } });
+    return { ok: false, error: GENERIC_IDENTIFY_ERROR, requireCaptcha: deps.captchaEnabled && limit.hits >= settings.captchaAfterAttempts };
+  }
+
+  const state = tokenState(token);
+  if (state !== "valid") {
+    return { ok: false, error: linkStateMessage(state), linkState: state };
+  }
+
+  const sessionToken = randomToken(32);
+  const expiresAt = new Date(Date.now() + RESPONDENT_SESSION_MINUTES * 60_000).toISOString();
+  await repo.createRespondentSession({
+    session_hash: sha256(sessionToken),
+    person_id: person.id,
+    access_token_id: token.id,
+    expires_at: expiresAt,
+    submitted_at: null,
+  });
+  await repo.markStarted(person.id);
+  await repo.audit({
+    person_id: person.id,
+    actor_type: "respondent",
+    action: "IDENTITY_VERIFIED",
+    metadata: { surface: "landing-cedula" },
+  });
+  return { ok: true, sessionToken, expiresAt };
 }
 
 export function linkStateMessage(state: LinkState): string {

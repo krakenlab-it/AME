@@ -1,4 +1,17 @@
 import { expect, test } from "@playwright/test";
+import { PRODUCT_PERSONAS } from "../lib/seed/product-personas";
+
+const started = PRODUCT_PERSONAS.find((persona) => persona.key === "started");
+
+test("la portada retoma el formulario con la cédula importada", async ({ page }) => {
+  expect(started).toBeTruthy();
+  await page.goto("/");
+  await page.getByRole("button", { name: "Haz clic aquí" }).click();
+  await page.getByLabel("Número de cédula").fill(started!.cedula);
+  await page.getByRole("button", { name: "Continuar" }).click();
+  await expect(page).toHaveURL(/\/verificar\/formulario$/);
+  await expect(page.getByText(started!.currentFirstNames, { exact: true })).toBeVisible();
+});
 
 test("quien no tiene sesión se queda en la portada", async ({ page }) => {
   await page.goto("/");

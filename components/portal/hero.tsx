@@ -31,13 +31,16 @@ export function PortalHero({ action }: { action: ReactNode }) {
   );
 }
 
-export function ProtectedNote() {
+export function ProtectedNote({ children }: { children?: ReactNode }) {
   return (
     <div className="flex gap-3 rounded-xl bg-marian-soft/60 px-4 py-3 text-[15px]">
       <Lock className="mt-0.5 h-5 w-5 shrink-0 text-marian" aria-hidden />
-      <p>
-        <span className="font-semibold">Tu información está protegida.</span> Este portal usa medidas de seguridad para cuidar su confidencialidad.
-      </p>
+      <div className="min-w-0 flex-1 space-y-3">
+        <p>
+          <span className="font-semibold">Tu información está protegida.</span> Este portal usa medidas de seguridad para cuidar su confidencialidad.
+        </p>
+        {children}
+      </div>
     </div>
   );
 }
