@@ -31,10 +31,10 @@ export function ImportPanel({ resendKeySet }: { resendKeySet: boolean }) {
         <div className="space-y-1">
           <h2 className="text-xl">1. Cargar base inicial</h2>
           <p className="text-[15px] text-ink-muted">
-            Sube un archivo .csv o .xlsx (máximo 5 MB). Lo único obligatorio en cada fila es la <strong>cédula</strong> de 10 dígitos.
-            La plantilla recomendada usa las columnas Nombres, Apellidos y Cédula. Esos mismos datos también se aceptan como <code>first_names</code>, <code>last_names</code> y <code>national_id</code> (la cédula).
-            Si el archivo trae el nombre y la cédula con otros títulos, también se importa. Un correo, si viene en el archivo, sirve para enviar el enlace.
-            ¿No sabes cómo armarlo? Descarga la <a className="font-semibold text-marian underline underline-offset-2" href="/templates/initial_people.csv" download>plantilla de ejemplo</a>.
+            Suba un archivo .csv o .xlsx (máximo 5 MB). En cada fila lo único obligatorio es la <strong>cédula</strong> con exactamente 10 dígitos.
+            La plantilla recomendada usa las columnas Nombres, Apellidos y Cédula; también aceptamos títulos equivalentes en el archivo.
+            Si faltan nombres, la fila se importa igual con la cédula. Un correo opcional sirve para el paso 3.
+            ¿Necesita un modelo? Descargue la <a className="font-semibold text-marian underline underline-offset-2" href="/templates/initial_people.csv" download>plantilla de ejemplo</a>.
           </p>
         </div>
         <Field id="import-file" label="Archivo de personas" required>
@@ -92,7 +92,7 @@ export function ImportPanel({ resendKeySet }: { resendKeySet: boolean }) {
 
       <section className="sheet space-y-4 p-6">
         <h2 className="text-xl">2. Enlaces para registros sin enlace vigente</h2>
-        <p className="text-[15px] text-ink-muted">Genera enlaces nuevos para personas pendientes o iniciadas cuyo enlace venció, fue revocado o se perdió.</p>
+        <p className="text-[15px] text-ink-muted">Genere enlaces nuevos para personas pendientes o iniciadas cuyo enlace venció, fue revocado o se perdió.</p>
         <Button variant="secondary" loading={linksPending} onClick={() => startLinks(async () => {
           const r = await issueMissingLinksAction();
           if (r.error) setLinksMsg(r.error);
@@ -103,10 +103,10 @@ export function ImportPanel({ resendKeySet }: { resendKeySet: boolean }) {
       </section>
 
       <section className="sheet space-y-4 p-6">
-        <h2 className="text-xl">3. Enviar el enlace por correo</h2>
+        <h2 className="text-xl">3. Enviar enlaces por correo a todas las personas</h2>
         <p className="text-[15px] text-ink-muted">
-          Envía el enlace personal para que la persona complete sus datos. Solo se escribe a quien tiene correo y todavía no tiene un enlace vigente, para no anular uno que ya se entregó.
-          Quien no tiene correo sigue en el paso 2.
+          Envía el enlace personal a <strong>todas</strong> las personas importadas que tengan correo registrado, para que completen sus datos complementarios.
+          Si ya tenían un enlace vigente, se genera uno nuevo antes del envío. Quien no tiene correo debe recibir el enlace por otro canal (paso 2).
         </p>
         {!resendKeySet && <Notice tone="warning">RESEND_API_KEY no está configurada.</Notice>}
         <Button variant="secondary" loading={mailPending} onClick={() => startMail(async () => {
@@ -117,7 +117,7 @@ export function ImportPanel({ resendKeySet }: { resendKeySet: boolean }) {
         {mail?.error && <Notice tone="error" live>{mail.error}</Notice>}
         {mail && !mail.error && (
           <Notice tone={mail.failed ? "warning" : "success"} live title={mail.sent ? "Correos enviados" : "Nota de envío"}>
-            Se enviaron {mail.sent ?? 0}. No se pudieron enviar {mail.failed ?? 0}. Sin correo: {mail.skippedNoEmail ?? 0}. Ya tenían enlace vigente: {mail.skippedHasLink ?? 0}.
+            Se enviaron {mail.sent ?? 0}. No se pudieron enviar {mail.failed ?? 0}. Sin correo: {mail.skippedNoEmail ?? 0}. Enlaces renovados antes del envío: {mail.renewedLinks ?? 0}.
             {mail.csv ? " Se descargó el archivo de los enlaces nuevos, por si algún correo no llega." : ""}
           </Notice>
         )}

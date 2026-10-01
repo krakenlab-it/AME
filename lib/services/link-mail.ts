@@ -2,13 +2,14 @@ import type { AdminRepo } from "@/lib/database/types";
 import { maskCedulaTail } from "@/lib/security/masking";
 import type { OutboundEmail } from "./email";
 import { personalLinkEmail } from "./email";
-import { issueLinks, linksToCsv } from "./links";
+import { issueLinks, linksToCsv, regenerateLink } from "./links";
 
 export interface LinkMailResult {
   sent: number;
   failed: number;
   skippedNoEmail: number;
   skippedHasLink: number;
+  renewedLinks: number;
   csv: string | null;
 }
 
@@ -22,26 +23,46 @@ export async function sendMissingLinkEmails(
     adminId: string;
     organization: string;
     deliver: (message: OutboundEmail) => Promise<boolean>;
+    /** Si es true, escribe a todas las personas con correo y renueva el enlace vigente para poder enviar la URL. */
+    emailEveryoneWithOutreach?: boolean;
   },
 ): Promise<LinkMailResult> {
   const targets = await repo.listLinkMailTargets();
-  const skippedHasLink = targets.filter((person) => person.has_active_token).length;
-  const withoutLink = targets.filter((person) => !person.has_active_token);
-  const skippedNoEmail = withoutLink.filter((person) => !person.email).length;
-  const ready = withoutLink.filter((person): person is typeof person & { email: string } => Boolean(person.email));
+  const withEmail = targets.filter((person): person is typeof person & { email: string } => Boolean(person.email));
+  const skippedNoEmail = targets.length - withEmail.length;
+
+  const ready = input.emailEveryoneWithOutreach
+    ? withEmail
+    : withEmail.filter((person) => !person.has_active_token);
+
+  const skippedHasLink = input.emailEveryoneWithOutreach
+    ? 0
+    : targets.filter((person) => person.has_active_token).length;
 
   if (!ready.length) {
     await repo.audit({
       actor_type: "admin",
       actor_id: input.adminId,
       action: "LINK_EMAIL_SENT",
-      metadata: { sent: 0, failed: 0, skipped_no_email: skippedNoEmail, skipped_has_link: skippedHasLink },
+      metadata: { sent: 0, failed: 0, skipped_no_email: skippedNoEmail, skipped_has_link: skippedHasLink, renewed: 0 },
     });
-    return { sent: 0, failed: 0, skippedNoEmail, skippedHasLink, csv: null };
+    return { sent: 0, failed: 0, skippedNoEmail, skippedHasLink, renewedLinks: 0, csv: null };
   }
 
-  const links = await issueLinks(repo, ready.map((person) => person.id), input.adminId);
-  const linkByPerson = new Map(links.map((link) => [link.person_id, link]));
+  let renewedLinks = 0;
+  const linkByPerson = new Map<string, { url: string; expires_at: string }>();
+  const needIssue = ready.filter((person) => !person.has_active_token);
+  const needRenew = input.emailEveryoneWithOutreach ? ready.filter((person) => person.has_active_token) : [];
+
+  for (const link of await issueLinks(repo, needIssue.map((person) => person.id), input.adminId)) {
+    linkByPerson.set(link.person_id, { url: link.url, expires_at: link.expires_at });
+  }
+  for (const person of needRenew) {
+    const link = await regenerateLink(repo, person.id, input.adminId);
+    linkByPerson.set(person.id, { url: link.url, expires_at: link.expires_at });
+    renewedLinks += 1;
+  }
+
   const csvRows: { first_names: string; last_names: string; cedula_masked: string; url: string; expires_at: string }[] = [];
   let sent = 0;
   let failed = 0;
@@ -79,7 +100,7 @@ export async function sendMissingLinkEmails(
     actor_type: "admin",
     actor_id: input.adminId,
     action: "LINK_EMAIL_SENT",
-    metadata: { sent, failed, skipped_no_email: skippedNoEmail, skipped_has_link: skippedHasLink },
+    metadata: { sent, failed, skipped_no_email: skippedNoEmail, skipped_has_link: skippedHasLink, renewed: renewedLinks, mode: input.emailEveryoneWithOutreach ? "all" : "missing" },
   });
-  return { sent, failed, skippedNoEmail, skippedHasLink, csv: linksToCsv(csvRows) };
+  return { sent, failed, skippedNoEmail, skippedHasLink, renewedLinks, csv: linksToCsv(csvRows) };
 }

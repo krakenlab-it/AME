@@ -98,20 +98,30 @@ describe("envío de enlaces por correo", () => {
       },
     });
     expect(repo.outreachEmails.has(noMail)).toBe(false);
-    expect(first).toMatchObject({ sent: 1, failed: 0, skippedNoEmail: 1, skippedHasLink: 1 });
+    expect(first).toMatchObject({ sent: 1, failed: 0, skippedNoEmail: 1, skippedHasLink: 1, renewedLinks: 0 });
     expect(sent).toEqual(["ana@correo.com"]);
     expect(repo.tokens.size).toBe(2);
 
-    const second = await sendMissingLinkEmails(repo, {
+    const blast = await sendMissingLinkEmails(repo, {
       adminId: "adm",
       organization: "Agrupación Marista Ecuatoriana",
-      deliver: async () => {
-        throw new Error("no debía enviar");
+      emailEveryoneWithOutreach: true,
+      deliver: async (message) => {
+        sent.push(message.to);
+        return true;
       },
     });
-    expect(second.sent).toBe(0);
-    expect(second.skippedHasLink).toBe(2);
-    expect(repo.tokens.size).toBe(2);
+    expect(blast).toMatchObject({ sent: 2, renewedLinks: 2 });
+    expect(sent).toContain("luis@correo.com");
+    expect(repo.tokens.size).toBe(4);
+  });
+
+  it("importa una fila solo con cédula válida", () => {
+    const cedula = makeCedula("171003406");
+    const checked = validateImportRows([{ row: 2, first_names: "", last_names: "", national_id: cedula, outreach_email: "" }]);
+    expect(checked.valid).toHaveLength(1);
+    expect(checked.valid[0]?.first_names).toBe("Sin nombre");
+    expect(checked.notes[0]?.text).toMatch(/solo con la cédula/i);
   });
 });
 

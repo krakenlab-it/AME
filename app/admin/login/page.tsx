@@ -31,7 +31,7 @@ export default async function AdminLoginPage() {
 
   const configured = isDemoMode() || supabasePublicConfig() !== null;
   return (
-    <AdminAuthCard title="Panel administrativo" subtitle="Acceso restringido. Requiere verificación en dos pasos.">
+    <AdminAuthCard title="Panel administrativo" subtitle="Acceso restringido para personal invitado. Requiere verificación en dos pasos.">
       {!configured && (
         <Notice tone="warning" title="Falta configurar Supabase Auth">
           Agrega NEXT_PUBLIC_SUPABASE_URL y NEXT_PUBLIC_SUPABASE_ANON_KEY. La clave service_role no se usa en el navegador.

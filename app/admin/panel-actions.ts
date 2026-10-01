@@ -69,6 +69,7 @@ export interface LinkMailState {
   failed?: number;
   skippedNoEmail?: number;
   skippedHasLink?: number;
+  renewedLinks?: number;
   csv?: string | null;
 }
 
@@ -79,7 +80,12 @@ export async function sendLinkEmailsAction(): Promise<LinkMailState> {
     return { error: process.env.RESEND_API_KEY ? "EMAIL_FROM no está configurada." : "RESEND_API_KEY no está configurada." };
   }
   const organization = process.env.ORGANIZATION_NAME?.trim() || "Agrupación Marista Ecuatoriana";
-  const result = await sendMissingLinkEmails(getRepo(), { adminId: ctx.admin.id, organization, deliver: deliverEmail });
+  const result = await sendMissingLinkEmails(getRepo(), {
+    adminId: ctx.admin.id,
+    organization,
+    deliver: deliverEmail,
+    emailEveryoneWithOutreach: true,
+  });
   return result;
 }
 

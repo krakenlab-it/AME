@@ -1,5 +1,4 @@
 import { redirect } from "next/navigation";
-import { Mail } from "lucide-react";
 import { CedulaCta } from "@/components/forms/cedula-cta";
 import { PortalHero, ProtectedNote } from "@/components/portal/hero";
 import { PortalShell, PortalUnavailable } from "@/components/portal/shell";
@@ -34,33 +33,24 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
           <div className="sheet space-y-5 p-6 md:p-8">
             {fin ? (
               <Notice tone="success" title={fin === "cuenta" ? "Sesión cerrada" : "Proceso finalizado"}>
-                Tu sesión se cerró de forma segura. Ya puedes cerrar esta ventana.
+                Su sesión se cerró de forma segura. Ya puede cerrar esta ventana.
               </Notice>
             ) : (
-              <>
-                <div className="flex items-start gap-3">
-                  <Mail className="mt-1 h-6 w-6 shrink-0 text-marian" aria-hidden />
-                  <div>
-                    <h2 className="text-xl">Para comenzar, abre tu enlace personal</h2>
-                    <p className="mt-2 text-ink-muted">
-                      Cada persona recibe un enlace individual por correo o mensaje. Ábrelo desde ese mensaje para iniciar el proceso.
-                    </p>
-                  </div>
-                </div>
-                <p className="text-[15px] text-ink-muted">
-                  Por seguridad, este portal no permite buscar registros por nombre o cédula.
-                </p>
-              </>
+              <p className="text-[15px] leading-relaxed text-ink">
+                Usted ha ingresado desde un enlace seguro enviado para la protección de sus datos personales. Confirme su cédula a continuación para continuar con la actualización.
+              </p>
+            )}
+            {!fin && (
+              <ProtectedNote>
+                <CedulaCta turnstileSiteKey={process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY ?? null} />
+              </ProtectedNote>
             )}
             <div className="border-t border-marian-line/70 pt-5">
-              <p className="text-sm text-ink-muted">Si formas parte del equipo, ingresa con tu correo.</p>
-              <ButtonLink href="/admin/login" variant="secondary" size="sm" className="mt-3">
+              <p className="text-sm text-ink-muted">Si forma parte del equipo, ingrese con su correo institucional.</p>
+              <ButtonLink href="/admin/login" variant="ghost" size="sm" className="mt-2">
                 Iniciar sesión con correo
               </ButtonLink>
             </div>
-            <ProtectedNote>
-              <CedulaCta turnstileSiteKey={process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY ?? null} />
-            </ProtectedNote>
             <DemoAccess />
           </div>
         }

@@ -100,11 +100,12 @@ describe("importación inicial", () => {
     { row: 6, first_names: "", last_names: "Sin nombre", national_id: makeCedula("171234567") },
   ];
 
-  it("detecta duplicados, cédulas inválidas y campos vacíos", () => {
+  it("detecta duplicados, cédulas inválidas y permite filas solo con cédula", () => {
     const v = validateImportRows(rows);
-    expect(v.valid.map((r) => r.row)).toEqual([2, 3]);
+    expect(v.valid.map((r) => r.row)).toEqual([2, 3, 6]);
     expect(v.valid[1]!.national_id).toBe(C2);
-    expect(v.errors.map((e) => e.row)).toEqual([4, 5, 6]);
+    expect(v.valid[2]!.first_names).toBe("Sin nombre");
+    expect(v.errors.map((e) => e.row)).toEqual([4, 5]);
     expect(v.errors[0]!.reason).toContain("duplicada");
     expect(JSON.stringify(v.errors)).not.toContain(C1); // el reporte enmascara la cédula
   });
@@ -119,11 +120,11 @@ describe("importación inicial", () => {
   it("importa solo las filas válidas, genera tokens y reporta las rechazadas", async () => {
     const repo = new MemoryRepo();
     const out = await importPeople(repo, { rows, filename: "base.csv", adminId: "a", allowPartial: true });
-    expect(out.imported).toBe(2);
-    expect(out.rejected).toHaveLength(3);
-    expect(repo.tokens.size).toBe(2);
+    expect(out.imported).toBe(3);
+    expect(out.rejected).toHaveLength(2);
+    expect(repo.tokens.size).toBe(3);
     const urls = out.linksCsv!.match(/https:\/\/portal\.test\/verificar\/[A-Za-z0-9_-]+/g)!;
-    expect(urls).toHaveLength(2);
+    expect(urls).toHaveLength(3);
     // el token no contiene la cédula y en la base solo se guarda su hash
     const token = urls[0]!.split("/").at(-1)!;
     expect(token).not.toContain(C1);

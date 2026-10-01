@@ -12,7 +12,7 @@ export const IMPORT_MAX_ROWS = 20_000;
 export const IMPORT_MAX_BYTES = 5 * 1024 * 1024;
 const NAME_RE = /^[\p{L}][\p{L}\p{M}' .-]*$/u;
 const TEMPLATE_HINT =
-  "No encontramos una cédula de 10 dígitos. La plantilla recomendada usa las columnas Nombres, Apellidos y Cédula. Esos mismos datos también se aceptan como first_names, last_names y national_id.";
+  "No encontramos una columna de cédula con 10 dígitos. Use la plantilla con las columnas Nombres, Apellidos y Cédula, o un archivo equivalente con esos datos.";
 
 export interface RawImportRow {
   row: number; // número de fila en el archivo (1 = encabezado)
@@ -138,21 +138,33 @@ export function validateImportRows(rows: RawImportRow[]): ValidatedImport {
     if (/^\d{9}$/.test(id)) id = `0${id}`;
     const masked = /^\d{10}$/.test(id) ? maskCedula(id) : "—";
     const reasons: string[] = [];
-    if (first.length < 2 || !NAME_RE.test(first)) reasons.push("Nombres vacíos o con caracteres no permitidos");
-    if (last.length < 2 || !NAME_RE.test(last)) reasons.push("Apellidos vacíos o con caracteres no permitidos");
-    if (!isValidCedula(id)) reasons.push("Cédula inválida: debe tener 10 dígitos y ser una cédula ecuatoriana");
-    else if (seen.has(id)) reasons.push(`Cédula duplicada en el archivo (fila ${seen.get(id)})`);
+    if (!/^\d{10}$/.test(id) || !isValidCedula(id)) {
+      reasons.push("Cédula inválida: debe tener exactamente 10 dígitos y ser una cédula ecuatoriana válida");
+    } else if (seen.has(id)) {
+      reasons.push(`Cédula duplicada en el archivo (fila ${seen.get(id)})`);
+    }
     if (reasons.length) {
       errors.push({ row: raw.row, reason: reasons.join("; "), cedula: masked });
       continue;
     }
     seen.set(id, raw.row);
+    let resolvedFirst = first;
+    let resolvedLast = last;
+    if (resolvedFirst.length < 2 || !NAME_RE.test(resolvedFirst)) resolvedFirst = "Sin nombre";
+    if (resolvedLast.length < 2 || !NAME_RE.test(resolvedLast)) resolvedLast = "Registrado";
+    if (resolvedFirst === "Sin nombre" || resolvedLast === "Registrado") {
+      notes.push({
+        row: raw.row,
+        cedula: masked,
+        text: "Faltaban nombres o apellidos en el archivo; se importó solo con la cédula. Puede completarlos después en la ficha.",
+      });
+    }
     let outreach = cleanText(raw.outreach_email ?? "").toLowerCase();
     if (outreach && !looksLikeEmail(outreach)) {
       notes.push({ row: raw.row, cedula: masked, text: "El correo no tiene un formato válido y no se guardó. La persona sí se importa." });
       outreach = "";
     }
-    valid.push({ row: raw.row, first_names: first, last_names: last, national_id: id, outreach_email: outreach });
+    valid.push({ row: raw.row, first_names: resolvedFirst, last_names: resolvedLast, national_id: id, outreach_email: outreach });
   }
   return { valid, errors, notes, total: rows.length };
 }
