@@ -13,6 +13,8 @@ data/
 *.real.csv
 *.xlsx
 !templates/*.xlsx
+# Caso real de CI para la importación (KAN-113). No es una carga de producción.
+!tests/fixtures/agrupacion-marista-base-datos-1.xlsx
 *.tsbuildinfo
 /test-results/
 /playwright-report/

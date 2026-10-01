@@ -5,12 +5,14 @@ import type { AdminRepo } from "@/lib/database/types";
 import { isValidCedula, normalizeCedula } from "@/lib/validation/cedula";
 import { cleanText } from "@/lib/validation/sanitize";
 import { maskCedula } from "@/lib/security/masking";
+import { interpretImportCells, type ImportCell } from "./import-layout";
 import { issueLinks, linksToCsv } from "./links";
 
 export const IMPORT_MAX_ROWS = 20_000;
 export const IMPORT_MAX_BYTES = 5 * 1024 * 1024;
-const REQUIRED_COLUMNS = ["first_names", "last_names", "national_id"] as const;
 const NAME_RE = /^[\p{L}][\p{L}\p{M}' .-]*$/u;
+const TEMPLATE_HINT =
+  "No encontramos un nombre y una cédula de 10 dígitos. La plantilla recomendada usa las columnas first_names, last_names y national_id.";
 
 export interface RawImportRow {
   row: number; // número de fila en el archivo (1 = encabezado)
@@ -35,47 +37,80 @@ export interface ValidatedImport {
 export async function parseImportFile(bytes: ArrayBuffer, filename: string): Promise<RawImportRow[]> {
   if (bytes.byteLength > IMPORT_MAX_BYTES) throw new ImportFileError("El archivo supera 5 MB.");
   const lower = filename.toLowerCase();
-  let records: Record<string, unknown>[];
+  let table: { row: number; cells: ImportCell[] }[];
   if (lower.endsWith(".csv")) {
-    const text = new TextDecoder("utf-8").decode(bytes).replace(/^\uFEFF/, "");
-    const parsed = Papa.parse<Record<string, unknown>>(text, { header: true, skipEmptyLines: "greedy", transformHeader: (h) => h.trim().toLowerCase() });
-    records = parsed.data;
-    ensureColumns(parsed.meta.fields ?? []);
+    table = parseCsvTable(bytes);
   } else if (lower.endsWith(".xlsx")) {
-    const wb = new ExcelJS.Workbook();
-    await wb.xlsx.load(bytes);
-    const ws = wb.worksheets[0];
-    if (!ws) throw new ImportFileError("El archivo no tiene hojas.");
-    const headers: string[] = [];
-    ws.getRow(1).eachCell({ includeEmpty: true }, (cell, col) => {
-      headers[col] = String(cell.text ?? "").trim().toLowerCase();
-    });
-    ensureColumns(headers.filter(Boolean));
-    records = [];
-    ws.eachRow({ includeEmpty: false }, (row, rowNumber) => {
-      if (rowNumber === 1) return;
-      const rec: Record<string, unknown> = {};
-      row.eachCell({ includeEmpty: true }, (cell, col) => {
-        const h = headers[col];
-        if (h) rec[h] = cell.text;
-      });
-      records.push(rec);
-    });
+    table = await parseXlsxTable(bytes);
   } else {
     throw new ImportFileError("Formato no soportado. Usa un archivo .csv o .xlsx.");
   }
-  if (records.length > IMPORT_MAX_ROWS) throw new ImportFileError(`El archivo supera el máximo de ${IMPORT_MAX_ROWS} registros.`);
-  return records.map((r, i) => ({
-    row: i + 2,
-    first_names: String(r.first_names ?? ""),
-    last_names: String(r.last_names ?? ""),
-    national_id: String(r.national_id ?? ""),
-  }));
+  if (table.length > IMPORT_MAX_ROWS) throw new ImportFileError(`El archivo supera el máximo de ${IMPORT_MAX_ROWS} registros.`);
+  const rows = table.map((entry) => ({ row: entry.row, ...interpretImportCells(entry.cells) }));
+  if (rows.length > 0 && rows.every((row) => !row.first_names && !row.last_names && !row.national_id)) {
+    throw new ImportFileError(TEMPLATE_HINT);
+  }
+  return rows;
 }
 
-function ensureColumns(fields: string[]) {
-  const missing = REQUIRED_COLUMNS.filter((c) => !fields.includes(c));
-  if (missing.length) throw new ImportFileError(`Faltan columnas obligatorias: ${missing.join(", ")}.`);
+function parseCsvTable(bytes: ArrayBuffer): { row: number; cells: ImportCell[] }[] {
+  const text = new TextDecoder("utf-8").decode(bytes).replace(/^\uFEFF/, "");
+  const parsed = Papa.parse<string[]>(text, { header: false, skipEmptyLines: "greedy" });
+  const [headerRow, ...data] = parsed.data;
+  const headers = (headerRow ?? []).map((header) => String(header ?? "").trim());
+  if (!headers.some(Boolean)) throw new ImportFileError(TEMPLATE_HINT);
+  return data.map((record, index) => ({
+    row: index + 2,
+    cells: headers.flatMap((header, column) => {
+      if (!header) return [];
+      return [{ header, value: String(record[column] ?? "") }];
+    }),
+  })).filter((entry) => entry.cells.some((cell) => cell.value.trim()));
+}
+
+async function parseXlsxTable(bytes: ArrayBuffer): Promise<{ row: number; cells: ImportCell[] }[]> {
+  const wb = new ExcelJS.Workbook();
+  await wb.xlsx.load(bytes);
+  const ws = wb.worksheets[0];
+  if (!ws) throw new ImportFileError("El archivo no tiene hojas.");
+  const headers: string[] = [];
+  ws.getRow(1).eachCell({ includeEmpty: true }, (cell, col) => {
+    headers[col] = excelCellString(cell).trim();
+  });
+  if (!headers.some(Boolean)) throw new ImportFileError(TEMPLATE_HINT);
+  const table: { row: number; cells: ImportCell[] }[] = [];
+  ws.eachRow({ includeEmpty: false }, (row, rowNumber) => {
+    if (rowNumber === 1) return;
+    const cells: ImportCell[] = [];
+    row.eachCell({ includeEmpty: true }, (cell, col) => {
+      const header = headers[col];
+      if (!header) return;
+      cells.push({ header, value: excelCellString(cell) });
+    });
+    if (cells.some((cell) => cell.value.trim())) table.push({ row: rowNumber, cells });
+  });
+  return table;
+}
+
+/** Si la cédula está guardada como texto, conserva el cero inicial. Un número de Excel ya lo perdió: se escribe en dígitos, sin notación científica. */
+function excelCellString(cell: ExcelJS.Cell): string {
+  const value = cell.value;
+  if (value == null) return "";
+  if (typeof value === "string") return value;
+  if (typeof value === "number") return Number.isSafeInteger(value) ? String(value) : (cell.text ?? "");
+  if (typeof value === "boolean" || value instanceof Date) return cell.text ?? "";
+  if (typeof value === "object") {
+    if ("richText" in value && Array.isArray(value.richText)) {
+      return value.richText.map((part) => part.text ?? "").join("");
+    }
+    if ("result" in value) {
+      const result = value.result;
+      if (typeof result === "string") return result;
+      if (typeof result === "number" && Number.isSafeInteger(result)) return String(result);
+    }
+    if ("text" in value && typeof value.text === "string") return value.text;
+  }
+  return cell.text ?? "";
 }
 
 export class ImportFileError extends Error {}

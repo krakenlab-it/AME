@@ -29,7 +29,8 @@ export function ImportPanel() {
         <div className="space-y-1">
           <h2 className="text-xl">1. Cargar base inicial</h2>
           <p className="text-[15px] text-ink-muted">
-            Sube un archivo .csv o .xlsx con las columnas <code>first_names</code>, <code>last_names</code> y <code>national_id</code> (máximo 5 MB).
+            Sube un archivo .csv o .xlsx (máximo 5 MB). La plantilla recomendada usa las columnas <code>first_names</code>, <code>last_names</code> y <code>national_id</code>.
+            Si el archivo trae el nombre y una cédula de 10 dígitos con otros títulos, también se importa.
             ¿No sabes cómo armarlo? Descarga la <a className="font-semibold text-marian underline underline-offset-2" href="/templates/initial_people.csv" download>plantilla de ejemplo</a>.
           </p>
         </div>
