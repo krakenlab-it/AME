@@ -96,7 +96,6 @@ export const bankSchema = z
     accountNumber: z.string().trim().regex(/^\d{5,20}$/, "El número de cuenta debe tener entre 5 y 20 dígitos, sin espacios ni guiones."),
     accountNumberConfirm: z.string().trim(),
     accountHolderName: nameField,
-    accountHolderCedula: cedulaField,
     ownershipDeclared: mustAccept("Debes confirmar esta declaración para continuar."),
   })
   .strict()

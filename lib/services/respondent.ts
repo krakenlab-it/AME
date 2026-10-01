@@ -274,8 +274,18 @@ export async function submitResponse(repo: RespondentRepo, sessionToken: string 
     newFirst.toLocaleLowerCase("es") !== person.first_names.toLocaleLowerCase("es") ||
     newLast.toLocaleLowerCase("es") !== person.last_names.toLocaleLowerCase("es");
 
-  const holderHash = keyedHash(data.bank.accountHolderCedula, "national_id");
-  const holderIsTitular = Boolean(person.national_id_hash) && safeEqual(holderHash, person.national_id_hash!);
+  let verifiedCedula: string | null = null;
+  try {
+    verifiedCedula = person.national_id_encrypted ? decrypt(person.national_id_encrypted) : null;
+  } catch {
+    verifiedCedula = null;
+  }
+  if (!verifiedCedula) {
+    return { ok: false, error: "No pudimos confirmar su cédula. Vuelva a abrir el enlace que recibió." };
+  }
+  const holderName = cleanText(data.bank.accountHolderName);
+  const holderIsTitular =
+    holderName.toLocaleLowerCase("es") === `${person.first_names} ${person.last_names}`.toLocaleLowerCase("es");
 
   const reviewReasons: string[] = [];
   if (namesChanged) reviewReasons.push("NAMES_CORRECTED");
@@ -309,8 +319,8 @@ export async function submitResponse(repo: RespondentRepo, sessionToken: string 
       account_type: data.bank.accountType,
       account_number_encrypted: encrypt(data.bank.accountNumber),
       account_number_last4: data.bank.accountNumber.slice(-4),
-      account_holder_name: cleanText(data.bank.accountHolderName),
-      account_holder_national_id_encrypted: encrypt(data.bank.accountHolderCedula),
+      account_holder_name: holderName,
+      account_holder_national_id_encrypted: encrypt(verifiedCedula),
       holder_is_titular: holderIsTitular,
       ownership_declared: data.bank.ownershipDeclared,
     },

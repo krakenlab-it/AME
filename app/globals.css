@@ -88,6 +88,16 @@
     text-align: center;
     letter-spacing: normal;
   }
+
+  .wizard-bank-step label.block,
+  .wizard-bank-step [id$="-hint"],
+  .wizard-bank-step legend,
+  .wizard-bank-step header h1,
+  .wizard-bank-step header p,
+  .wizard-bank-step > p {
+    text-align: center !important;
+    width: 100%;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
