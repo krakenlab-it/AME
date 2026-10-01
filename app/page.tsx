@@ -1,3 +1,4 @@
+import { redirect } from "next/navigation";
 import { Mail } from "lucide-react";
 import { PortalHero, ProtectedNote } from "@/components/portal/hero";
 import { PortalShell, PortalUnavailable } from "@/components/portal/shell";
@@ -5,8 +6,21 @@ import { DemoAccess } from "@/components/demo/demo-access";
 import { Notice } from "@/components/ui/notice";
 import { getRepo } from "@/lib/database";
 import { getActivePrivacy } from "@/lib/privacy/active";
+import { readAdminGate } from "@/lib/server/admin-guard";
+import { currentRespondent } from "@/lib/server/respondent-session";
+import { landingConsolePath } from "@/lib/services/landing-redirect";
 
 export default async function HomePage({ searchParams }: { searchParams: Promise<{ fin?: string }> }) {
+  const [gate, respondent] = await Promise.all([
+    readAdminGate(),
+    currentRespondent({ allowSubmitted: true }),
+  ]);
+  const destination = landingConsolePath({
+    admin: gate.kind,
+    hasRespondentSession: respondent !== null,
+  });
+  if (destination) redirect(destination);
+
   const { fin } = await searchParams;
   const privacy = await getActivePrivacy(getRepo());
   if (privacy.readiness.blockPortal) return <PortalUnavailable />;
