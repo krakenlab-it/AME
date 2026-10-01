@@ -169,7 +169,7 @@ npm run seed:product-users -- --write      # inserta o actualiza solo estas tres
 
 ## Carga de la base inicial y generación de links
 
-1. Descarga la plantilla `templates/initial_people.csv` (también disponible en el panel). Es el formato recomendado: `first_names`, `last_names` y `national_id`.
+1. Descarga la plantilla `templates/initial_people.csv` (también disponible en el panel). Las columnas recomendadas son **Nombres**, **Apellidos** y **Cédula**. El mismo archivo también se acepta si los títulos vienen como `first_names`, `last_names` y `national_id` (la cédula). Lo único que no puede faltar es la cédula de 10 dígitos.
 2. Ve a **/admin → Importar y enlaces** y sube el archivo CSV o XLSX (máximo 5 MB y 20.000 filas). Si el archivo trae el nombre completo en una sola columna y la cédula en otra, aunque los títulos no coincidan con la plantilla, también se lee. Una columna de apellidos que solo tiene números (la cédula repetida) no se usa como apellido.
 3. El sistema valida cada fila:
    - formato de nombres;
@@ -177,11 +177,19 @@ npm run seed:product-users -- --write      # inserta o actualiza solo estas tres
    - duplicados dentro del archivo;
    - cédulas que ya existen en la base.
    Si Excel quitó el 0 inicial de una cédula de 9 dígitos, se corrige automáticamente.
-4. **Nada se importa en silencio.** Si hay errores y no marcas "importar solo las válidas", no se importa ningún registro y recibes el reporte fila por fila. La cédula aparece enmascarada en el reporte.
+4. **Nada se importa en silencio.** Al terminar ves una nota de novedades: carga exitosa, o el detalle de las filas que no entraron. Si hay errores y no marcas "importar solo las válidas", no se importa ningún registro. La cédula aparece enmascarada en el reporte.
 5. Al importar, descarga el **CSV de enlaces** en ese mismo momento. Por seguridad, los enlaces no se vuelven a mostrar, porque en la base solo existe su hash.
 6. Para reenviar enlaces:
    - **Generar enlaces faltantes** crea enlaces nuevos para quienes siguen pendientes y tienen el enlace vencido o revocado.
+   - **Enviar enlaces por correo** escribe solo a quien tiene correo y todavía no tiene un enlace vigente. No anula un enlace ya entregado, porque el enlace en claro no se guarda. Hace falta `RESEND_API_KEY` y `EMAIL_FROM`. Si el correo no sale, se descarga el CSV de esos enlaces nuevos.
    - En la ficha de cada persona, **Generar nuevo enlace** revoca el anterior y crea uno nuevo.
+   - Un **cambio manual** en la ficha pide de nuevo el código de la aplicación autenticadora. La auditoría guarda quién cambió qué campos, no los valores nuevos.
+
+## Carga de contacto para Unibrokers
+
+En **/admin → Archivo para AIG**, debajo del archivo de reclamos o reembolsos, está **Descargar carga para Unibrokers**. Lleva nombres, cédula, correo, celular y estado. No lleva datos bancarios.
+
+El envío directo a su sistema queda en espera: faltan `UNIBROKERS_API_URL`, `UNIBROKERS_API_KEY` y la confirmación del formato que ellos aceptan. Hasta entonces el paquete se descarga y se entrega a operaciones. Si algún día esas dos variables existen, el portal intenta un POST JSON y, de todos modos, deja el archivo.
 
 El archivo de enlaces da acceso a los formularios. Compártelo solo con quien hará los envíos y bórralo después.
 

@@ -88,7 +88,7 @@ export function buildExportTable(rows: ExportSourceRow[], profile: ExportProfile
   };
 }
 
-export async function toFile(table: { headers: string[]; data: string[][] }, format: ExportFormat): Promise<Buffer> {
+export async function toFile(table: { headers: string[]; data: string[][] }, format: ExportFormat, sheetName = "Datos AIG"): Promise<Buffer> {
   if (format === "csv") {
     const esc = (v: string) => `"${v.replace(/"/g, '""')}"`;
     const lines = [table.headers, ...table.data].map((r) => r.map(esc).join(","));
@@ -96,7 +96,7 @@ export async function toFile(table: { headers: string[]; data: string[][] }, for
   }
   const wb = new ExcelJS.Workbook();
   wb.creator = "Portal de actualización de datos";
-  const ws = wb.addWorksheet("Datos AIG");
+  const ws = wb.addWorksheet(sheetName.slice(0, 31));
   ws.addRow(table.headers).font = { bold: true };
   for (const row of table.data) ws.addRow(row);
   ws.columns.forEach((c) => (c.width = 24));

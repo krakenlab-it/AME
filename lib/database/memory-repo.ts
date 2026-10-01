@@ -9,8 +9,11 @@ import {
   type ExportSourceRow,
   type InsuredRecord,
   type NoticeRecord,
+  type LinkMailTarget,
+  type ManualPersonPatch,
   type PersonDetail,
   type PersonRecord,
+  type UnibrokersSourceRow,
   type Repo,
   type RespondentSessionRecord,
   type SubmissionRecord,
@@ -37,6 +40,8 @@ export class MemoryRepo implements Repo {
   exportRows: ExportSourceRow[] = [];
   /** Contacto y banco ya enmascarables, por persona. Lo llena el envío y el seed. */
   profiles = new Map<string, Pick<InsuredRecord, "contact" | "bank" | "notice_version">>();
+  outreachEmails = new Map<string, string>();
+  nameChanges = new Map<string, PersonDetail["nameChanges"]>();
 
   // ── helpers de prueba ──
   addPerson(firstNames: string, lastNames: string, cedula: string, status: PersonStatus = "PENDING") {
@@ -200,9 +205,10 @@ export class MemoryRepo implements Repo {
       contact: s ? { ...s.contact } : null,
       bank: s ? { bank_name: s.bank.bank_name, bank_other_name: s.bank.bank_other_name || null, account_type: s.bank.account_type, account_number_last4: s.bank.account_number_last4, account_holder_name: s.bank.account_holder_name, holder_is_titular: s.bank.holder_is_titular, ownership_declared: s.bank.ownership_declared, updated_at: now } : null,
       consents: s ? s.consents.map((c) => ({ consent_type: c.type, privacy_notice_version: s.notice_version, accepted_at: p.submitted_at, revoked_at: null, session_id: s.session_id, consent_text_hash: c.text_hash })) : [],
-      nameChanges: [],
+      nameChanges: this.nameChanges.get(id) ?? [],
       tokens: [...this.tokens.values()].filter((t) => t.person_id === id).map((t) => ({ id: t.id, expires_at: t.expires_at, used_at: t.used_at, revoked_at: t.revoked_at, revoked_reason: null, failed_attempts: t.failed_attempts, created_at: now })),
       audit: this.auditLog.filter((a) => a.person_id === id).map((a, i) => this.toAuditRow(a, i)).reverse(),
+      outreach_email: this.outreachEmails.get(id) ?? null,
     };
   }
   private toAuditRow(a: AuditEvent & { created_at?: string }, i: number): AuditRow {
@@ -214,11 +220,117 @@ export class MemoryRepo implements Repo {
     return new Set(hashes.filter((h) => all.has(h)));
   }
   async createImportBatch() { return randomUUID(); }
-  async insertPeople(rows: { first_names: string; last_names: string; national_id_encrypted: string; national_id_hash: string; national_id_last2: string }[]) {
+  async insertPeople(rows: { first_names: string; last_names: string; national_id_encrypted: string; national_id_hash: string; national_id_last2: string; outreach_email?: string | null }[]) {
     return rows.map((r) => {
       const id = randomUUID();
-      this.people.set(id, { id, ...r, status: "PENDING", confirmation_code: null, submitted_at: null, review_reasons: [], retention_until: null });
+      const { outreach_email: outreach, ...person } = r;
+      this.people.set(id, { id, ...person, status: "PENDING", confirmation_code: null, submitted_at: null, review_reasons: [], retention_until: null });
+      if (outreach) this.outreachEmails.set(id, outreach);
       return { id, national_id_hash: r.national_id_hash };
+    });
+  }
+
+  async applyManualEdit(personId: string, patch: ManualPersonPatch): Promise<{ changed: string[] } | null> {
+    const person = this.people.get(personId);
+    if (!person) return null;
+    const changed: string[] = [];
+    if (patch.first_names !== person.first_names || patch.last_names !== person.last_names) {
+      if (patch.first_names !== person.first_names) changed.push("first_names");
+      if (patch.last_names !== person.last_names) changed.push("last_names");
+      const history = this.nameChanges.get(personId) ?? [];
+      history.push({
+        original_first_names: person.first_names,
+        original_last_names: person.last_names,
+        new_first_names: patch.first_names,
+        new_last_names: patch.last_names,
+        created_at: new Date().toISOString(),
+      });
+      this.nameChanges.set(personId, history);
+      person.first_names = patch.first_names;
+      person.last_names = patch.last_names;
+    }
+    const previousOutreach = this.outreachEmails.get(personId) ?? null;
+    if ((patch.outreach_email || null) !== previousOutreach) {
+      changed.push("outreach_email");
+      if (patch.outreach_email) this.outreachEmails.set(personId, patch.outreach_email);
+      else this.outreachEmails.delete(personId);
+    }
+    if (patch.contact) {
+      const submission = this.submissions.get(personId);
+      if (submission) {
+        const current = submission.contact;
+        const next = patch.contact;
+        const pairs: [keyof typeof current, string | null][] = [
+          ["primary_email", next.primary_email],
+          ["secondary_email", next.secondary_email ?? ""],
+          ["mobile_phone", next.mobile_phone],
+          ["address_line_1", next.address_line_1],
+          ["address_line_2", next.address_line_2 ?? ""],
+          ["city", next.city],
+          ["province", next.province],
+          ["country", next.country],
+          ["postal_code", next.postal_code ?? ""],
+        ];
+        for (const [key, value] of pairs) {
+          if (current[key] !== value) {
+            changed.push(key);
+            current[key] = value ?? "";
+          }
+        }
+        const profile = this.profiles.get(personId);
+        if (profile?.contact) {
+          profile.contact.primary_email = current.primary_email;
+          profile.contact.secondary_email = current.secondary_email;
+          profile.contact.mobile_phone = current.mobile_phone;
+          profile.contact.city = current.city;
+          profile.contact.province = current.province;
+          profile.contact.country = current.country;
+        }
+      }
+    }
+    return { changed };
+  }
+
+  async listLinkMailTargets(): Promise<LinkMailTarget[]> {
+    const now = Date.now();
+    return [...this.people.values()]
+      .filter((person) => person.status === "PENDING" || person.status === "STARTED")
+      .map((person) => {
+        const submission = this.submissions.get(person.id);
+        const email = this.outreachEmails.get(person.id) || submission?.contact.primary_email || null;
+        const hasActiveToken = [...this.tokens.values()].some(
+          (token) => token.person_id === person.id && !token.used_at && !token.revoked_at && new Date(token.expires_at).getTime() > now,
+        );
+        return {
+          id: person.id,
+          first_names: person.first_names,
+          last_names: person.last_names,
+          email,
+          national_id_last2: person.national_id_last2,
+          status: person.status,
+          has_active_token: hasActiveToken,
+        };
+      });
+  }
+
+  async getUnibrokersRows(): Promise<UnibrokersSourceRow[]> {
+    return [...this.people.values()].map((person) => {
+      const submission = this.submissions.get(person.id);
+      const profile = this.profiles.get(person.id);
+      return {
+        person_id: person.id,
+        status: person.status,
+        confirmation_code: person.confirmation_code,
+        first_names: person.first_names,
+        last_names: person.last_names,
+        national_id_encrypted: person.national_id_encrypted,
+        outreach_email: this.outreachEmails.get(person.id) ?? null,
+        primary_email: submission?.contact.primary_email ?? profile?.contact?.primary_email ?? null,
+        mobile_phone: submission?.contact.mobile_phone ?? profile?.contact?.mobile_phone ?? null,
+        city: submission?.contact.city ?? profile?.contact?.city ?? null,
+        province: submission?.contact.province ?? profile?.contact?.province ?? null,
+        submitted_at: person.submitted_at,
+      };
     });
   }
   async createAccessTokens(items: { person_id: string; token_hash: string; expires_at: string }[]) {

@@ -30,6 +30,9 @@ describe("permisos administrativos (RBAC)", () => {
     expect(can("EXPORTER", "people:view")).toBe(false);
     expect(can("REVIEWER", "people:review")).toBe(true);
     expect(can("REVIEWER", "people:import")).toBe(false);
+    expect(can("ADMIN", "people:edit")).toBe(true);
+    expect(can("REVIEWER", "people:edit")).toBe(false);
+    expect(can("EXPORTER", "people:edit")).toBe(false);
     expect(can("ADMIN", "staff:invite")).toBe(true);
     expect(can("REVIEWER", "staff:invite")).toBe(false);
     expect(can("EXPORTER", "staff:invite")).toBe(false);
@@ -140,8 +143,8 @@ describe("importación inicial", () => {
 
   it("lee la plantilla CSV y rechaza un archivo sin nombre ni cédula", async () => {
     const csv = new TextEncoder().encode(`first_names,last_names,national_id\nJuan Carlos,Pérez López,${C1}\n`);
-    expect(await parseImportFile(csv.buffer as ArrayBuffer, "x.csv")).toEqual([{ row: 2, first_names: "Juan Carlos", last_names: "Pérez López", national_id: C1 }]);
+    expect(await parseImportFile(csv.buffer as ArrayBuffer, "x.csv")).toEqual([{ row: 2, first_names: "Juan Carlos", last_names: "Pérez López", national_id: C1, outreach_email: "" }]);
     const bad = new TextEncoder().encode("foo,bar\n1,2\n");
-    await expect(parseImportFile(bad.buffer as ArrayBuffer, "x.csv")).rejects.toThrow(/plantilla/);
+    await expect(parseImportFile(bad.buffer as ArrayBuffer, "x.csv")).rejects.toThrow(/cédula/);
   });
 });

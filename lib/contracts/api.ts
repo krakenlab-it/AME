@@ -31,6 +31,13 @@ export const exportRequestSchema = z
   })
   .strict();
 
+export const unibrokersRequestSchema = z
+  .object({
+    format: z.enum(EXPORT_FORMATS),
+    purpose: z.string(),
+  })
+  .strict();
+
 export const identifyFailureSchema = z
   .object({
     error: z.string().optional(),
@@ -41,6 +48,7 @@ export const identifyFailureSchema = z
   .strict();
 
 export type ExportRequest = z.infer<typeof exportRequestSchema>;
+export type UnibrokersRequest = z.infer<typeof unibrokersRequestSchema>;
 
 export function apiErrorBody(error: string): { error: string } {
   return apiErrorSchema.parse({ error });
@@ -48,6 +56,12 @@ export function apiErrorBody(error: string): { error: string } {
 
 export function parseExportRequest(body: unknown): { ok: true; value: ExportRequest } | { ok: false } {
   const parsed = exportRequestSchema.safeParse(body);
+  if (!parsed.success) return { ok: false };
+  return { ok: true, value: parsed.data };
+}
+
+export function parseUnibrokersRequest(body: unknown): { ok: true; value: UnibrokersRequest } | { ok: false } {
+  const parsed = unibrokersRequestSchema.safeParse(body);
   if (!parsed.success) return { ok: false };
   return { ok: true, value: parsed.data };
 }
@@ -105,6 +119,13 @@ export const HTTP_CONTRACTS: readonly HttpContract[] = [
     path: "/api/admin/export",
     auth: { kind: "admin-session", assurance: "aal2", permission: "export:create", csrf: "same-origin" },
     summary: "Archivo AIG en memoria. Sesión de administrador con MFA, permiso de exportación y mismo origen. La finalidad queda en la auditoría (10 a 300 caracteres).",
+  },
+  {
+    id: "admin-unibrokers",
+    method: "POST",
+    path: "/api/admin/unibrokers",
+    auth: { kind: "admin-session", assurance: "aal2", permission: "export:create", csrf: "same-origin" },
+    summary: "Paquete de carga de contacto para Unibrokers, sin datos bancarios. Si faltan credenciales, solo se descarga el archivo.",
   },
   {
     id: "cron-retention",

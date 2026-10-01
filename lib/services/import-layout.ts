@@ -70,7 +70,19 @@ const ID_HEADERS = new Set([
   "nro de cedula",
 ]);
 
-export type HeaderRole = "full" | "first" | "last" | "id" | "other";
+const EMAIL_HEADERS = new Set([
+  "email",
+  "e mail",
+  "mail",
+  "correo",
+  "correo electronico",
+  "correo principal",
+  "correo para el enlace",
+]);
+
+const EMAIL_RE = /^[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+$/;
+
+export type HeaderRole = "full" | "first" | "last" | "id" | "email" | "other";
 
 export interface ImportCell {
   header: string;
@@ -81,6 +93,7 @@ export interface InterpretedImport {
   first_names: string;
   last_names: string;
   national_id: string;
+  outreach_email: string;
 }
 
 export function repairImportedText(value: string): string {
@@ -99,8 +112,13 @@ export function headerRole(header: string): HeaderRole {
   if (FULL_HEADERS.has(normalized)) return "full";
   if (FIRST_HEADERS.has(normalized)) return "first";
   if (LAST_HEADERS.has(normalized)) return "last";
+  if (EMAIL_HEADERS.has(normalized) || normalized.includes("correo") || normalized === "email") return "email";
   if (ID_HEADERS.has(normalized) || normalized.includes("cedula")) return "id";
   return "other";
+}
+
+export function looksLikeEmail(value: string): boolean {
+  return EMAIL_RE.test(value.trim());
 }
 
 /** Cédula encontrada por contenido: 10 dígitos, con ceros iniciales, sin convertir a número. */
@@ -129,6 +147,7 @@ function rankIdColumn(role: HeaderRole): number {
     case "first":
       return 1;
     case "last":
+    case "email":
       return 0;
     default: {
       const exhaustive: never = role;
@@ -217,9 +236,17 @@ export function interpretImportCells(cells: ImportCell[]): InterpretedImport {
     }
   }
 
+  const emailPick = prepared
+    .filter((cell) => !usedAsId.has(cell.index) && cell.text && (cell.role === "email" || looksLikeEmail(cell.text)))
+    .sort((a, b) => Number(b.role === "email") - Number(a.role === "email") || a.index - b.index)[0];
+  const outreachEmail = emailPick && looksLikeEmail(emailPick.text) ? emailPick.text.trim().toLowerCase() : "";
+
   const nameCells = prepared.filter((cell) => {
     if (usedAsId.has(cell.index)) return false;
+    if (emailPick && cell.index === emailPick.index) return false;
+    if (cell.role === "email") return false;
     if (!cell.text) return false;
+    if (looksLikeEmail(cell.text)) return false;
     // Un apellido que es la cédula (solo dígitos, o el mismo valor que la columna de identidad) no es un apellido.
     if (isAllDigits(cell.text)) return false;
     if (nationalId && cell.text.replace(/[\s-]/g, "") === nationalId) return false;
@@ -227,7 +254,7 @@ export function interpretImportCells(cells: ImportCell[]): InterpretedImport {
   });
 
   const names = mapNameCells(nameCells);
-  return { first_names: names.first_names, last_names: names.last_names, national_id: nationalId };
+  return { first_names: names.first_names, last_names: names.last_names, national_id: nationalId, outreach_email: outreachEmail };
 }
 
 function mapNameCells(nameCells: PreparedCell[]): { first_names: string; last_names: string } {

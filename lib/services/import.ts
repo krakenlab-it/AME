@@ -5,20 +5,22 @@ import type { AdminRepo } from "@/lib/database/types";
 import { isValidCedula, normalizeCedula } from "@/lib/validation/cedula";
 import { cleanText } from "@/lib/validation/sanitize";
 import { maskCedula } from "@/lib/security/masking";
-import { interpretImportCells, type ImportCell } from "./import-layout";
+import { interpretImportCells, looksLikeEmail, type ImportCell } from "./import-layout";
 import { issueLinks, linksToCsv } from "./links";
 
 export const IMPORT_MAX_ROWS = 20_000;
 export const IMPORT_MAX_BYTES = 5 * 1024 * 1024;
 const NAME_RE = /^[\p{L}][\p{L}\p{M}' .-]*$/u;
 const TEMPLATE_HINT =
-  "No encontramos un nombre y una cédula de 10 dígitos. La plantilla recomendada usa las columnas first_names, last_names y national_id.";
+  "No encontramos una cédula de 10 dígitos. La plantilla recomendada usa las columnas Nombres, Apellidos y Cédula. Esos mismos datos también se aceptan como first_names, last_names y national_id.";
 
 export interface RawImportRow {
   row: number; // número de fila en el archivo (1 = encabezado)
   first_names: string;
   last_names: string;
   national_id: string;
+  /** Correo opcional para el enlace. Vacío si el archivo no lo trae. */
+  outreach_email?: string;
 }
 
 export interface ImportError {
@@ -28,9 +30,16 @@ export interface ImportError {
   cedula: string;
 }
 
+export interface ImportNote {
+  row: number;
+  cedula: string;
+  text: string;
+}
+
 export interface ValidatedImport {
   valid: RawImportRow[];
   errors: ImportError[];
+  notes: ImportNote[];
   total: number;
 }
 
@@ -47,7 +56,7 @@ export async function parseImportFile(bytes: ArrayBuffer, filename: string): Pro
   }
   if (table.length > IMPORT_MAX_ROWS) throw new ImportFileError(`El archivo supera el máximo de ${IMPORT_MAX_ROWS} registros.`);
   const rows = table.map((entry) => ({ row: entry.row, ...interpretImportCells(entry.cells) }));
-  if (rows.length > 0 && rows.every((row) => !row.first_names && !row.last_names && !row.national_id)) {
+  if (rows.length > 0 && rows.every((row) => !row.national_id)) {
     throw new ImportFileError(TEMPLATE_HINT);
   }
   return rows;
@@ -119,6 +128,7 @@ export class ImportFileError extends Error {}
 export function validateImportRows(rows: RawImportRow[]): ValidatedImport {
   const valid: RawImportRow[] = [];
   const errors: ImportError[] = [];
+  const notes: ImportNote[] = [];
   const seen = new Map<string, number>();
   for (const raw of rows) {
     const first = cleanText(raw.first_names);
@@ -130,24 +140,51 @@ export function validateImportRows(rows: RawImportRow[]): ValidatedImport {
     const reasons: string[] = [];
     if (first.length < 2 || !NAME_RE.test(first)) reasons.push("Nombres vacíos o con caracteres no permitidos");
     if (last.length < 2 || !NAME_RE.test(last)) reasons.push("Apellidos vacíos o con caracteres no permitidos");
-    if (!isValidCedula(id)) reasons.push("Cédula inválida");
+    if (!isValidCedula(id)) reasons.push("Cédula inválida: debe tener 10 dígitos y ser una cédula ecuatoriana");
     else if (seen.has(id)) reasons.push(`Cédula duplicada en el archivo (fila ${seen.get(id)})`);
     if (reasons.length) {
       errors.push({ row: raw.row, reason: reasons.join("; "), cedula: masked });
       continue;
     }
     seen.set(id, raw.row);
-    valid.push({ row: raw.row, first_names: first, last_names: last, national_id: id });
+    let outreach = cleanText(raw.outreach_email ?? "").toLowerCase();
+    if (outreach && !looksLikeEmail(outreach)) {
+      notes.push({ row: raw.row, cedula: masked, text: "El correo no tiene un formato válido y no se guardó. La persona sí se importa." });
+      outreach = "";
+    }
+    valid.push({ row: raw.row, first_names: first, last_names: last, national_id: id, outreach_email: outreach });
   }
-  return { valid, errors, total: rows.length };
+  return { valid, errors, notes, total: rows.length };
 }
 
 export interface ImportOutcome {
   imported: number;
   rejected: ImportError[];
+  notes: ImportNote[];
   total: number;
   linksCsv: string | null;
   committed: boolean;
+  noteTitle: string;
+  noteBody: string;
+}
+
+export function importNovedades(input: { committed: boolean; imported: number; rejected: number; notes: number }): { noteTitle: string; noteBody: string } {
+  if (input.committed && input.rejected === 0 && input.notes === 0) {
+    const personas = input.imported === 1 ? "persona" : "personas";
+    return { noteTitle: "La carga fue exitosa", noteBody: `Se importaron ${input.imported} ${personas}. No hay novedades.` };
+  }
+  if (!input.committed) {
+    const filas = input.rejected === 1 ? "fila con novedades" : "filas con novedades";
+    return {
+      noteTitle: "Nota de novedades",
+      noteBody: `No se importó ningún registro. Hay ${input.rejected} ${filas}. Corrige las filas indicadas o marca la opción para importar solo las válidas.`,
+    };
+  }
+  const observaciones = input.notes === 1 ? "observación" : "observaciones";
+  return {
+    noteTitle: "Nota de novedades",
+    noteBody: `Se importaron ${input.imported} personas. ${input.rejected} filas no entraron. Hay ${input.notes} ${observaciones} en filas que sí se importaron.`,
+  };
 }
 
 /**
@@ -155,7 +192,7 @@ export interface ImportOutcome {
  * Si allowPartial = true, importa solo las filas válidas y reporta explícitamente las rechazadas.
  */
 export async function importPeople(repo: AdminRepo, input: { rows: RawImportRow[]; filename: string; adminId: string; allowPartial: boolean }): Promise<ImportOutcome> {
-  const { valid, errors, total } = validateImportRows(input.rows);
+  const { valid, errors, notes, total } = validateImportRows(input.rows);
   const hashes = valid.map((r) => keyedHash(r.national_id, "national_id"));
   const existing = await repo.existingNationalIdHashes(hashes);
   const toInsert = valid.filter((r, i) => {
@@ -168,7 +205,8 @@ export async function importPeople(repo: AdminRepo, input: { rows: RawImportRow[
   errors.sort((a, b) => a.row - b.row);
 
   if ((errors.length && !input.allowPartial) || toInsert.length === 0) {
-    return { imported: 0, rejected: errors, total, linksCsv: null, committed: false };
+    const note = importNovedades({ committed: false, imported: 0, rejected: errors.length, notes: notes.length });
+    return { imported: 0, rejected: errors, notes, total, linksCsv: null, committed: false, ...note };
   }
 
   const batchId = await repo.createImportBatch({ admin_id: input.adminId, filename: input.filename.slice(0, 200), total_rows: total, imported_rows: toInsert.length, rejected_rows: errors.length });
@@ -179,6 +217,7 @@ export async function importPeople(repo: AdminRepo, input: { rows: RawImportRow[
       national_id_encrypted: encrypt(r.national_id),
       national_id_hash: keyedHash(r.national_id, "national_id"),
       national_id_last2: r.national_id.slice(-2),
+      outreach_email: r.outreach_email || null,
     })),
     batchId,
   );
@@ -190,6 +229,7 @@ export async function importPeople(repo: AdminRepo, input: { rows: RawImportRow[
     const link = linkByPerson.get(p.id)!;
     return { row: r.row, first_names: r.first_names, last_names: r.last_names, cedula_masked: maskCedula(r.national_id), url: link.url, expires_at: link.expires_at };
   });
-  await repo.audit({ actor_type: "admin", actor_id: input.adminId, action: "IMPORT_CREATED", metadata: { batch_id: batchId, imported: inserted.length, rejected: errors.length } });
-  return { imported: inserted.length, rejected: errors, total, linksCsv: linksToCsv(csvRows), committed: true };
+  await repo.audit({ actor_type: "admin", actor_id: input.adminId, action: "IMPORT_CREATED", metadata: { batch_id: batchId, imported: inserted.length, rejected: errors.length, notes: notes.length } });
+  const note = importNovedades({ committed: true, imported: inserted.length, rejected: errors.length, notes: notes.length });
+  return { imported: inserted.length, rejected: errors, notes, total, linksCsv: linksToCsv(csvRows), committed: true, ...note };
 }

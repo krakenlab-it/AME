@@ -9,8 +9,11 @@ import {
   type AuditRow,
   type ExportSourceRow,
   type InsuredRecord,
+  type LinkMailTarget,
+  type ManualPersonPatch,
   type NoticeRecord,
   type PersonDetail,
+  type UnibrokersSourceRow,
   type PersonListRow,
   type PersonRecord,
   type Repo,
@@ -257,15 +260,16 @@ export class SupabaseRepo implements Repo {
   }
 
   async getPersonDetail(id: string): Promise<PersonDetail | null> {
-    const person = check(
+    const personRow = check(
       await this.db
         .from("people")
-        .select("id, first_names, last_names, national_id_encrypted, national_id_hash, national_id_last2, status, confirmation_code, submitted_at, created_at, updated_at, review_reasons, reviewed_at, anonymized_at, retention_until")
+        .select("id, first_names, last_names, national_id_encrypted, national_id_hash, national_id_last2, status, confirmation_code, submitted_at, created_at, updated_at, review_reasons, reviewed_at, anonymized_at, retention_until, outreach_email")
         .eq("id", id)
         .maybeSingle(),
       "getPersonDetail.person",
-    ) as PersonDetail["person"] | null;
-    if (!person) return null;
+    ) as (PersonDetail["person"] & { outreach_email: string | null }) | null;
+    if (!personRow) return null;
+    const { outreach_email: outreachEmail, ...person } = personRow;
 
     const [contact, bank, consents, nameChanges, tokens, audit] = await Promise.all([
       this.db.from("contact_information").select("primary_email, secondary_email, mobile_phone, address_line_1, address_line_2, city, province, country, postal_code, updated_at").eq("person_id", id).maybeSingle(),
@@ -283,6 +287,7 @@ export class SupabaseRepo implements Repo {
       nameChanges: (check(nameChanges, "detail.names") ?? []) as PersonDetail["nameChanges"],
       tokens: (check(tokens, "detail.tokens") ?? []) as PersonDetail["tokens"],
       audit: (check(audit, "detail.audit") ?? []) as AuditRow[],
+      outreach_email: outreachEmail,
     };
   }
 
@@ -355,6 +360,127 @@ export class SupabaseRepo implements Repo {
         return !tokens.some((t) => !t.used_at && !t.revoked_at && new Date(t.expires_at).getTime() > now);
       })
       .map((p) => String(p.id));
+  }
+
+  async applyManualEdit(personId: string, patch: ManualPersonPatch): Promise<{ changed: string[] } | null> {
+    const current = check(
+      await this.db.from("people").select("id, first_names, last_names, outreach_email").eq("id", personId).maybeSingle(),
+      "applyManualEdit.person",
+    ) as { id: string; first_names: string; last_names: string; outreach_email: string | null } | null;
+    if (!current) return null;
+    const changed: string[] = [];
+    if (patch.first_names !== current.first_names) changed.push("first_names");
+    if (patch.last_names !== current.last_names) changed.push("last_names");
+    if ((patch.outreach_email || null) !== (current.outreach_email || null)) changed.push("outreach_email");
+    if (changed.length) {
+      check(
+        await this.db
+          .from("people")
+          .update({ first_names: patch.first_names, last_names: patch.last_names, outreach_email: patch.outreach_email })
+          .eq("id", personId),
+        "applyManualEdit.personUpdate",
+      );
+    }
+    if (changed.includes("first_names") || changed.includes("last_names")) {
+      check(
+        await this.db.from("name_change_history").insert({
+          person_id: personId,
+          original_first_names: current.first_names,
+          original_last_names: current.last_names,
+          new_first_names: patch.first_names,
+          new_last_names: patch.last_names,
+        }),
+        "applyManualEdit.names",
+      );
+    }
+    if (patch.contact) {
+      const contact = check(
+        await this.db
+          .from("contact_information")
+          .select("primary_email, secondary_email, mobile_phone, address_line_1, address_line_2, city, province, country, postal_code")
+          .eq("person_id", personId)
+          .maybeSingle(),
+        "applyManualEdit.contact",
+      ) as ManualPersonPatch["contact"];
+      if (contact) {
+        const next = patch.contact;
+        const fields = [
+          "primary_email",
+          "secondary_email",
+          "mobile_phone",
+          "address_line_1",
+          "address_line_2",
+          "city",
+          "province",
+          "country",
+          "postal_code",
+        ] as const;
+        const contactChanged = fields.filter((field) => (contact[field] ?? null) !== (next[field] ?? null));
+        if (contactChanged.length) {
+          changed.push(...contactChanged);
+          check(await this.db.from("contact_information").update(next).eq("person_id", personId), "applyManualEdit.contactUpdate");
+        }
+      }
+    }
+    return { changed };
+  }
+
+  async listLinkMailTargets(): Promise<LinkMailTarget[]> {
+    const data = check(
+      await this.db
+        .from("people")
+        .select("id, first_names, last_names, status, outreach_email, national_id_last2, access_tokens(expires_at, used_at, revoked_at), contact_information(primary_email)")
+        .is("anonymized_at", null)
+        .in("status", ["PENDING", "STARTED"]),
+      "listLinkMailTargets",
+    ) as Row[] | null;
+    const now = Date.now();
+    return (data ?? []).map((person) => {
+      const tokens = (person.access_tokens as { expires_at: string; used_at: string | null; revoked_at: string | null }[] | null) ?? [];
+      const contact = one<{ primary_email?: string | null }>(person.contact_information);
+      const email = (person.outreach_email ? String(person.outreach_email) : null) || contact?.primary_email || null;
+      return {
+        id: String(person.id),
+        first_names: String(person.first_names),
+        last_names: String(person.last_names),
+        email,
+        national_id_last2: person.national_id_last2 ? String(person.national_id_last2) : null,
+        status: String(person.status) as LinkMailTarget["status"],
+        has_active_token: tokens.some((token) => !token.used_at && !token.revoked_at && new Date(token.expires_at).getTime() > now),
+      };
+    });
+  }
+
+  async getUnibrokersRows(): Promise<UnibrokersSourceRow[]> {
+    const data = check(
+      await this.db
+        .from("people")
+        .select(
+          "id, status, confirmation_code, first_names, last_names, national_id_encrypted, outreach_email, submitted_at, " +
+            "contact_information(primary_email, mobile_phone, city, province)",
+        )
+        .is("anonymized_at", null)
+        .order("last_names"),
+      "getUnibrokersRows",
+    ) as Row[] | null;
+    return (data ?? []).map((person) => {
+      const contact = one<Row>(person.contact_information) ?? {};
+      const text = (value: unknown) => (value == null ? null : String(value));
+      return {
+        person_id: String(person.id),
+        status: String(person.status) as UnibrokersSourceRow["status"],
+        confirmation_code: text(person.confirmation_code),
+        first_names: String(person.first_names),
+        last_names: String(person.last_names),
+        national_id_encrypted: text(person.national_id_encrypted),
+        outreach_email: text(person.outreach_email),
+        primary_email: text(contact.primary_email),
+        mobile_phone: text(contact.mobile_phone),
+        city: text(contact.city),
+        province: text(contact.province),
+        submitted_at: text(person.submitted_at),
+      };
+    });
   }
 
   // ── Exportación ───────────────────────────────────────────────────────────

@@ -17,8 +17,11 @@ export function AdminAuthCard({ title, subtitle, children }: { title: string; su
         <MaristaLogo className="w-16" />
         <div className="max-w-md space-y-8">
           <div className="space-y-3">
-            <h2 className="text-4xl leading-tight">Panel de actualización de datos</h2>
-            <p className="text-lg text-ink-muted">Sigue el avance de cada persona y gestiona su información con control y trazabilidad.</p>
+            <p className="text-sm font-semibold uppercase tracking-wide text-marian">Versión administrador</p>
+            <h2 className="text-4xl leading-tight">Estás en la versión administrador</h2>
+            <p className="text-lg text-ink-muted">
+              Este acceso es solo para el personal invitado. No es la página de la persona asegurada. Desde aquí sigues el avance de cada persona y gestionas su información con control y trazabilidad.
+            </p>
           </div>
           <ul className="space-y-5">
             {ASSURANCES.map(({ Icon, title: t, text }) => (
@@ -43,9 +46,12 @@ export function AdminAuthCard({ title, subtitle, children }: { title: string; su
             <div className="flex items-center gap-3">
               <MaristaLogo className="w-12 lg:hidden" />
               <div>
-                <p className="text-sm text-ink-muted">Panel administrativo</p>
+                <p className="text-sm font-semibold text-marian">Versión administrador</p>
                 <h1 className="text-2xl">{title}</h1>
                 {subtitle && <p className="text-[15px] text-ink-muted">{subtitle}</p>}
+                <p className="mt-2 text-sm text-ink-muted lg:hidden">
+                  Acceso solo por invitación, con verificación en dos pasos y auditoría de cada consulta.
+                </p>
               </div>
             </div>
             {children}
