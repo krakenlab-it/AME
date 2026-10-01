@@ -69,6 +69,25 @@
   .admin-table tbody tr:last-child th {
     @apply border-b-0;
   }
+
+  /* Landing right column: Jaime product rule — visible copy centered (not left, not CSS justify). */
+  .landing-right-entry,
+  .landing-right-entry p,
+  .landing-protected-panel p {
+    text-align: center;
+  }
+  .landing-cedula-field .landing-cedula-label,
+  .landing-cedula-field .landing-cedula-hint,
+  .landing-cedula-field #landing-cedula-error {
+    text-align: center !important;
+  }
+  .landing-cedula-input {
+    text-align: center !important;
+  }
+  .landing-cedula-input::placeholder {
+    text-align: center;
+    letter-spacing: normal;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

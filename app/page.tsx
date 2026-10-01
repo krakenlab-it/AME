@@ -56,7 +56,9 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
                 </LandingStaffFooter>
               </LandingRightEntry>
             )}
-            <DemoAccess />
+            <div className="landing-right-entry mt-5 w-full [&_aside]:text-center">
+              <DemoAccess />
+            </div>
           </div>
         }
       />
