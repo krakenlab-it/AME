@@ -1,18 +1,25 @@
 import { Lock } from "lucide-react";
 import type { ReactNode } from "react";
 
-const justify = "text-justify hyphens-auto";
+/** Copy blocks on the landing right column. */
+const bodyParagraph = "w-full text-pretty text-justify leading-relaxed hyphens-auto";
+const shortLine = "w-full text-center text-pretty leading-snug";
+
+/** Wraps intro + protected panel + staff footer (inside PortalHero action). */
+export function LandingRightEntry({ children }: { children: ReactNode }) {
+  return <div className="landing-right-entry flex w-full flex-col items-center gap-5 text-center">{children}</div>;
+}
 
 export function LandingIntro({ children }: { children: ReactNode }) {
-  return <p className={`text-[15px] leading-relaxed text-ink ${justify}`}>{children}</p>;
+  return <p className={`${bodyParagraph} text-[15px] text-ink`}>{children}</p>;
 }
 
 export function LandingProtectedPanel({ children }: { children: ReactNode }) {
   return (
-    <section className={`space-y-5 rounded-2xl bg-marian-soft/70 px-5 py-5 md:px-6 md:py-6 ${justify}`}>
-      <div className="flex items-start gap-3 text-[15px] leading-snug text-ink">
-        <Lock className="mt-0.5 h-5 w-5 shrink-0 text-marian" aria-hidden />
-        <p>
+    <section className="w-full space-y-5 rounded-2xl bg-marian-soft/70 px-5 py-5 text-center md:px-6 md:py-6">
+      <div className="space-y-2">
+        <Lock className="mx-auto h-5 w-5 text-marian" aria-hidden />
+        <p className={`${bodyParagraph} text-[15px] text-ink`}>
           <span className="font-semibold">Tu información está protegida.</span> Este portal usa medidas de seguridad para cuidar su confidencialidad.
         </p>
       </div>
@@ -23,8 +30,8 @@ export function LandingProtectedPanel({ children }: { children: ReactNode }) {
 
 export function LandingStaffFooter({ children }: { children: ReactNode }) {
   return (
-    <footer className="space-y-3 border-t border-marian-line/70 pt-5 text-center">
-      <p className={`text-sm leading-relaxed text-ink-muted ${justify}`}>
+    <footer className="w-full space-y-3 border-t border-marian-line/70 pt-5">
+      <p className={`${shortLine} text-sm text-ink-muted`}>
         Si forma parte del equipo, ingrese con su correo institucional.
       </p>
       <div className="flex justify-center">{children}</div>

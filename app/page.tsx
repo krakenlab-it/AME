@@ -1,7 +1,12 @@
 import { redirect } from "next/navigation";
 import { CedulaCta } from "@/components/forms/cedula-cta";
 import { PortalHero } from "@/components/portal/hero";
-import { LandingIntro, LandingProtectedPanel, LandingStaffFooter } from "@/components/portal/landing-entry-card";
+import {
+  LandingIntro,
+  LandingProtectedPanel,
+  LandingRightEntry,
+  LandingStaffFooter,
+} from "@/components/portal/landing-entry-card";
 import { PortalShell, PortalUnavailable } from "@/components/portal/shell";
 import { DemoAccess } from "@/components/demo/demo-access";
 import { ButtonLink } from "@/components/ui/button";
@@ -31,13 +36,13 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
     <PortalShell readiness={privacy.readiness} organizationName={privacy.config.organizationName}>
       <PortalHero
         action={
-          <div className="sheet space-y-5 p-6 md:p-8">
+          <div className="sheet p-6 md:p-8">
             {fin ? (
               <Notice tone="success" title={fin === "cuenta" ? "Sesión cerrada" : "Proceso finalizado"}>
                 Su sesión se cerró de forma segura. Ya puede cerrar esta ventana.
               </Notice>
             ) : (
-              <>
+              <LandingRightEntry>
                 <LandingIntro>
                   Usted ha ingresado desde un enlace seguro enviado para la protección de sus datos personales. Confirme su cédula a continuación para continuar con la actualización.
                 </LandingIntro>
@@ -49,7 +54,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
                     Iniciar sesión con correo
                   </ButtonLink>
                 </LandingStaffFooter>
-              </>
+              </LandingRightEntry>
             )}
             <DemoAccess />
           </div>

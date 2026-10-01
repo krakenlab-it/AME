@@ -28,7 +28,7 @@ export function CedulaCta({ turnstileSiteKey }: { turnstileSiteKey: string | nul
   }, [error, state]);
 
   return (
-    <div className="w-full space-y-4">
+    <div className="w-full space-y-4 text-center">
       {state.linkState ? (
         <p className="text-center text-sm text-alert" role="alert">{state.error}</p>
       ) : (
@@ -40,13 +40,13 @@ export function CedulaCta({ turnstileSiteKey }: { turnstileSiteKey: string | nul
             hint="10 números, sin guiones ni espacios."
             error={error}
             className="w-full"
-            justifyText
+            textAlign="landing"
           >
             <input
               ref={inputRef}
               id="landing-cedula"
               name="cedula"
-              className="field-input w-full text-lg tracking-[0.12em]"
+              className="field-input w-full text-center text-lg tracking-[0.12em] placeholder:text-center"
               placeholder="Digite su número de cédula"
               inputMode="numeric"
               enterKeyHint="go"
