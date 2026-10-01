@@ -169,8 +169,8 @@ npm run seed:product-users -- --write      # inserta o actualiza solo estas tres
 
 ## Carga de la base inicial y generación de links
 
-1. Descarga la plantilla `templates/initial_people.csv` (también disponible en el panel). Tiene tres columnas: `first_names`, `last_names`, `national_id`.
-2. Ve a **/admin → Importar y enlaces** y sube el archivo CSV o XLSX (máximo 5 MB y 20.000 filas).
+1. Descarga la plantilla `templates/initial_people.csv` (también disponible en el panel). Es el formato recomendado: `first_names`, `last_names` y `national_id`.
+2. Ve a **/admin → Importar y enlaces** y sube el archivo CSV o XLSX (máximo 5 MB y 20.000 filas). Si el archivo trae el nombre completo en una sola columna y la cédula en otra, aunque los títulos no coincidan con la plantilla, también se lee. Una columna de apellidos que solo tiene números (la cédula repetida) no se usa como apellido.
 3. El sistema valida cada fila:
    - formato de nombres;
    - cédula (10 dígitos, provincia y dígito verificador);

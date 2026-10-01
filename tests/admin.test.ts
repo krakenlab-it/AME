@@ -135,10 +135,10 @@ describe("importación inicial", () => {
     expect(out.rejected[0]!.reason).toContain("ya existe");
   });
 
-  it("lee archivos CSV y exige las columnas de la plantilla", async () => {
-    const csv = new TextEncoder().encode(`first_names,last_names,national_id\nJuan,Pérez,${C1}\n`);
-    expect(await parseImportFile(csv.buffer as ArrayBuffer, "x.csv")).toEqual([{ row: 2, first_names: "Juan", last_names: "Pérez", national_id: C1 }]);
-    const bad = new TextEncoder().encode("nombre,cedula\nJuan,1\n");
-    await expect(parseImportFile(bad.buffer as ArrayBuffer, "x.csv")).rejects.toThrow(/columnas/);
+  it("lee la plantilla CSV y rechaza un archivo sin nombre ni cédula", async () => {
+    const csv = new TextEncoder().encode(`first_names,last_names,national_id\nJuan Carlos,Pérez López,${C1}\n`);
+    expect(await parseImportFile(csv.buffer as ArrayBuffer, "x.csv")).toEqual([{ row: 2, first_names: "Juan Carlos", last_names: "Pérez López", national_id: C1 }]);
+    const bad = new TextEncoder().encode("foo,bar\n1,2\n");
+    await expect(parseImportFile(bad.buffer as ArrayBuffer, "x.csv")).rejects.toThrow(/plantilla/);
   });
 });
