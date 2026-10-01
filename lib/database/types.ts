@@ -116,11 +116,34 @@ export interface RespondentRepo {
   registerTokenFailure(tokenId: string, threshold: number): Promise<{ failed_attempts: number; locked: boolean }>;
   getPerson(id: string): Promise<PersonRecord | null>;
   markStarted(personId: string): Promise<void>;
-  createRespondentSession(s: { session_hash: string; person_id: string; access_token_id: string; expires_at: string }): Promise<RespondentSessionRecord>;
+  createRespondentSession(s: { session_hash: string; person_id: string; access_token_id: string; expires_at: string; submitted_at?: string | null }): Promise<RespondentSessionRecord>;
   findRespondentSession(sessionHash: string): Promise<RespondentSessionRecord | null>;
   revokeRespondentSession(id: string): Promise<void>;
   submitPersonData(s: SubmissionRecord): Promise<{ confirmation_code: string }>;
   getActiveNotice(): Promise<NoticeRecord | null>;
+  /** Resumen del propio titular. Sin cédula ni cuenta en claro. */
+  getInsuredRecord(personId: string): Promise<InsuredRecord | null>;
+}
+
+/** Lo que el titular puede ver de su propio registro. Nunca incluye cédula ni cuenta en claro. */
+export interface InsuredRecord {
+  person: PersonRecord & { review_reasons: string[] };
+  contact: {
+    primary_email: string | null;
+    secondary_email: string | null;
+    mobile_phone: string | null;
+    city: string | null;
+    province: string | null;
+    country: string | null;
+  } | null;
+  bank: {
+    bank_name: string;
+    bank_other_name: string | null;
+    account_type: string;
+    account_number_last4: string;
+    holder_is_titular: boolean;
+  } | null;
+  notice_version: string | null;
 }
 
 // ── Administración ───────────────────────────────────────────────────────────

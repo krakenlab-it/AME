@@ -38,7 +38,7 @@ Navegador ──HTTPS──> Next.js en Vercel (Server Components + Server Actio
 
 | Carpeta | Contenido |
 |---|---|
-| `app/` | Páginas: `/`, `/verificar/[token]`, `/verificar/formulario`, `/confirmacion`, `/privacidad`, `/admin/*`, `/api/*` |
+| `app/` | Páginas: `/`, `/verificar/[token]`, `/verificar/formulario`, `/confirmacion`, `/mi-cuenta`, `/privacidad`, `/admin/*`, `/api/*` |
 | `components/` | UI (`ui/`), formularios (`forms/`), portal (`portal/`), panel (`admin/`), marca (`brand/`) |
 | `config/privacy.ts` | Datos legales configurables (placeholders hasta completarlos) |
 | `lib/database/` | Interfaces del repositorio, implementación Supabase, repositorio en memoria (pruebas y demo) |
@@ -62,7 +62,17 @@ npm run keys:generate      # pega ENCRYPTION_KEY, HASH_PEPPER y CRON_SECRET en .
 npm run dev
 ```
 
-**Probar sin Supabase (modo demostración).** Agrega `DEMO_MODE=true` en `.env.local` y abre `http://localhost:3000`. En el inicio y en el ingreso aparece un recuadro con dos botones: **entrar como administrador** (el panel completo) y **entrar como usuario** (la persona que actualiza sus datos). Revisor de fichas y exportación a AIG no son pantallas distintas: son el mismo panel con menos opciones (`revisor@demo.local` y `exportador@demo.local`, contraseña `Demo-portal-2026`). La consola también muestra enlaces de prueba, el usuario `admin@demo.local` y el secreto TOTP. Ese ingreso no usa Supabase Auth: vive en memoria y se pierde al reiniciar. **Nunca** actives `DEMO_MODE` en producción: la aplicación se niega a arrancar así.
+**Probar sin Supabase (modo demostración).** Agrega `DEMO_MODE=true` en `.env.local` y abre `http://localhost:3000`. En el inicio y en el ingreso aparece un recuadro con tres botones: **entrar como administrador** (el panel completo), **entrar como usuario** (la persona que actualiza sus datos) y **entrar a mi cuenta** (un registro ya enviado, en `/mi-cuenta`). Revisor de fichas y exportación a AIG no son pantallas distintas: son el mismo panel con menos opciones (`revisor@demo.local` y `exportador@demo.local`, contraseña `Demo-portal-2026`). La consola también muestra enlaces de prueba, el usuario `admin@demo.local` y el secreto TOTP. Ese ingreso no usa Supabase Auth: vive en memoria y se pierde al reiniciar. **Nunca** actives `DEMO_MODE` en producción: la aplicación se niega a arrancar así.
+
+## Mi cuenta del asegurado (`/mi-cuenta`)
+
+Después de confirmar la cédula en el enlace personal, la misma sesión del titular (`respondent_sessions`, cookie httpOnly) abre **Mi cuenta**. No hay un segundo usuario de Supabase Auth: el panel `/admin` sigue siendo solo por invitación (KAN-105).
+
+1. Enlace vigente: la cédula abre el formulario. Desde ahí, **Ver el estado de mi actualización** lleva a `/mi-cuenta` (avisos y, si todavía no hay envío, un estado vacío con el botón para continuar).
+2. Enlace ya usado: la página del enlace sigue diciendo que no abre el formulario. El texto **Consultar el estado de mi registro** pide otra vez la cédula y abre `/mi-cuenta` en lectura (número `AIG-…`, fecha, estado y un resumen enmascarado).
+3. Al terminar el formulario, la confirmación también enlaza a `/mi-cuenta` antes de cerrar la sesión.
+
+Los avisos salen del estado de la persona y del aviso de privacidad vigente (`privacy_notices` o el texto del código si aún no hay uno publicado). No hay tabla nueva ni envío por correo o WhatsApp. No existe búsqueda por cédula: sin la cookie de esa persona, `/mi-cuenta` no muestra datos.
 
 ## Supabase: configuración
 

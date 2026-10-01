@@ -36,6 +36,41 @@ export function loadProductSeed(repo: MemoryRepo): SeedPlan["links"] {
     });
   }
 
+  for (const contact of plan.contacts) {
+    const personId = String(contact.person_id);
+    const profile = repo.profiles.get(personId) ?? { contact: null, bank: null, notice_version: null };
+    profile.contact = {
+      primary_email: contact.primary_email == null ? null : String(contact.primary_email),
+      secondary_email: contact.secondary_email == null ? null : String(contact.secondary_email),
+      mobile_phone: contact.mobile_phone == null ? null : String(contact.mobile_phone),
+      city: contact.city == null ? null : String(contact.city),
+      province: contact.province == null ? null : String(contact.province),
+      country: contact.country == null ? null : String(contact.country),
+    };
+    repo.profiles.set(personId, profile);
+  }
+
+  for (const bank of plan.banks) {
+    const personId = String(bank.person_id);
+    const profile = repo.profiles.get(personId) ?? { contact: null, bank: null, notice_version: null };
+    profile.bank = {
+      bank_name: String(bank.bank_name ?? ""),
+      bank_other_name: bank.bank_other_name == null ? null : String(bank.bank_other_name),
+      account_type: String(bank.account_type ?? ""),
+      account_number_last4: String(bank.account_number_last4 ?? ""),
+      holder_is_titular: Boolean(bank.holder_is_titular),
+    };
+    repo.profiles.set(personId, profile);
+  }
+
+  for (const consent of plan.consents) {
+    if (consent.consent_type !== "PRIVACY_NOTICE") continue;
+    const personId = String(consent.person_id);
+    const profile = repo.profiles.get(personId) ?? { contact: null, bank: null, notice_version: null };
+    profile.notice_version = consent.privacy_notice_version == null ? null : String(consent.privacy_notice_version);
+    repo.profiles.set(personId, profile);
+  }
+
   for (const token of plan.tokens) {
     const id = String(token.id);
     repo.tokens.set(id, {

@@ -17,7 +17,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
         action={
           <div className="sheet space-y-5 p-6 md:p-8">
             {fin ? (
-              <Notice tone="success" title="Proceso finalizado">
+              <Notice tone="success" title={fin === "cuenta" ? "Sesión cerrada" : "Proceso finalizado"}>
                 Tu sesión se cerró de forma segura. Ya puedes cerrar esta ventana.
               </Notice>
             ) : (

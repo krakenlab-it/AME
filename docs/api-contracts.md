@@ -27,6 +27,7 @@ Cuerpo JSON, sin campos extra:
 | Acción | Dónde | Requisito |
 |---|---|---|
 | Identificarse | `/verificar/[token]` | Enlace individual (256 bits) y cédula. No devuelve si la cédula existe cuando el enlace es inválido. |
+| Consultar mi cuenta | `/mi-cuenta` y, si el enlace ya se usó, `/verificar/[token]/estado` | Cookie de la sesión del titular ligada a esa persona. Sin búsqueda por cédula. El enlace usado no reabre el formulario. |
 | Confirmar enlace | `/admin/auth/confirm` | Invitación, restablecimiento o enlace mágico ya emitido. El destino se queda en `/admin`. |
 | Adoptar sesión | El mismo enlace, si Supabase usa el fragmento `#access_token` | Mismos límites. No abre un registro nuevo. |
 

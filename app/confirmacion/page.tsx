@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { finishAction } from "@/app/verificar/actions";
 import { Reveal } from "@/components/motion/primitives";
@@ -31,6 +32,11 @@ export default async function ConfirmationPage() {
             Guarda este número por si necesitas consultarlo. Si registraste un correo, te enviamos una confirmación sin datos sensibles.
           </p>
           <p className="text-[15px] text-ink-muted">Usaremos tu información solo para lo descrito en el Aviso de Privacidad.</p>
+          <p>
+            <Link href="/mi-cuenta" className="font-semibold text-marian underline-offset-4 hover:underline">
+              Ver mi registro y los avisos
+            </Link>
+          </p>
           <form action={finishAction}>
             <Button type="submit" block>Terminar y cerrar sesión</Button>
           </form>

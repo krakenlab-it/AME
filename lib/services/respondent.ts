@@ -8,6 +8,7 @@ import { maskCedula } from "@/lib/security/masking";
 import { RESPONDENT_SESSION_MINUTES } from "@/lib/security/cookies";
 import { CONSENT_PURPOSE, type ConsentType } from "@/lib/privacy/notice";
 import { generateConfirmationCode } from "./confirmation";
+import { canContinueForm } from "./insured-home";
 import { settings } from "./settings";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -55,7 +56,7 @@ export interface IdentifyDeps {
   verifyCaptcha: (token: string | undefined) => Promise<boolean>;
 }
 
-export async function identify(repo: RespondentRepo, rawInput: unknown, deps: IdentifyDeps): Promise<IdentifyResult> {
+export async function identify(repo: RespondentRepo, rawInput: unknown, deps: IdentifyDeps, mode: "form" | "home" = "form"): Promise<IdentifyResult> {
   const parsed = identifySchema.safeParse(sanitizeDeep(rawInput));
   if (!parsed.success) {
     const fieldErrors = flattenIssues(parsed.error);
@@ -83,7 +84,8 @@ export async function identify(repo: RespondentRepo, rawInput: unknown, deps: Id
     return { ok: false, error: GENERIC_IDENTIFY_ERROR, requireCaptcha: deps.captchaEnabled && limit.hits >= settings.captchaAfterAttempts };
   }
   const state = tokenState(token);
-  if (state !== "valid") return { ok: false, error: linkStateMessage(state), linkState: state };
+  const homeEntry = mode === "home" && state === "used";
+  if (state !== "valid" && !homeEntry) return { ok: false, error: linkStateMessage(state), linkState: state };
 
   const person = await repo.getPerson(token.person_id);
   const candidate = keyedHash(cedula, "national_id");
@@ -101,10 +103,26 @@ export async function identify(repo: RespondentRepo, rawInput: unknown, deps: Id
 
   const sessionToken = randomToken(32);
   const expiresAt = new Date(Date.now() + RESPONDENT_SESSION_MINUTES * 60_000).toISOString();
-  await repo.createRespondentSession({ session_hash: sha256(sessionToken), person_id: person.id, access_token_id: token.id, expires_at: expiresAt });
-  await repo.markStarted(person.id);
-  await repo.audit({ person_id: person.id, actor_type: "respondent", action: "IDENTITY_VERIFIED" });
+  await repo.createRespondentSession({
+    session_hash: sha256(sessionToken),
+    person_id: person.id,
+    access_token_id: token.id,
+    expires_at: expiresAt,
+    submitted_at: canContinueForm(person) ? null : person.submitted_at,
+  });
+  if (canContinueForm(person)) await repo.markStarted(person.id);
+  await repo.audit({
+    person_id: person.id,
+    actor_type: "respondent",
+    action: "IDENTITY_VERIFIED",
+    metadata: mode === "home" ? { surface: "mi-cuenta" } : {},
+  });
   return { ok: true, sessionToken, expiresAt };
+}
+
+/** Misma verificación de enlace + cédula, también si el enlace ya se usó, para abrir /mi-cuenta en lectura. */
+export function openInsuredHome(repo: RespondentRepo, rawInput: unknown, deps: IdentifyDeps): Promise<IdentifyResult> {
+  return identify(repo, rawInput, deps, "home");
 }
 
 export function linkStateMessage(state: LinkState): string {
@@ -133,9 +151,10 @@ export async function getRespondentContext(repo: RespondentRepo, sessionToken: s
   const session = await repo.findRespondentSession(sha256(sessionToken));
   if (!session || session.revoked_at) return null;
   if (new Date(session.expires_at).getTime() <= Date.now()) return null;
-  if (session.submitted_at && !opts.allowSubmitted) return null;
   const person = await repo.getPerson(session.person_id);
   if (!person) return null;
+  const locked = Boolean(session.submitted_at) || !canContinueForm(person);
+  if (locked && !opts.allowSubmitted) return null;
   return { session, person };
 }
 

@@ -58,7 +58,7 @@ export async function middleware(req: NextRequest) {
   }
 
   response.headers.set("Content-Security-Policy", csp);
-  if (path.startsWith("/verificar") || path.startsWith("/confirmacion") || path.startsWith("/admin")) {
+  if (path.startsWith("/verificar") || path.startsWith("/confirmacion") || path.startsWith("/admin") || path.startsWith("/mi-cuenta")) {
     response.headers.set("Cache-Control", "private, no-store, max-age=0");
   }
   return response;

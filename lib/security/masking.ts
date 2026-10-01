@@ -22,3 +22,11 @@ export function maskEmail(email: string | null | undefined): string {
   if (!user || !domain) return "***";
   return `${user.slice(0, 1)}${"*".repeat(Math.max(user.length - 1, 2))}@${domain}`;
 }
+
+/** +593991234567 -> ••••4567 */
+export function maskPhone(phone: string | null | undefined): string {
+  if (!phone) return "";
+  const digits = phone.replace(/\D/g, "");
+  if (digits.length < 4) return "••••";
+  return `••••${digits.slice(-4)}`;
+}
