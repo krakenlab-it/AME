@@ -3,6 +3,7 @@ import { Mail } from "lucide-react";
 import { PortalHero, ProtectedNote } from "@/components/portal/hero";
 import { PortalShell, PortalUnavailable } from "@/components/portal/shell";
 import { DemoAccess } from "@/components/demo/demo-access";
+import { ButtonLink } from "@/components/ui/button";
 import { Notice } from "@/components/ui/notice";
 import { getRepo } from "@/lib/database";
 import { getActivePrivacy } from "@/lib/privacy/active";
@@ -50,6 +51,12 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
                 </p>
               </>
             )}
+            <div className="border-t border-marian-line/70 pt-5">
+              <p className="text-sm text-ink-muted">Si formas parte del equipo, ingresa con tu correo.</p>
+              <ButtonLink href="/admin/login" variant="secondary" size="sm" className="mt-3">
+                Iniciar sesión con correo
+              </ButtonLink>
+            </div>
             <ProtectedNote />
             <DemoAccess />
           </div>
