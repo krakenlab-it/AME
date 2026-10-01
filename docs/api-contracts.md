@@ -35,3 +35,5 @@ La carga de Unibrokers usa el mismo origen y el mismo permiso. El cuerpo es `{ "
 | Adoptar sesión | El mismo enlace, si Supabase usa el fragmento `#access_token` | Mismos límites. No abre un registro nuevo. |
 
 `/admin/registro` solo elige contraseña cuando la invitación ya creó la sesión. No es un formulario de registro abierto.
+
+El paso 3 del panel (enviar el enlace por correo) no es un requisito del portal. Si `RESEND_API_KEY` no está configurada, la pantalla lo muestra («RESEND_API_KEY no está configurada») y no envía. Generar y descargar enlaces sigue igual.

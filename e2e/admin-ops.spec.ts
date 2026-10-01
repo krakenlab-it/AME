@@ -22,8 +22,9 @@ test("el panel administrador explica el acceso, la carga y la ficha con código"
   await expect(page.getByRole("heading", { name: "2. Enlaces para registros sin enlace vigente" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Generar enlaces faltantes" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "3. Enviar el enlace por correo" })).toBeVisible();
+  await expect(page.getByText("RESEND_API_KEY no está configurada.")).toBeVisible();
   await page.getByRole("button", { name: "Enviar enlaces por correo" }).click();
-  await expect(page.getByText(/RESEND_API_KEY/)).toBeVisible();
+  await expect(page.getByText("RESEND_API_KEY no está configurada.")).toHaveCount(2);
 
   await page.getByRole("link", { name: "Archivo para AIG" }).click();
   await expect(page.getByText("Gestión de reclamos (contacto, sin datos bancarios)")).toBeVisible();

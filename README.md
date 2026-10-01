@@ -113,7 +113,7 @@ Todas están documentadas en `.env.example`.
 |---|---|
 | `TOKEN_TTL_DAYS` | Vigencia de los enlaces. Por defecto 30 días; rango 1–180. |
 | `TURNSTILE_SECRET_KEY`, `NEXT_PUBLIC_TURNSTILE_SITE_KEY` | CAPTCHA adaptativo de Cloudflare |
-| `RESEND_API_KEY`, `EMAIL_FROM` | Correo de confirmación |
+| `RESEND_API_KEY`, `EMAIL_FROM` | Opcional. Si `RESEND_API_KEY` no está, el paso 3 muestra «RESEND_API_KEY no está configurada» y no envía correos. Importar y generar enlaces no dependen de eso. |
 | `ENCRYPTION_KEY_PREVIOUS` | Solo durante una rotación de llave |
 
 **Rotación de la llave de cifrado.** Mueve la llave actual a `ENCRYPTION_KEY_PREVIOUS` y pon una nueva en `ENCRYPTION_KEY`. Los datos nuevos se cifran con la nueva y los antiguos se siguen leyendo con la anterior.
@@ -181,7 +181,7 @@ npm run seed:product-users -- --write      # inserta o actualiza solo estas tres
 5. Al importar, descarga el **CSV de enlaces** en ese mismo momento. Por seguridad, los enlaces no se vuelven a mostrar, porque en la base solo existe su hash.
 6. Para reenviar enlaces:
    - **Generar enlaces faltantes** crea enlaces nuevos para quienes siguen pendientes y tienen el enlace vencido o revocado.
-   - **Enviar enlaces por correo** escribe solo a quien tiene correo y todavía no tiene un enlace vigente. No anula un enlace ya entregado, porque el enlace en claro no se guarda. Hace falta `RESEND_API_KEY` y `EMAIL_FROM`. Si el correo no sale, se descarga el CSV de esos enlaces nuevos.
+   - **Enviar enlaces por correo** escribe solo a quien tiene correo y todavía no tiene un enlace vigente. No anula un enlace ya entregado, porque el enlace en claro no se guarda. Si `RESEND_API_KEY` no está configurada, el panel lo dice y no envía; **Generar enlaces faltantes** sigue disponible.
    - En la ficha de cada persona, **Generar nuevo enlace** revoca el anterior y crea uno nuevo.
    - Un **cambio manual** en la ficha pide de nuevo el código de la aplicación autenticadora. La auditoría guarda quién cambió qué campos, no los valores nuevos.
 

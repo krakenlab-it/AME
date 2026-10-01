@@ -17,7 +17,7 @@ function download(csv: string, name: string) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-export function ImportPanel() {
+export function ImportPanel({ resendKeySet }: { resendKeySet: boolean }) {
   const [state, formAction, pending] = useActionState<ImportState, FormData>(importAction, {});
   const [linksMsg, setLinksMsg] = useState<string | null>(null);
   const [mail, setMail] = useState<LinkMailState | null>(null);
@@ -108,6 +108,7 @@ export function ImportPanel() {
           Envía el enlace personal para que la persona complete sus datos. Solo se escribe a quien tiene correo y todavía no tiene un enlace vigente, para no anular uno que ya se entregó.
           Quien no tiene correo sigue en el paso 2.
         </p>
+        {!resendKeySet && <Notice tone="warning">RESEND_API_KEY no está configurada.</Notice>}
         <Button variant="secondary" loading={mailPending} onClick={() => startMail(async () => {
           const result = await sendLinkEmailsAction();
           setMail(result);

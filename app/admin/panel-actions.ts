@@ -76,7 +76,7 @@ export async function sendLinkEmailsAction(): Promise<LinkMailState> {
   const ctx = await adminForAction("links:manage");
   if (!ctx) return { error: DENIED };
   if (!emailConfigured()) {
-    return { error: "El correo no está configurado. Faltan RESEND_API_KEY o EMAIL_FROM. Mientras tanto, usa Generar enlaces faltantes y entrega el archivo por un canal seguro." };
+    return { error: process.env.RESEND_API_KEY ? "EMAIL_FROM no está configurada." : "RESEND_API_KEY no está configurada." };
   }
   const organization = process.env.ORGANIZATION_NAME?.trim() || "Agrupación Marista Ecuatoriana";
   const result = await sendMissingLinkEmails(getRepo(), { adminId: ctx.admin.id, organization, deliver: deliverEmail });

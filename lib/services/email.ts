@@ -1,6 +1,6 @@
 /**
  * Correo de confirmación (Resend, vía API REST). No incluye datos bancarios ni personales sensibles.
- * Si RESEND_API_KEY no está configurada, el envío se omite sin interrumpir el flujo.
+ * Si RESEND_API_KEY no está configurada, el envío se omite. El panel lo muestra; no es un requisito para el resto.
  */
 export function confirmationEmail(code: string, contact: string) {
   const subject = "Confirmación de actualización de información";
