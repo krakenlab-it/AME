@@ -10,12 +10,13 @@ export type Permission =
   | "export:create"
   | "audit:view"
   | "notice:manage"
-  | "retention:run";
+  | "retention:run"
+  | "staff:invite";
 
 const MATRIX: Record<AdminRole, Permission[]> = {
   ADMIN: [
     "dashboard:view", "people:view", "people:review", "people:import", "links:manage",
-    "export:create", "audit:view", "notice:manage", "retention:run",
+    "export:create", "audit:view", "notice:manage", "retention:run", "staff:invite",
   ],
   REVIEWER: ["dashboard:view", "people:view", "people:review"],
   EXPORTER: ["dashboard:view", "export:create"],

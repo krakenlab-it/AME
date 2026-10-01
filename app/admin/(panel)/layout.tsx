@@ -13,6 +13,7 @@ const NAV: (AdminNavItem & { perm: Permission })[] = [
   { href: "/admin/exportar", label: "Archivo para AIG", shortLabel: "Exportar", icon: "export", perm: "export:create" },
   { href: "/admin/auditoria", label: "Auditoría", shortLabel: "Auditoría", icon: "audit", perm: "audit:view" },
   { href: "/admin/aviso", label: "Aviso de privacidad", shortLabel: "Aviso", icon: "notice", perm: "notice:manage" },
+  { href: "/admin/invitar", label: "Invitar personal", shortLabel: "Invitar", icon: "invite", perm: "staff:invite" },
 ];
 
 export const metadata = { title: { default: "Panel administrativo", template: "%s | Panel administrativo" } };

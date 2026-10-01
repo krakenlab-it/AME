@@ -70,4 +70,12 @@ test("el panel muestra las tres fichas del seed", async ({ page }) => {
   await expect(page.getByRole("cell", { name: started!.currentFirstNames, exact: true })).toBeVisible();
   await expect(page.getByRole("cell", { name: completed!.currentFirstNames, exact: true })).toBeVisible();
   await expect(page.getByRole("cell", { name: review!.currentFirstNames, exact: true })).toBeVisible();
+
+  await page.getByRole("link", { name: "Invitar personal" }).click();
+  await expect(page.getByRole("heading", { level: 1, name: "Invitar personal" })).toBeVisible();
+  await page.getByLabel("Nombre completo").fill("Jaime Demo");
+  await page.getByLabel("Correo electrónico").fill("jaime.demo@example.com");
+  await page.getByLabel("Rol en el panel").selectOption("REVIEWER");
+  await page.getByRole("button", { name: "Enviar invitación" }).click();
+  await expect(page.getByText(/modo de demostración no se envían invitaciones/i)).toBeVisible();
 });

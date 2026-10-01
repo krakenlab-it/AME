@@ -150,12 +150,22 @@ describe("enlace de invitación", () => {
 
 describe("límites de acceso", () => {
   it("el panel no se abre con alta pública y el revisor no exporta", () => {
-    const provisioning = readFileSync("scripts/create-admin.ts", "utf8");
+    const provisioning = readFileSync("lib/services/staff-auth-admin.ts", "utf8");
+    const script = readFileSync("scripts/create-admin.ts", "utf8");
     const actions = readFileSync("app/admin/auth-actions.ts", "utf8");
+    const inviteActions = readFileSync("app/admin/invite-actions.ts", "utf8");
+    const inviteForm = readFileSync("components/admin/invite-staff-form.tsx", "utf8");
     const registro = readFileSync("app/admin/registro/page.tsx", "utf8");
     expect(provisioning).toContain("inviteUserByEmail");
     expect(provisioning).not.toMatch(/\.signUp\(/);
+    expect(script).toContain("inviteStaffMember");
+    expect(script).not.toMatch(/\.signUp\(/);
     expect(actions).not.toMatch(/signUp/);
+    expect(inviteActions).toContain("createServiceRoleClient");
+    expect(inviteActions).toContain("staff:invite");
+    expect(inviteActions).not.toMatch(/\.signUp\(/);
+    expect(inviteForm).not.toContain("SERVICE_ROLE");
+    expect(inviteForm).not.toContain("inviteUserByEmail");
     expect(registro).toMatch(/solo por invitación/);
     expect(can("REVIEWER", "export:create")).toBe(false);
     expect(can("EXPORTER", "export:create")).toBe(true);
