@@ -8,6 +8,7 @@ import {
   type AdminUserRecord,
   type AuditRow,
   type ExportSourceRow,
+  type InsuredRecord,
   type NoticeRecord,
   type PersonDetail,
   type PersonListRow,
@@ -117,7 +118,7 @@ export class SupabaseRepo implements Repo {
     check(await this.db.from("people").update({ status: "STARTED" }).eq("id", personId).eq("status", "PENDING"), "markStarted");
   }
 
-  async createRespondentSession(s: { session_hash: string; person_id: string; access_token_id: string; expires_at: string }) {
+  async createRespondentSession(s: { session_hash: string; person_id: string; access_token_id: string; expires_at: string; submitted_at?: string | null }) {
     const data = check(await this.db.from("respondent_sessions").insert(s).select().single(), "createRespondentSession");
     return data as RespondentSessionRecord;
   }
@@ -158,6 +159,50 @@ export class SupabaseRepo implements Repo {
       "getActiveNotice",
     );
     return (data as NoticeRecord | null) ?? null;
+  }
+
+  async getInsuredRecord(personId: string) {
+    const person = check(
+      await this.db
+        .from("people")
+        .select("id, first_names, last_names, national_id_encrypted, national_id_hash, national_id_last2, status, confirmation_code, submitted_at, review_reasons")
+        .eq("id", personId)
+        .is("anonymized_at", null)
+        .maybeSingle(),
+      "getInsuredRecord.person",
+    ) as (PersonRecord & { review_reasons: string[] | null }) | null;
+    if (!person) return null;
+
+    const [contactRes, bankRes, consentRes] = await Promise.all([
+      this.db
+        .from("contact_information")
+        .select("primary_email, secondary_email, mobile_phone, city, province, country")
+        .eq("person_id", personId)
+        .maybeSingle(),
+      this.db
+        .from("bank_information")
+        .select("bank_name, bank_other_name, account_type, account_number_last4, holder_is_titular")
+        .eq("person_id", personId)
+        .maybeSingle(),
+      this.db
+        .from("consents")
+        .select("privacy_notice_version")
+        .eq("person_id", personId)
+        .eq("consent_type", "PRIVACY_NOTICE")
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+    ]);
+
+    const contact = check(contactRes, "getInsuredRecord.contact") as InsuredRecord["contact"];
+    const bank = check(bankRes, "getInsuredRecord.bank") as InsuredRecord["bank"];
+    const consent = check(consentRes, "getInsuredRecord.consent") as { privacy_notice_version: string } | null;
+    return {
+      person: { ...person, review_reasons: person.review_reasons ?? [] },
+      contact,
+      bank,
+      notice_version: consent?.privacy_notice_version ?? null,
+    };
   }
 
   // ── Administración: autenticación ─────────────────────────────────────────

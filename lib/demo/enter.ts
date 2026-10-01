@@ -16,3 +16,9 @@ export function pickDemoUser<T extends DemoUserCandidate>(people: readonly T[]):
   const open = people.filter((person) => !person.submitted_at);
   return open.find((person) => person.status === "STARTED") ?? open.find((person) => person.status === "PENDING") ?? open[0] ?? null;
 }
+
+/** La puerta "mi cuenta" abre un registro ya enviado, para ver avisos y el resumen en lectura. */
+export function pickDemoAccount<T extends DemoUserCandidate>(people: readonly T[]): T | null {
+  const done = people.filter((person) => person.submitted_at);
+  return done.find((person) => person.status === "COMPLETED") ?? done.find((person) => person.status === "NEEDS_REVIEW") ?? done[0] ?? null;
+}

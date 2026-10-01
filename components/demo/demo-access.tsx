@@ -2,15 +2,17 @@ import { FlaskConical, ShieldCheck, UserRound } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { getRepo } from "@/lib/database";
 import { isMemoryRepo } from "@/lib/database/memory-repo";
-import { pickDemoUser } from "@/lib/demo/enter";
+import { pickDemoAccount, pickDemoUser } from "@/lib/demo/enter";
 import { isDemoMode } from "@/lib/demo-mode";
 
-/** Dos puertas de prueba. No se dibuja si DEMO_MODE no está activo o si el entorno es producción. */
+/** Puertas de prueba. No se dibuja si DEMO_MODE no está activo o si el entorno es producción. */
 export function DemoAccess() {
   if (!isDemoMode()) return null;
   const repo = getRepo();
   if (!isMemoryRepo(repo)) return null;
-  const user = pickDemoUser([...repo.people.values()]);
+  const people = [...repo.people.values()];
+  const user = pickDemoUser(people);
+  const account = pickDemoAccount(people);
 
   return (
     <aside aria-labelledby="demo-access" className="rounded-2xl border border-crown/40 bg-warn-soft p-5">
@@ -19,11 +21,11 @@ export function DemoAccess() {
         <div>
           <h2 id="demo-access" className="text-lg">Probar el portal</h2>
           <p className="mt-1 text-sm text-ink/80">
-            Hay dos entradas: el administrador y la persona que actualiza sus datos. Revisor y exportación a AIG son este mismo panel, con menos opciones.
+            Hay tres entradas: el administrador, la persona que actualiza sus datos y la cuenta ya enviada (avisos y registro). Revisor y exportación a AIG son este mismo panel, con menos opciones.
           </p>
         </div>
       </div>
-      <div className="mt-4 grid gap-2 sm:grid-cols-2">
+      <div className="mt-4 grid gap-2">
         <form action="/demo/entrar" method="post">
           <input type="hidden" name="destino" value="admin" />
           <Button type="submit" size="sm" block className="justify-start">
@@ -36,6 +38,13 @@ export function DemoAccess() {
           <Button type="submit" size="sm" variant="secondary" block className="justify-start" disabled={!user}>
             <UserRound className="h-4 w-4" aria-hidden />
             {user ? `Entrar como usuario · ${user.first_names.split(" ")[0]}` : "No hay un usuario pendiente"}
+          </Button>
+        </form>
+        <form action="/demo/entrar" method="post">
+          <input type="hidden" name="destino" value="cuenta" />
+          <Button type="submit" size="sm" variant="secondary" block className="justify-start" disabled={!account}>
+            <UserRound className="h-4 w-4" aria-hidden />
+            {account ? `Entrar a mi cuenta · ${account.first_names.split(" ")[0]}` : "No hay un registro enviado"}
           </Button>
         </form>
       </div>

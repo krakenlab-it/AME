@@ -3,7 +3,7 @@ import { isDemoMode } from "@/lib/demo-mode";
 import { isMemoryRepo, MemoryRepo } from "@/lib/database/memory-repo";
 import { createDemoRepo } from "@/lib/database/demo";
 import { getDemoAdminContext, startDemoSession } from "@/lib/services/demo-admin-auth";
-import { pickDemoUser } from "@/lib/demo/enter";
+import { pickDemoAccount, pickDemoUser } from "@/lib/demo/enter";
 import { can } from "@/lib/security/rbac";
 
 vi.mock("server-only", () => ({}));
@@ -77,6 +77,8 @@ describe("acceso rápido de pruebas (solo modo demostración)", () => {
     expect(pickDemoUser(people)?.id).toBe("camino");
     expect(pickDemoUser(people.filter((person) => person.id !== "camino"))?.id).toBe("pendiente");
     expect(pickDemoUser(people.filter((person) => person.submitted_at))).toBeNull();
+    expect(pickDemoAccount(people)?.id).toBe("listo");
+    expect(pickDemoAccount(people.filter((person) => !person.submitted_at))).toBeNull();
   });
 
   it("isMemoryRepo reconoce el repositorio en memoria sin depender de instanceof", () => {

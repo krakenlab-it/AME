@@ -1,5 +1,6 @@
 import { headers } from "next/headers";
 import { LinkIcon } from "lucide-react";
+import Link from "next/link";
 import { IdentifyPanel } from "@/components/forms/identify-panel";
 import { PortalHero } from "@/components/portal/hero";
 import { PortalShell, PortalUnavailable } from "@/components/portal/shell";
@@ -27,6 +28,13 @@ export default async function VerifyLinkPage({ params }: { params: Promise<{ tok
               <LinkIcon className="h-7 w-7 text-marian" aria-hidden />
               <h2 className="text-2xl">Este enlace no está disponible</h2>
               <p className="text-ink-muted">{linkStateMessage(state)}</p>
+              {state === "used" && (
+                <p>
+                  <Link href={`/verificar/${token}/estado`} className="font-semibold text-marian underline-offset-4 hover:underline">
+                    Consultar el estado de mi registro
+                  </Link>
+                </p>
+              )}
               <p className="rounded-xl bg-marian-soft/60 px-4 py-3 text-[15px]">
                 <span className="font-semibold">¿Necesitas ayuda?</span> Escribe a {privacy.config.supportContact}.
               </p>

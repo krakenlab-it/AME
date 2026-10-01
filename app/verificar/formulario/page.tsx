@@ -1,9 +1,12 @@
 import dynamic from "next/dynamic";
+import Link from "next/link";
+import { redirect } from "next/navigation";
 import { PortalShell, PortalUnavailable } from "@/components/portal/shell";
 import { Notice } from "@/components/ui/notice";
 import { Skeleton } from "@/components/ui/skeleton";
 import { getRepo } from "@/lib/database";
 import { getActivePrivacy } from "@/lib/privacy/active";
+import { canContinueForm } from "@/lib/services/insured-home";
 import { registeredView } from "@/lib/services/respondent";
 import { currentRespondent } from "@/lib/server/respondent-session";
 
@@ -21,7 +24,8 @@ const UpdateWizard = dynamic(() => import("@/components/forms/update-wizard").th
 export default async function FormPage() {
   const privacy = await getActivePrivacy(getRepo());
   if (privacy.readiness.blockPortal) return <PortalUnavailable />;
-  const ctx = await currentRespondent();
+  const ctx = await currentRespondent({ allowSubmitted: true });
+  if (ctx && !canContinueForm(ctx.person)) redirect("/mi-cuenta");
   const { config } = privacy;
 
   return (
@@ -35,6 +39,12 @@ export default async function FormPage() {
           <p className="text-ink-muted">Si el enlace ya no funciona, escribe a {config.supportContact}.</p>
         </div>
       ) : (
+        <>
+        <div className="mx-auto max-w-2xl px-5 pt-6">
+          <Link href="/mi-cuenta" className="inline-flex min-h-11 items-center text-sm font-semibold text-marian underline-offset-4 hover:underline">
+            Ver el estado de mi actualización
+          </Link>
+        </div>
         <UpdateWizard
           registered={registeredView(ctx.person)}
           supportContact={config.supportContact}
@@ -51,6 +61,7 @@ export default async function FormPage() {
             recipientLegalName: config.recipientLegalName,
           }}
         />
+        </>
       )}
     </PortalShell>
   );

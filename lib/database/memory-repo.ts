@@ -7,6 +7,7 @@ import {
   type AuditEvent,
   type AuditRow,
   type ExportSourceRow,
+  type InsuredRecord,
   type NoticeRecord,
   type PersonDetail,
   type PersonRecord,
@@ -34,6 +35,8 @@ export class MemoryRepo implements Repo {
   exports: { admin_id: string; record_count: number; fields: string[]; purpose: string }[] = [];
   notices: NoticeRecord[] = [];
   exportRows: ExportSourceRow[] = [];
+  /** Contacto y banco ya enmascarables, por persona. Lo llena el envío y el seed. */
+  profiles = new Map<string, Pick<InsuredRecord, "contact" | "bank" | "notice_version">>();
 
   // ── helpers de prueba ──
   addPerson(firstNames: string, lastNames: string, cedula: string, status: PersonStatus = "PENDING") {
@@ -75,8 +78,16 @@ export class MemoryRepo implements Repo {
   }
   async getPerson(id: string) { return this.people.get(id) ?? null; }
   async markStarted(id: string) { const p = this.people.get(id); if (p?.status === "PENDING") p.status = "STARTED"; }
-  async createRespondentSession(s: { session_hash: string; person_id: string; access_token_id: string; expires_at: string }) {
-    const rec: RespondentSessionRecord = { id: randomUUID(), submitted_at: null, revoked_at: null, ...s };
+  async createRespondentSession(s: { session_hash: string; person_id: string; access_token_id: string; expires_at: string; submitted_at?: string | null }) {
+    const rec: RespondentSessionRecord = {
+      id: randomUUID(),
+      revoked_at: null,
+      session_hash: s.session_hash,
+      person_id: s.person_id,
+      access_token_id: s.access_token_id,
+      expires_at: s.expires_at,
+      submitted_at: s.submitted_at ?? null,
+    };
     this.sessions.set(rec.id, rec);
     return rec;
   }
@@ -100,12 +111,41 @@ export class MemoryRepo implements Repo {
     tok.used_at = new Date().toISOString();
     sess.submitted_at = new Date().toISOString();
     this.submissions.set(s.person_id, s);
+    this.profiles.set(s.person_id, {
+      contact: {
+        primary_email: s.contact.primary_email,
+        secondary_email: s.contact.secondary_email,
+        mobile_phone: s.contact.mobile_phone,
+        city: s.contact.city,
+        province: s.contact.province,
+        country: s.contact.country,
+      },
+      bank: {
+        bank_name: s.bank.bank_name,
+        bank_other_name: s.bank.bank_other_name || null,
+        account_type: s.bank.account_type,
+        account_number_last4: s.bank.account_number_last4,
+        holder_is_titular: s.bank.holder_is_titular,
+      },
+      notice_version: s.notice_version,
+    });
     this.auditLog.push({ person_id: s.person_id, actor_type: "respondent", action: "DATA_UPDATED", changed_fields: s.changed_fields });
     this.auditLog.push({ person_id: s.person_id, actor_type: "respondent", action: "CONSENT_ACCEPTED", metadata: { types: s.consents.map((c) => c.type) } });
     this.auditLog.push({ person_id: s.person_id, actor_type: "respondent", action: "FORM_SUBMITTED" });
     return { confirmation_code: s.confirmation_code };
   }
   async getActiveNotice() { return this.notices.find((n) => n.is_active) ?? null; }
+  async getInsuredRecord(personId: string): Promise<InsuredRecord | null> {
+    const person = this.people.get(personId);
+    if (!person) return null;
+    const profile = this.profiles.get(personId);
+    return {
+      person: { ...person, review_reasons: person.review_reasons },
+      contact: profile?.contact ?? null,
+      bank: profile?.bank ?? null,
+      notice_version: profile?.notice_version ?? null,
+    };
+  }
 
   // ── administración ──
   async findAdminByEmail(email: string) { return [...this.admins.values()].find((a) => a.email === email.toLowerCase()) ?? null; }
