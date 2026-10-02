@@ -12,6 +12,14 @@ test("el panel administrador explica el acceso, la carga y la ficha con código"
   await page.locator("#email").fill(PRODUCT_SEED_DEMO_ADMIN.email);
   await page.locator("#password").fill(PRODUCT_SEED_DEMO_ADMIN.password);
   await page.getByRole("button", { name: "Ingresar" }).click();
+  await expect(page.getByRole("button", { name: "Volver al ingreso" })).toBeVisible();
+  await page.getByRole("button", { name: "Volver al ingreso" }).click();
+  await expect(page).toHaveURL(/\/admin\/login$/);
+  await expect(page.getByRole("button", { name: /Entrar como administrador/ })).toBeVisible();
+
+  await page.locator("#email").fill(PRODUCT_SEED_DEMO_ADMIN.email);
+  await page.locator("#password").fill(PRODUCT_SEED_DEMO_ADMIN.password);
+  await page.getByRole("button", { name: "Ingresar" }).click();
   await page.getByLabel("Código de 6 dígitos").fill(totpCode(PRODUCT_SEED_DEMO_TOTP_SECRET));
   await page.getByRole("button", { name: "Verificar" }).click();
   await expect(page.getByRole("heading", { name: "Resumen" })).toBeVisible();
