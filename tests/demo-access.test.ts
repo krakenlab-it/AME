@@ -40,6 +40,13 @@ describe("acceso rápido de pruebas (solo modo demostración)", () => {
     expect(isDemoMode()).toBe(true);
   });
 
+  it("sigue en demo en Preview aunque APP_STAGE diga production (variables compartidas en Vercel)", () => {
+    delete process.env.DEMO_MODE;
+    process.env.VERCEL_ENV = "preview";
+    process.env.APP_STAGE = "production";
+    expect(isDemoMode()).toBe(true);
+  });
+
   it("no se enciende en Vercel Preview durante next build", () => {
     delete process.env.DEMO_MODE;
     process.env.VERCEL_ENV = "preview";
