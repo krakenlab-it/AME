@@ -13,6 +13,7 @@ import { applyManualPersonEdit, parseManualEdit, type ManualEditDraft } from "@/
 import { reconfirmAdminTotp } from "@/lib/server/reconfirm-totp";
 import { maskCedula } from "@/lib/security/masking";
 import { decrypt } from "@/lib/encryption/crypto";
+import { loadPreviewSandboxRepo, persistPreviewSandboxRepo } from "@/lib/demo/preview-sandbox-store";
 
 const DENIED = "No tienes permiso para esta acción o tu sesión venció.";
 
@@ -34,8 +35,11 @@ export async function importAction(_prev: ImportState, formData: FormData): Prom
   const file = formData.get("file");
   if (!(file instanceof File) || file.size === 0) return { error: "Selecciona un archivo .csv o .xlsx." };
   try {
+    await loadPreviewSandboxRepo();
+    const repo = getRepo();
     const rows = await parseImportFile(await file.arrayBuffer(), file.name);
-    const out = await importPeople(getRepo(), { rows, filename: file.name, adminId: ctx.admin.id, allowPartial: formData.get("allowPartial") === "on" });
+    const out = await importPeople(repo, { rows, filename: file.name, adminId: ctx.admin.id, allowPartial: formData.get("allowPartial") === "on" });
+    if (out.committed) await persistPreviewSandboxRepo(repo);
     revalidatePath("/admin");
     return out;
   } catch (err) {
@@ -48,6 +52,7 @@ export async function importAction(_prev: ImportState, formData: FormData): Prom
 export async function issueMissingLinksAction(): Promise<{ error?: string; csv?: string; count?: number }> {
   const ctx = await adminForAction("links:manage");
   if (!ctx) return { error: DENIED };
+  await loadPreviewSandboxRepo();
   const repo = getRepo();
   const ids = await repo.listPersonIdsWithoutActiveToken();
   if (!ids.length) return { count: 0 };
@@ -60,20 +65,24 @@ export async function issueMissingLinksAction(): Promise<{ error?: string; csv?:
       return { first_names: p?.first_names ?? "", last_names: p?.last_names ?? "", cedula_masked: masked, url: l.url, expires_at: l.expires_at };
     }),
   );
+  await persistPreviewSandboxRepo(repo);
   return { csv: linksToCsv(rows), count: rows.length };
 }
 
 export async function generatePersonalLinksAction(): Promise<{ error?: string; count?: number; csv?: string | null }> {
   const ctx = await adminForAction("links:manage");
   if (!ctx) return { error: DENIED };
+  await loadPreviewSandboxRepo();
+  const repo = getRepo();
   const organization = process.env.ORGANIZATION_NAME?.trim() || "Agrupación Marista Ecuatoriana";
-  const result = await sendMissingLinkEmails(getRepo(), {
+  const result = await sendMissingLinkEmails(repo, {
     adminId: ctx.admin.id,
     organization,
     deliver: deliverEmail,
     emailEveryoneWithOutreach: true,
     sendEmails: false,
   });
+  if (result.linksPrepared) await persistPreviewSandboxRepo(repo);
   return { count: result.linksPrepared, csv: result.csv };
 }
 

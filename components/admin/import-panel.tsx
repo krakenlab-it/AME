@@ -107,7 +107,7 @@ export function ImportPanel() {
         <Button variant="secondary" loading={personalPending} onClick={() => startPersonal(async () => {
           const r = await generatePersonalLinksAction();
           if (r.error) setPersonalLinksMsg(r.error);
-          else if (!r.count) setPersonalLinksMsg("No hay personas pendientes o iniciadas.");
+          else if (!r.count) setPersonalLinksMsg("Importe personas en el paso 1 y vuelva a intentar.");
           else {
             download(r.csv!, `enlaces_personales_${stamp}.csv`);
             setPersonalLinksMsg(`Se generaron ${r.count} enlaces y se descargó el archivo.`);

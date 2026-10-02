@@ -9,6 +9,7 @@ import { ADMIN_COOKIE, cookieOptions } from "@/lib/security/cookies";
 import { can, type Permission } from "@/lib/security/rbac";
 import { gateForAuthUser, type AdminGate } from "@/lib/services/admin-gate";
 import { readAuthSnapshot, signOutAdmin } from "@/lib/services/admin-auth";
+import { loadPreviewSandboxRepo } from "@/lib/demo/preview-sandbox-store";
 import { getDemoAdminContext, logoutDemo } from "@/lib/services/demo-admin-auth";
 
 async function readDemoToken() {
@@ -17,6 +18,7 @@ async function readDemoToken() {
 
 export async function readAdminGate(): Promise<AdminGate> {
   if (isDemoMode()) {
+    await loadPreviewSandboxRepo();
     const repo = getRepo();
     if (!isMemoryRepo(repo)) return { kind: "anonymous" };
     const ctx = await getDemoAdminContext(repo, await readDemoToken(), { requireMfa: false });
