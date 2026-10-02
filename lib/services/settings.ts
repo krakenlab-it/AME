@@ -1,3 +1,5 @@
+import { previewSandboxPublicBaseUrl } from "@/lib/demo-mode";
+
 /** Parámetros operativos (con valores por defecto seguros). */
 export const settings = {
   tokenTtlDays: () => clampInt(process.env.TOKEN_TTL_DAYS, 30, 1, 180),
@@ -10,7 +12,7 @@ export const settings = {
   adminLockMinutes: 15,
   adminMaxFailedLogins: 5,
   exportLimitPerHour: 20,
-  baseUrl: () => (process.env.APP_BASE_URL ?? "http://localhost:3000").replace(/\/$/, ""),
+  baseUrl: () => (previewSandboxPublicBaseUrl() ?? process.env.APP_BASE_URL ?? "http://localhost:3000").replace(/\/$/, ""),
 };
 
 function clampInt(raw: string | undefined, fallback: number, min: number, max: number): number {
