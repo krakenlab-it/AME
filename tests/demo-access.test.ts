@@ -84,7 +84,7 @@ describe("acceso rápido de pruebas (solo modo demostración)", () => {
     vi.spyOn(console, "warn").mockImplementation(() => undefined);
     const repo = createDemoRepo();
     const exporter = await repo.findAdminByEmail("exportador@demo.local");
-    const token = startDemoSession(repo, exporter!.id);
+    const token = startDemoSession(repo, exporter!);
     const ctx = await getDemoAdminContext(repo, token);
     expect(ctx?.admin.role).toBe("EXPORTER");
     expect(can(ctx!.admin.role, "export:create")).toBe(true);

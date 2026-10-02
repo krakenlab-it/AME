@@ -7,6 +7,6 @@ import { startDemoSession } from "@/lib/services/demo-admin-auth";
 export async function mintDemoAdminSessionToken(repo: MemoryRepo): Promise<string | null> {
   const admin = await repo.findAdminByEmail(DEMO_ADMIN_CREDENTIALS.email);
   if (!admin) return null;
-  if (statelessDemoAdminSessionEnabled()) return issueStatelessDemoAdminSession(admin.id, true);
-  return startDemoSession(repo, admin.id);
+  if (statelessDemoAdminSessionEnabled()) return issueStatelessDemoAdminSession(admin.email, true);
+  return startDemoSession(repo, admin);
 }

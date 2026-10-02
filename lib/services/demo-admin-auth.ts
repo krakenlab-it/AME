@@ -155,14 +155,14 @@ export async function loginWithPassword(repo: MemoryRepo, email: string, passwor
 }
 
 /** Atajo de pruebas: abre una sesión con MFA ya resuelto. Solo se invoca bajo isDemoMode() sobre la base en memoria. */
-export function startDemoSession(repo: MemoryRepo, adminId: string): string {
-  if (statelessDemoAdminSessionEnabled()) return issueStatelessDemoAdminSession(adminId, true);
+export function startDemoSession(repo: MemoryRepo, admin: { id: string; email: string }): string {
+  if (statelessDemoAdminSessionEnabled()) return issueStatelessDemoAdminSession(admin.email, true);
   const sessionToken = randomToken(32);
   const now = new Date().toISOString();
   const session: DemoSession = {
     id: randomUUID(),
     sessionHash: sha256(sessionToken),
-    adminId,
+    adminId: admin.id,
     mfaVerified: true,
     lastSeenAt: now,
     expiresAt: new Date(Date.now() + ADMIN_ABSOLUTE_HOURS * 3_600_000).toISOString(),
@@ -188,7 +188,7 @@ export async function getDemoAdminContext(
   const stateless = parseStatelessDemoAdminSession(sessionToken);
   if (stateless) {
     if ((opts.requireMfa ?? true) && !stateless.mfaVerified) return null;
-    const admin = await repo.getAdmin(stateless.adminId);
+    const admin = await repo.findAdminByEmail(stateless.email);
     if (!admin || !admin.active) return null;
     const session: DemoSession = {
       id: "stateless",
@@ -256,7 +256,7 @@ export async function verifyMfa(
   await repo.updateAdmin(ctx.admin.id, { last_login_at: new Date().toISOString() });
   await repo.audit({ actor_type: "admin", actor_id: ctx.admin.id, action: "ADMIN_LOGIN" });
   const sessionToken = statelessDemoAdminSessionEnabled()
-    ? issueStatelessDemoAdminSession(ctx.admin.id, true)
+    ? issueStatelessDemoAdminSession(ctx.admin.email, true)
     : (() => {
         const newToken = randomToken(32);
         ctx.session.sessionHash = sha256(newToken);
