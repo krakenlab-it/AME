@@ -1,8 +1,15 @@
 import { History, KeyRound, ShieldCheck, Users } from "lucide-react";
 import Link from "next/link";
 import type { ReactNode } from "react";
+import { logoutAction } from "@/app/admin/auth-actions";
 import { MaristaLogo } from "@/components/brand/logos";
 import { Reveal } from "@/components/motion/primitives";
+import { Button } from "@/components/ui/button";
+
+/**
+ * Regla de UX del portal: pantallas de autenticación y pasos intermedios (MFA, contraseña)
+ * siempre ofrecen una salida visible; nunca dejar al usuario atrapado sin volver al ingreso.
+ */
 
 const ASSURANCES = [
   { Icon: ShieldCheck, title: "Solo por invitación", text: "Nadie puede crear su propio acceso administrativo." },
@@ -68,5 +75,34 @@ export function AdminAuthLink({ href, children }: { href: string; children: Reac
     <Link href={href} className="inline-flex min-h-[44px] items-center text-[15px] font-semibold text-marian underline underline-offset-2">
       {children}
     </Link>
+  );
+}
+
+/**
+ * Vuelve a /admin/login. Con `clearSession`, cierra la sesión a medias (p. ej. tras login sin MFA)
+ * para que el ingreso muestre de nuevo «Probar el portal» y el acceso demo.
+ */
+export function AdminAuthBackToLogin({
+  clearSession = false,
+  children = "Volver al ingreso",
+}: {
+  clearSession?: boolean;
+  children?: ReactNode;
+}) {
+  if (clearSession) {
+    return (
+      <div className="border-t border-marian-line/60 pt-4">
+        <form action={logoutAction}>
+          <Button type="submit" variant="secondary" block className="min-h-[44px]">
+            {children}
+          </Button>
+        </form>
+      </div>
+    );
+  }
+  return (
+    <p className="text-sm">
+      <AdminAuthLink href="/admin/login">{children}</AdminAuthLink>
+    </p>
   );
 }

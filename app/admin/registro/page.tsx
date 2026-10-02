@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { AdminAuthCard, AdminAuthLink } from "@/components/admin/auth-card";
+import { AdminAuthBackToLogin, AdminAuthCard } from "@/components/admin/auth-card";
 import { SetPasswordForm } from "@/components/admin/auth-form";
 import { readAdminGate, signOutAndClear } from "@/lib/server/admin-guard";
 import { setPasswordAction } from "../auth-actions";
@@ -27,9 +27,7 @@ export default async function InviteSignupPage() {
   return (
     <AdminAuthCard title="Crear tu acceso" subtitle="Este panel es solo por invitación. Elige la contraseña de tu cuenta.">
       <SetPasswordForm action={setPasswordAction} submitLabel="Guardar y continuar" />
-      <p className="text-sm">
-        <AdminAuthLink href="/admin/login">Ya tengo contraseña</AdminAuthLink>
-      </p>
+      <AdminAuthBackToLogin clearSession>Ya tengo contraseña</AdminAuthBackToLogin>
     </AdminAuthCard>
   );
 }

@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { AdminAuthCard, AdminAuthLink } from "@/components/admin/auth-card";
+import { AdminAuthBackToLogin, AdminAuthCard, AdminAuthLink } from "@/components/admin/auth-card";
 import { SetPasswordForm } from "@/components/admin/auth-form";
 import { readAdminGate, signOutAndClear } from "@/lib/server/admin-guard";
 import { setPasswordAction } from "../auth-actions";
@@ -30,6 +30,7 @@ export default async function ResetPasswordPage() {
       <p className="text-sm">
         <AdminAuthLink href="/admin/recuperar">Pedir otro enlace</AdminAuthLink>
       </p>
+      <AdminAuthBackToLogin clearSession />
     </AdminAuthCard>
   );
 }

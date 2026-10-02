@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { AdminAuthCard } from "@/components/admin/auth-card";
+import { AdminAuthBackToLogin, AdminAuthCard } from "@/components/admin/auth-card";
 import { MfaForm } from "@/components/admin/auth-form";
 import { Notice } from "@/components/ui/notice";
 import { getMfaScreen } from "@/lib/server/mfa-screen";
@@ -29,6 +29,7 @@ export default async function MfaPage() {
       )}
       {screen.mode === "verify" && <p className="text-ink-muted">Escribe el código de la aplicación autenticadora de tu teléfono.</p>}
       {screen.mode !== "error" && <MfaForm action={mfaAction} factorId={screen.mode === "enroll" ? screen.factorId : undefined} />}
+      <AdminAuthBackToLogin clearSession />
     </AdminAuthCard>
   );
 }
