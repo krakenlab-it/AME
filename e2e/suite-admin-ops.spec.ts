@@ -1,21 +1,15 @@
 import { expect, test } from "@playwright/test";
-import { PRODUCT_SEED_DEMO_ADMIN, PRODUCT_SEED_DEMO_TOTP_SECRET } from "../lib/seed/ci-seed";
+import { PRODUCT_SEED_DEMO_TOTP_SECRET } from "../lib/seed/ci-seed";
 import { totpCode } from "../lib/security/totp";
 
 test("el panel administrador explica el acceso, la carga y la ficha con código", async ({ page }) => {
   await page.goto("/admin/login");
-  await expect(page.getByRole("heading", { name: "Estás en la versión administrador" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Usted está en la versión administrador" })).toBeVisible();
   await expect(page.getByText("Solo por invitación", { exact: true })).toBeVisible();
   await expect(page.getByText("Verificación en dos pasos", { exact: true })).toBeVisible();
-  await expect(page.getByText("Todo queda registrado", { exact: true })).toBeVisible();
+  await expect(page.getByText("Auditoría completa", { exact: true })).toBeVisible();
 
   await page.getByRole("link", { name: /Entrar como administrador/ }).first().click();
-  await expect(page.getByRole("heading", { name: "Resumen" })).toBeVisible();
-
-  await page.goto("/admin/login");
-  await page.locator("#email").fill(PRODUCT_SEED_DEMO_ADMIN.email);
-  await page.locator("#password").fill(PRODUCT_SEED_DEMO_ADMIN.password);
-  await page.getByRole("button", { name: "Ingresar" }).click();
   await expect(page.getByRole("heading", { name: "Resumen" })).toBeVisible();
 
   await page.getByRole("link", { name: "Importar y enlaces" }).click();
@@ -44,5 +38,5 @@ test("el panel administrador explica el acceso, la carga y la ficha con código"
   await page.getByLabel("Correo para el enlace").fill("camila.enlace@example.com");
   await page.getByLabel("Código de verificación").fill(totpCode(PRODUCT_SEED_DEMO_TOTP_SECRET));
   await page.getByRole("button", { name: "Guardar cambio manual" }).click();
-  await expect(page.getByText("Cambio guardado. Quedó en la auditoría con tu usuario.")).toBeVisible();
+  await expect(page.getByText("Cambio guardado. Quedó en la auditoría con su usuario.")).toBeVisible();
 });

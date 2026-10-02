@@ -24,7 +24,7 @@ export function DemoAdminCredentials() {
           <dd className="select-all font-mono">{DEMO_ADMIN_CREDENTIALS.password}</dd>
         </div>
       </dl>
-      <ButtonLink href="/demo/entrar?destino=admin" size="sm" block className="mt-4 justify-start">
+      <ButtonLink href="/demo/entrar?destino=admin" prefetch={false} size="sm" block className="mt-4 justify-start">
         <ShieldCheck className="h-4 w-4" aria-hidden />
         Entrar como administrador (un clic)
       </ButtonLink>

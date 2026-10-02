@@ -26,7 +26,7 @@ export function DemoAccess() {
         </div>
       </div>
       <div className="mt-4 grid gap-2">
-        <ButtonLink href="/demo/entrar?destino=admin" size="sm" block className="justify-start">
+        <ButtonLink href="/demo/entrar?destino=admin" prefetch={false} size="sm" block className="justify-start">
           <ShieldCheck className="h-4 w-4" aria-hidden />
           Entrar como administrador
         </ButtonLink>

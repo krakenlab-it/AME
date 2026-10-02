@@ -28,8 +28,17 @@ async function enterAdmin(req: Request): Promise<NextResponse> {
   return response;
 }
 
+/** Next prefetches links in view. This GET opens a session, so a prefetch must not. */
+function isPrefetch(req: Request): boolean {
+  const purpose = (req.headers.get("purpose") ?? req.headers.get("sec-purpose") ?? "").toLowerCase();
+  return req.headers.has("next-router-prefetch")
+    || req.headers.has("next-router-segment-prefetch")
+    || purpose === "prefetch";
+}
+
 export async function GET(req: Request) {
   if (!isDemoMode()) return new NextResponse(null, { status: 404 });
+  if (isPrefetch(req)) return new NextResponse(null, { status: 204 });
   const destino = new URL(req.url).searchParams.get("destino");
   if (destino === "admin") return enterAdmin(req);
   return new NextResponse(null, { status: 404 });

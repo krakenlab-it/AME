@@ -33,7 +33,7 @@ test("quien no tiene sesión se queda en la portada", async ({ page }) => {
 
 test("una sesión de administración vuelve al panel desde la portada", async ({ page }) => {
   await page.goto("/");
-  await page.getByRole("button", { name: "Entrar como administrador" }).click();
+  await page.getByRole("link", { name: "Entrar como administrador" }).click();
   await expect(page).toHaveURL(/\/admin$/);
 
   await page.goto("/");

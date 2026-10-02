@@ -38,9 +38,16 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
         action={
           <div className="sheet p-6 md:p-8">
             {fin ? (
-              <Notice tone="success" title={fin === "cuenta" ? "Sesión cerrada" : "Proceso finalizado"}>
-                Su sesión se cerró de forma segura. Ya puede cerrar esta ventana.
-              </Notice>
+              <LandingRightEntry>
+                <Notice tone="success" title={fin === "cuenta" ? "Sesión cerrada" : "Proceso finalizado"}>
+                  Su sesión se cerró de forma segura. Ya puede cerrar esta ventana.
+                </Notice>
+                <LandingStaffFooter>
+                  <ButtonLink href="/admin/login" variant="ghost" size="sm">
+                    Iniciar sesión con correo
+                  </ButtonLink>
+                </LandingStaffFooter>
+              </LandingRightEntry>
             ) : (
               <LandingRightEntry>
                 <LandingIntro>

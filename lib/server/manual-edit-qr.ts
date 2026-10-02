@@ -4,6 +4,7 @@ import { cookies } from "next/headers";
 import { getRepo } from "@/lib/database";
 import { isMemoryRepo } from "@/lib/database/memory-repo";
 import { isDemoMode } from "@/lib/demo-mode";
+import { decrypt } from "@/lib/encryption/crypto";
 import { ADMIN_COOKIE } from "@/lib/security/cookies";
 import { otpauthUrl } from "@/lib/security/totp";
 import { ensureMfaSecret, getDemoAdminContext } from "@/lib/services/demo-admin-auth";
@@ -18,6 +19,11 @@ export async function manualEditVerificationQr(): Promise<string | null> {
   if (!isMemoryRepo(repo)) return null;
   const ctx = await getDemoAdminContext(repo, (await cookies()).get(ADMIN_COOKIE())?.value);
   if (!ctx) return null;
-  const secret = await ensureMfaSecret(repo, ctx.admin);
+  const secret = ctx.totpEncrypted
+    ? decrypt(ctx.totpEncrypted)
+    : ctx.admin.mfa_enabled
+      ? null
+      : await ensureMfaSecret(repo, ctx.admin);
+  if (!secret) return null;
   return QRCode.toDataURL(otpauthUrl(secret, ctx.admin.email, "Portal AME"), { margin: 1, width: 200 });
 }
