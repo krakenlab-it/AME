@@ -8,7 +8,7 @@ import { can } from "@/lib/security/rbac";
 
 vi.mock("server-only", () => ({}));
 
-const ENV_KEYS = ["DEMO_MODE", "VERCEL_ENV", "APP_STAGE"] as const;
+const ENV_KEYS = ["DEMO_MODE", "VERCEL_ENV", "APP_STAGE", "PORTAL_PREVIEW_SANDBOX_BUILD", "SANDBOX_PREVIEW_DEMO"] as const;
 const saved = Object.fromEntries(ENV_KEYS.map((k) => [k, process.env[k]]));
 
 afterEach(() => {
@@ -44,6 +44,14 @@ describe("acceso rápido de pruebas (solo modo demostración)", () => {
     delete process.env.DEMO_MODE;
     process.env.VERCEL_ENV = "preview";
     process.env.APP_STAGE = "production";
+    expect(isDemoMode()).toBe(true);
+  });
+
+  it("sigue en demo en build Preview aunque DEMO_MODE=false en runtime", () => {
+    process.env.DEMO_MODE = "false";
+    process.env.PORTAL_PREVIEW_SANDBOX_BUILD = "true";
+    process.env.APP_STAGE = "production";
+    delete process.env.VERCEL_ENV;
     expect(isDemoMode()).toBe(true);
   });
 
