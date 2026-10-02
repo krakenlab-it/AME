@@ -8,7 +8,7 @@ import { can } from "@/lib/security/rbac";
 
 vi.mock("server-only", () => ({}));
 
-const ENV_KEYS = ["DEMO_MODE", "VERCEL_ENV", "APP_STAGE", "PORTAL_PREVIEW_SANDBOX_BUILD", "SANDBOX_PREVIEW_DEMO"] as const;
+const ENV_KEYS = ["DEMO_MODE", "VERCEL_ENV", "APP_STAGE", "PORTAL_PREVIEW_SANDBOX_BUILD", "SANDBOX_PREVIEW_DEMO", "SANDBOX_PREVIEW_EMPTY"] as const;
 const saved = Object.fromEntries(ENV_KEYS.map((k) => [k, process.env[k]]));
 
 afterEach(() => {
@@ -69,6 +69,14 @@ describe("acceso rápido de pruebas (solo modo demostración)", () => {
     delete process.env.VERCEL_ENV;
     process.env.APP_STAGE = "production";
     expect(isDemoMode()).toBe(false);
+  });
+
+  it("en preview sandbox el repositorio demo arranca sin personas importadas", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    process.env.PORTAL_PREVIEW_SANDBOX_BUILD = "true";
+    const repo = createDemoRepo();
+    expect(repo.people.size).toBe(0);
+    expect(await repo.statusCounts()).toEqual({ PENDING: 0, STARTED: 0, COMPLETED: 0, NEEDS_REVIEW: 0 });
   });
 
   it("el repositorio demo trae un administrador por rol y personas en varios estados", async () => {

@@ -21,6 +21,17 @@ export function isPreviewSandboxBuild(): boolean {
   return process.env.PORTAL_PREVIEW_SANDBOX_BUILD === "true";
 }
 
+/**
+ * Preview de Jaime: base en memoria vacía (solo cuentas demo del panel).
+ * Importaciones nuevas llenan el Resumen; no arrastrar seeds ni cargas anteriores entre instancias.
+ */
+export function previewSandboxEmptyPeople(): boolean {
+  if (process.env.SANDBOX_PREVIEW_EMPTY === "false") return false;
+  if (isPreviewSandboxBuild()) return true;
+  if (isNextProductionBuild()) return false;
+  return deployStage() === "preview" || vercelPreviewHost();
+}
+
 /** Despliegue Preview / sandbox (runtime o build). Nunca producción real en vercel.app sin -git-. */
 export function isPreviewSandboxDeployment(): boolean {
   if (isNextProductionBuild()) return false;
