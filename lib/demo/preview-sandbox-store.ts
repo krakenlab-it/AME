@@ -83,6 +83,8 @@ function decodeSnapshot(blob: string): PreviewSandboxSnapshot | null {
 async function readSnapshotFromCookies(): Promise<PreviewSandboxSnapshot | null> {
   const store = await cookies();
   const base = COOKIE_BASE();
+  const single = store.get(base)?.value;
+  if (single) return decodeSnapshot(single);
   const countRaw = store.get(`${base}_n`)?.value;
   if (!countRaw) return null;
   const count = Number(countRaw);
@@ -100,15 +102,24 @@ async function writeSnapshotToCookies(snap: PreviewSandboxSnapshot): Promise<voi
   const store = await cookies();
   const base = COOKIE_BASE();
   const blob = encodeSnapshot(snap);
-  const chunks: string[] = [];
-  for (let i = 0; i < blob.length; i += CHUNK_BYTES) chunks.push(blob.slice(i, i + CHUNK_BYTES));
-  if (!chunks.length) chunks.push("");
   const maxAge = ADMIN_ABSOLUTE_HOURS * 3600;
   const opts = cookieOptions(maxAge);
+  const clearChunk = (i: number) => store.set(`${base}_${i}`, "", { ...opts, maxAge: 0 });
+
+  if (blob.length <= 3_800) {
+    store.set(base, blob, opts);
+    store.set(`${base}_n`, "", { ...opts, maxAge: 0 });
+    for (let i = 0; i < 40; i++) clearChunk(i);
+    return;
+  }
+
+  const chunks: string[] = [];
+  for (let i = 0; i < blob.length; i += CHUNK_BYTES) chunks.push(blob.slice(i, i + CHUNK_BYTES));
+  store.set(base, "", { ...opts, maxAge: 0 });
   for (let i = 0; i < 40; i++) {
     const name = `${base}_${i}`;
     if (i < chunks.length) store.set(name, chunks[i]!, opts);
-    else store.set(name, "", { ...opts, maxAge: 0 });
+    else clearChunk(i);
   }
   store.set(`${base}_n`, String(chunks.length), opts);
 }
