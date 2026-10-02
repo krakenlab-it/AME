@@ -13,7 +13,7 @@ function makeCedula(first9: string): string {
 }
 
 test("Preview: import válido y paso 3 descarga enlace /verificar/", async ({ page }) => {
-  const cedula = makeCedula(String(Date.now()).slice(-9).padStart(9, "1"));
+  const cedula = makeCedula(`1710034${String(Date.now() % 100).padStart(2, "0")}`);
   const csvPath = join("/tmp", `jaime-smoke-${Date.now()}.csv`);
   writeFileSync(csvPath, `Nombres,Apellidos,Cédula\nJaime,Demo,${cedula}\n`, "utf8");
 
@@ -23,7 +23,7 @@ test("Preview: import válido y paso 3 descarga enlace /verificar/", async ({ pa
   await page.goto("/admin/importar");
   await page.locator("#import-file").setInputFiles(csvPath);
   await page.getByRole("button", { name: "Validar e importar" }).click();
-  await expect(page.getByText(/Se importaron/i)).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByText("La carga fue exitosa")).toBeVisible({ timeout: 30_000 });
 
   const downloadPromise = page.waitForEvent("download");
   await page.getByRole("button", { name: "Generar y descargar enlaces" }).click();
