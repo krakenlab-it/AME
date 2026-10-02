@@ -27,7 +27,7 @@ export async function sendMissingLinkEmails(
     adminId: string;
     organization: string;
     deliver: (message: OutboundEmail) => Promise<boolean>;
-    /** Paso 3: enlace personal para cada persona importada (con o sin correo) y envío de prueba a quien tenga correo. */
+    /** Paso 3: enlace personal para cada persona pendiente o iniciada (con o sin correo en la ficha). */
     emailEveryoneWithOutreach?: boolean;
     /** Si es false, solo se generan enlaces y CSV; no se llama a Resend. */
     sendEmails?: boolean;

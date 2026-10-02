@@ -7,7 +7,7 @@ import { adminForAction } from "@/lib/server/admin-guard";
 import { hasPlaceholder } from "@/lib/privacy/placeholders";
 import { ImportFileError, importPeople, parseImportFile, type ImportError, type ImportNote } from "@/lib/services/import";
 import { issueLinks, linksToCsv, regenerateLink, revokeLinks } from "@/lib/services/links";
-import { emailConfigured, deliverEmail } from "@/lib/services/email";
+import { deliverEmail } from "@/lib/services/email";
 import { sendMissingLinkEmails } from "@/lib/services/link-mail";
 import { applyManualPersonEdit, parseManualEdit, type ManualEditDraft } from "@/lib/services/manual-edit";
 import { reconfirmAdminTotp } from "@/lib/server/reconfirm-totp";
@@ -63,38 +63,18 @@ export async function issueMissingLinksAction(): Promise<{ error?: string; csv?:
   return { csv: linksToCsv(rows), count: rows.length };
 }
 
-export interface LinkMailState {
-  error?: string;
-  sent?: number;
-  failed?: number;
-  skippedNoEmail?: number;
-  skippedHasLink?: number;
-  renewedLinks?: number;
-  issuedLinks?: number;
-  linksPrepared?: number;
-  csv?: string | null;
-  /** Resend listo (RESEND_API_KEY + EMAIL_FROM). Sin esto igual se generan enlaces. */
-  emailConfigured?: boolean;
-  emailFromMissing?: boolean;
-}
-
-export async function sendLinkEmailsAction(): Promise<LinkMailState> {
+export async function generatePersonalLinksAction(): Promise<{ error?: string; count?: number; csv?: string | null }> {
   const ctx = await adminForAction("links:manage");
   if (!ctx) return { error: DENIED };
-  const configured = emailConfigured();
   const organization = process.env.ORGANIZATION_NAME?.trim() || "Agrupación Marista Ecuatoriana";
   const result = await sendMissingLinkEmails(getRepo(), {
     adminId: ctx.admin.id,
     organization,
     deliver: deliverEmail,
     emailEveryoneWithOutreach: true,
-    sendEmails: configured,
+    sendEmails: false,
   });
-  return {
-    ...result,
-    emailConfigured: configured,
-    emailFromMissing: Boolean(process.env.RESEND_API_KEY && !process.env.EMAIL_FROM),
-  };
+  return { count: result.linksPrepared, csv: result.csv };
 }
 
 export interface ManualEditState {

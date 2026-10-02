@@ -54,7 +54,7 @@ export function ManualEditForm({
           <input id="edit-last" name="lastNames" defaultValue={lastNames} required minLength={2} maxLength={80} className="field-input" />
         </Field>
       </div>
-      <Field id="edit-outreach" label="Correo para el enlace" hint="Opcional. En el paso 3 se genera siempre su enlace; si hay correo aquí, también se envía por correo de prueba.">
+      <Field id="edit-outreach" label="Correo para el enlace" hint="Opcional. Se guarda en la ficha para referencia al enviar el enlace por otro medio.">
         <input id="edit-outreach" name="outreachEmail" type="email" defaultValue={outreachEmail} maxLength={254} className="field-input" aria-describedby="edit-outreach-hint" />
       </Field>
       {contact && (
