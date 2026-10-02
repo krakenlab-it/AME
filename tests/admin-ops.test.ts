@@ -90,7 +90,7 @@ describe("exportación de enlaces personales (paso 3)", () => {
     expect(out.csv).toContain("Ana");
     expect(out.csv).not.toContain("Hecho");
     expect(repo.tokens.size).toBe(2);
-    expect([...repo.tokens.values()].every((t) => [pending, started].includes(t.person_id))).toBe(true);
+    expect([...repo.tokens.values()].every((t) => t.person_id === pending || t.person_id === started)).toBe(true);
   });
 });
 
