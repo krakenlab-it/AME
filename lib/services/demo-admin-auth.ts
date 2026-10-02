@@ -7,6 +7,11 @@ import { hashPassword, hashPasswordSync, verifyPassword } from "@/lib/security/p
 import type { AdminRole } from "@/lib/security/rbac";
 import { generateTotpSecret, verifyTotp } from "@/lib/security/totp";
 import { isDemoAdminMfaBypass } from "@/lib/demo/admin-sandbox";
+import {
+  issueStatelessDemoAdminSession,
+  parseStatelessDemoAdminSession,
+  statelessDemoAdminSessionEnabled,
+} from "@/lib/demo/stateless-admin-session";
 import { isDemoMode } from "@/lib/demo-mode";
 import { settings } from "./settings";
 
@@ -151,6 +156,7 @@ export async function loginWithPassword(repo: MemoryRepo, email: string, passwor
 
 /** Atajo de pruebas: abre una sesión con MFA ya resuelto. Solo se invoca bajo isDemoMode() sobre la base en memoria. */
 export function startDemoSession(repo: MemoryRepo, adminId: string): string {
+  if (statelessDemoAdminSessionEnabled()) return issueStatelessDemoAdminSession(adminId, true);
   const sessionToken = randomToken(32);
   const now = new Date().toISOString();
   const session: DemoSession = {
@@ -177,7 +183,26 @@ export async function getDemoAdminContext(
   sessionToken: string | undefined,
   opts: { requireMfa?: boolean } = {},
 ): Promise<DemoAdminContext | null> {
-  if (!sessionToken || !/^[A-Za-z0-9_-]{32,128}$/.test(sessionToken)) return null;
+  if (!sessionToken) return null;
+
+  const stateless = parseStatelessDemoAdminSession(sessionToken);
+  if (stateless) {
+    if ((opts.requireMfa ?? true) && !stateless.mfaVerified) return null;
+    const admin = await repo.getAdmin(stateless.adminId);
+    if (!admin || !admin.active) return null;
+    const session: DemoSession = {
+      id: "stateless",
+      sessionHash: "",
+      adminId: admin.id,
+      mfaVerified: stateless.mfaVerified,
+      lastSeenAt: new Date().toISOString(),
+      expiresAt: new Date(stateless.exp).toISOString(),
+      revokedAt: null,
+    };
+    return { admin, session, totpEncrypted: state(repo).credentials.get(admin.id)?.totpEncrypted ?? null };
+  }
+
+  if (!/^[A-Za-z0-9_-]{32,128}$/.test(sessionToken)) return null;
   const bag = state(repo);
   const session = [...bag.sessions.values()].find((item) => item.sessionHash === sha256(sessionToken));
   if (!session || session.revokedAt) return null;
@@ -228,13 +253,18 @@ export async function verifyMfa(
     await repo.updateAdmin(ctx.admin.id, { mfa_enabled: true });
     await repo.audit({ actor_type: "admin", actor_id: ctx.admin.id, action: "MFA_ENROLLED" });
   }
-  const newToken = randomToken(32);
-  ctx.session.sessionHash = sha256(newToken);
-  ctx.session.mfaVerified = true;
-  ctx.session.lastSeenAt = new Date().toISOString();
   await repo.updateAdmin(ctx.admin.id, { last_login_at: new Date().toISOString() });
   await repo.audit({ actor_type: "admin", actor_id: ctx.admin.id, action: "ADMIN_LOGIN" });
-  return { ok: true, sessionToken: newToken };
+  const sessionToken = statelessDemoAdminSessionEnabled()
+    ? issueStatelessDemoAdminSession(ctx.admin.id, true)
+    : (() => {
+        const newToken = randomToken(32);
+        ctx.session.sessionHash = sha256(newToken);
+        ctx.session.mfaVerified = true;
+        ctx.session.lastSeenAt = new Date().toISOString();
+        return newToken;
+      })();
+  return { ok: true, sessionToken };
 }
 
 export async function logoutDemo(repo: MemoryRepo, sessionToken: string | undefined): Promise<void> {
