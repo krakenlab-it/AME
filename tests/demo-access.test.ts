@@ -33,6 +33,20 @@ describe("acceso rápido de pruebas (solo modo demostración)", () => {
     expect(isDemoMode()).toBe(true);
   });
 
+  it("se enciende en Vercel Preview sin variable DEMO_MODE (runtime)", () => {
+    delete process.env.DEMO_MODE;
+    delete process.env.APP_STAGE;
+    process.env.VERCEL_ENV = "preview";
+    expect(isDemoMode()).toBe(true);
+  });
+
+  it("no se enciende en Vercel Preview durante next build", () => {
+    delete process.env.DEMO_MODE;
+    process.env.VERCEL_ENV = "preview";
+    process.env.NEXT_PHASE = "phase-production-build";
+    expect(isDemoMode()).toBe(false);
+  });
+
   it("nunca funciona en producción, aunque la variable esté puesta", () => {
     process.env.DEMO_MODE = "true";
     process.env.VERCEL_ENV = "production";

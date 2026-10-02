@@ -1,5 +1,6 @@
 import "server-only";
 import { randomToken, sha256 } from "@/lib/encryption/crypto";
+import { deployStage } from "@/lib/privacy/readiness";
 import { PRODUCT_SEED_DEMO_ADMIN, PRODUCT_SEED_DEMO_TOTP_SECRET } from "@/lib/seed/ci-seed";
 import { loadProductSeed } from "@/lib/seed/load-memory";
 import { PRODUCT_PERSONAS } from "@/lib/seed/product-personas";
@@ -13,7 +14,9 @@ import { MemoryRepo } from "./memory-repo";
  * El panel de demostración no usa Supabase Auth: la contraseña y el TOTP quedan solo en memoria.
  */
 function seedProductUsers(): boolean {
-  return process.env.SEED_PRODUCT_USERS === "true";
+  if (process.env.SEED_PRODUCT_USERS === "false") return false;
+  if (process.env.SEED_PRODUCT_USERS === "true") return true;
+  return deployStage() === "preview";
 }
 
 export function createDemoRepo(): MemoryRepo {
