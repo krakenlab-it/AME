@@ -6,6 +6,8 @@ import { ADMIN_ABSOLUTE_HOURS, ADMIN_IDLE_MINUTES } from "@/lib/security/cookies
 import { hashPassword, hashPasswordSync, verifyPassword } from "@/lib/security/password";
 import type { AdminRole } from "@/lib/security/rbac";
 import { generateTotpSecret, verifyTotp } from "@/lib/security/totp";
+import { isDemoAdminMfaBypass } from "@/lib/demo/admin-sandbox";
+import { isDemoMode } from "@/lib/demo-mode";
 import { settings } from "./settings";
 
 const GENERIC_LOGIN_ERROR = "Correo o contraseña incorrectos.";
@@ -213,11 +215,14 @@ export async function verifyMfa(
     await repo.logSecurityEvent({ event_type: "ADMIN_MFA_RATE_LIMITED", ip_hash: ipHash });
     return { ok: false, error: "Demasiados intentos. Espera 15 minutos." };
   }
-  if (!ctx.totpEncrypted) return { ok: false, error: "Primero configura tu aplicación autenticadora." };
-  const secret = decrypt(ctx.totpEncrypted);
-  if (!verifyTotp(secret, code)) {
-    await repo.audit({ actor_type: "admin", actor_id: ctx.admin.id, action: "ADMIN_LOGIN_FAILED", metadata: { step: "mfa" } });
-    return { ok: false, error: "El código no es correcto o ya venció." };
+  const bypass = isDemoMode() && isDemoAdminMfaBypass(code);
+  if (!bypass) {
+    if (!ctx.totpEncrypted) return { ok: false, error: "Primero configura tu aplicación autenticadora." };
+    const secret = decrypt(ctx.totpEncrypted);
+    if (!verifyTotp(secret, code)) {
+      await repo.audit({ actor_type: "admin", actor_id: ctx.admin.id, action: "ADMIN_LOGIN_FAILED", metadata: { step: "mfa" } });
+      return { ok: false, error: "El código no es correcto o ya venció." };
+    }
   }
   if (!ctx.admin.mfa_enabled) {
     await repo.updateAdmin(ctx.admin.id, { mfa_enabled: true });

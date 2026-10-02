@@ -3,7 +3,6 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { logoutAction } from "@/app/admin/auth-actions";
 import { MaristaLogo } from "@/components/brand/logos";
-import { Reveal } from "@/components/motion/primitives";
 import { Button } from "@/components/ui/button";
 
 /**
@@ -49,7 +48,7 @@ export function AdminAuthCard({ title, subtitle, children }: { title: string; su
       </section>
 
       <div className="flex items-center justify-center px-5 py-10">
-        <Reveal className="w-full max-w-md">
+        <div className="w-full max-w-md">
           <div className="sheet space-y-6 p-7 sm:p-8">
             <div className="flex items-center gap-3">
               <MaristaLogo className="w-12 lg:hidden" />
@@ -64,7 +63,7 @@ export function AdminAuthCard({ title, subtitle, children }: { title: string; su
             </div>
             {children}
           </div>
-        </Reveal>
+        </div>
       </div>
     </main>
   );
@@ -91,13 +90,11 @@ export function AdminAuthBackToLogin({
 }) {
   if (clearSession) {
     return (
-      <div className="border-t border-marian-line/60 pt-4">
-        <form action={logoutAction}>
-          <Button type="submit" variant="secondary" block className="min-h-[44px]">
-            {children}
-          </Button>
-        </form>
-      </div>
+      <form action={logoutAction} className="mb-2">
+        <Button type="submit" variant="secondary" block className="min-h-[48px] text-base font-semibold">
+          ← {children}
+        </Button>
+      </form>
     );
   }
   return (

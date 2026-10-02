@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { AdminAuthBackToLogin, AdminAuthCard } from "@/components/admin/auth-card";
 import { MfaForm } from "@/components/admin/auth-form";
+import { DemoAdminMfaHelp } from "@/components/demo/demo-admin-mfa-help";
 import { Notice } from "@/components/ui/notice";
 import { getMfaScreen } from "@/lib/server/mfa-screen";
 import { mfaAction } from "../auth-actions";
@@ -13,6 +14,8 @@ export default async function MfaPage() {
 
   return (
     <AdminAuthCard title="Verificación en dos pasos" subtitle={screen.mode === "enroll" ? "Paso obligatorio la primera vez que ingresas." : undefined}>
+      <AdminAuthBackToLogin clearSession />
+      <DemoAdminMfaHelp />
       {screen.mode === "error" && <Notice tone="error">{screen.message}</Notice>}
       {screen.mode === "enroll" && (
         <div className="space-y-4">
@@ -29,7 +32,6 @@ export default async function MfaPage() {
       )}
       {screen.mode === "verify" && <p className="text-ink-muted">Escribe el código de la aplicación autenticadora de tu teléfono.</p>}
       {screen.mode !== "error" && <MfaForm action={mfaAction} factorId={screen.mode === "enroll" ? screen.factorId : undefined} />}
-      <AdminAuthBackToLogin clearSession />
     </AdminAuthCard>
   );
 }

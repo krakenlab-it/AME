@@ -1,5 +1,5 @@
 import { FlaskConical, ShieldCheck, UserRound } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { Button, ButtonLink } from "@/components/ui/button";
 import { getRepo } from "@/lib/database";
 import { isMemoryRepo } from "@/lib/database/memory-repo";
 import { pickDemoAccount, pickDemoUser } from "@/lib/demo/enter";
@@ -26,13 +26,10 @@ export function DemoAccess() {
         </div>
       </div>
       <div className="mt-4 grid gap-2">
-        <form action="/demo/entrar" method="post">
-          <input type="hidden" name="destino" value="admin" />
-          <Button type="submit" size="sm" block className="justify-start">
-            <ShieldCheck className="h-4 w-4" aria-hidden />
-            Entrar como administrador
-          </Button>
-        </form>
+        <ButtonLink href="/demo/entrar?destino=admin" size="sm" block className="justify-start">
+          <ShieldCheck className="h-4 w-4" aria-hidden />
+          Entrar como administrador
+        </ButtonLink>
         <form action="/demo/entrar" method="post">
           <input type="hidden" name="destino" value="usuario" />
           <Button type="submit" size="sm" variant="secondary" block className="justify-start" disabled={!user}>
