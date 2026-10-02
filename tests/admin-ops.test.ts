@@ -4,6 +4,7 @@ import { MemoryRepo } from "@/lib/database/memory-repo";
 import { can, ForbiddenError } from "@/lib/security/rbac";
 import { importNovedades, parseImportFile, validateImportRows } from "@/lib/services/import";
 import { sendMissingLinkEmails } from "@/lib/services/link-mail";
+import { exportPersonalEntryLinks } from "@/lib/services/personal-links-export";
 import { applyManualPersonEdit, parseManualEdit } from "@/lib/services/manual-edit";
 import { buildUnibrokersTable, createUnibrokersPackage, unibrokersSyncMissing } from "@/lib/services/unibrokers";
 import { makeCedula } from "./helpers/cedula";
@@ -74,6 +75,22 @@ describe("cambio manual con verificación", () => {
     expect(audit).toMatchObject({ action: "MANUAL_EDIT", actor_id: "adm-7", actor_type: "admin", person_id: id });
     expect(JSON.stringify(audit)).not.toContain("Ana María");
     expect(JSON.stringify(audit)).not.toContain("ana@correo.com");
+  });
+});
+
+describe("exportación de enlaces personales (paso 3)", () => {
+  it("emite un enlace por persona pendiente o iniciada, no por completadas", async () => {
+    const repo = new MemoryRepo();
+    const pending = repo.addPerson("Ana", "Paz", CEDULA);
+    const started = repo.addPerson("Luis", "Paz", makeCedula("010203040"), "STARTED");
+    repo.addPerson("Hecho", "Paz", makeCedula("171234567"), "COMPLETED");
+    const out = await exportPersonalEntryLinks(repo, "adm");
+    expect(out.count).toBe(2);
+    expect(out.csv).toContain("/verificar/");
+    expect(out.csv).toContain("Ana");
+    expect(out.csv).not.toContain("Hecho");
+    expect(repo.tokens.size).toBe(2);
+    expect([...repo.tokens.values()].every((t) => [pending, started].includes(t.person_id))).toBe(true);
   });
 });
 

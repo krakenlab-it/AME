@@ -7,8 +7,7 @@ import { adminForAction } from "@/lib/server/admin-guard";
 import { hasPlaceholder } from "@/lib/privacy/placeholders";
 import { ImportFileError, importPeople, parseImportFile, type ImportError, type ImportNote } from "@/lib/services/import";
 import { issueLinks, linksToCsv, regenerateLink, revokeLinks } from "@/lib/services/links";
-import { deliverEmail } from "@/lib/services/email";
-import { sendMissingLinkEmails } from "@/lib/services/link-mail";
+import { exportPersonalEntryLinks } from "@/lib/services/personal-links-export";
 import { applyManualPersonEdit, parseManualEdit, type ManualEditDraft } from "@/lib/services/manual-edit";
 import { reconfirmAdminTotp } from "@/lib/server/reconfirm-totp";
 import { maskCedula } from "@/lib/security/masking";
@@ -74,16 +73,9 @@ export async function generatePersonalLinksAction(): Promise<{ error?: string; c
   if (!ctx) return { error: DENIED };
   await loadPreviewSandboxRepo();
   const repo = getRepo();
-  const organization = process.env.ORGANIZATION_NAME?.trim() || "Agrupación Marista Ecuatoriana";
-  const result = await sendMissingLinkEmails(repo, {
-    adminId: ctx.admin.id,
-    organization,
-    deliver: deliverEmail,
-    emailEveryoneWithOutreach: true,
-    sendEmails: false,
-  });
-  if (result.linksPrepared) await persistPreviewSandboxRepo(repo);
-  return { count: result.linksPrepared, csv: result.csv };
+  const result = await exportPersonalEntryLinks(repo, ctx.admin.id);
+  if (result.count) await persistPreviewSandboxRepo(repo);
+  return { count: result.count, csv: result.csv };
 }
 
 export interface ManualEditState {
