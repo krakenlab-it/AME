@@ -2,11 +2,7 @@ import type { AdminRepo } from "@/lib/database/types";
 import { maskCedulaTail } from "@/lib/security/masking";
 import { issueLinks, linksToCsv, regenerateLink } from "./links";
 
-/**
- * Paso 3: un enlace de entrada (/verificar/…) por cada persona importada válida
- * que aún debe completar datos (pendiente o iniciada). Filas rechazadas en la
- * importación no entran en la base y no reciben enlace.
- */
+/** Un /verificar/… por registro importado válido que aún no terminó el formulario (pendiente o iniciado). */
 export async function exportPersonalEntryLinks(
   repo: AdminRepo,
   adminId: string,

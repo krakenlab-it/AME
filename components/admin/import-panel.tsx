@@ -103,15 +103,13 @@ export function ImportPanel() {
       </section>
 
       <section className="sheet space-y-4 p-6">
-        <h2 className="text-xl">3. Enlaces personales</h2>
+        <h2 className="text-xl">3. Enlace para completar datos</h2>
         <Button variant="secondary" loading={personalPending} onClick={() => startPersonal(async () => {
+          setPersonalLinksMsg(null);
           const r = await generatePersonalLinksAction();
           if (r.error) setPersonalLinksMsg(r.error);
-          else if (!r.count) setPersonalLinksMsg("Importe personas en el paso 1 y vuelva a intentar.");
-          else {
-            download(r.csv!, `enlaces_personales_${stamp}.csv`);
-            setPersonalLinksMsg(`Se generaron ${r.count} enlaces y se descargó el archivo.`);
-          }
+          else if (!r.count) setPersonalLinksMsg("No hay registros válidos importados.");
+          else download(r.csv!, `enlaces_completar_datos_${stamp}.csv`);
         })}>Generar y descargar enlaces</Button>
         {personalLinksMsg && <Notice live>{personalLinksMsg}</Notice>}
       </section>

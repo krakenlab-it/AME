@@ -23,10 +23,10 @@ test("el panel administrador explica el acceso, la carga y la ficha con código"
   await expect(page.getByText(/cédula/i).first()).toBeVisible();
   await expect(page.getByRole("heading", { name: "2. Enlaces para registros sin enlace vigente" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Generar enlaces faltantes" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "3. Enlaces personales" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "3. Enlace para completar datos" })).toBeVisible();
   await expect(page.getByText(/RESEND_API_KEY/)).toHaveCount(0);
   await page.getByRole("button", { name: "Generar y descargar enlaces" }).click();
-  await expect(page.getByText(/Se generaron \d+ enlaces|No hay personas pendientes/)).toBeVisible();
+  await expect(page.getByText("No hay registros válidos importados.")).not.toBeVisible();
 
   await page.getByRole("link", { name: "Archivo para AIG" }).click();
   await expect(page.getByText("Gestión de reclamos (contacto, sin datos bancarios)")).toBeVisible();

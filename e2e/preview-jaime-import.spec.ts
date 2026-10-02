@@ -1,12 +1,21 @@
 import { expect, test } from "@playwright/test";
-import { writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-const CEDULA = "1710034065";
+function makeCedula(first9: string): string {
+  let sum = 0;
+  for (let i = 0; i < 9; i++) {
+    let p = Number(first9[i]) * (i % 2 === 0 ? 2 : 1);
+    if (p > 9) p -= 9;
+    sum += p;
+  }
+  return `${first9}${(10 - (sum % 10)) % 10}`;
+}
 
 test("Preview: import válido y paso 3 descarga enlace /verificar/", async ({ page }) => {
+  const cedula = makeCedula(String(Date.now()).slice(-9).padStart(9, "1"));
   const csvPath = join("/tmp", `jaime-smoke-${Date.now()}.csv`);
-  writeFileSync(csvPath, `Nombres,Apellidos,Cédula\nJaime,Demo,${CEDULA}\n`, "utf8");
+  writeFileSync(csvPath, `Nombres,Apellidos,Cédula\nJaime,Demo,${cedula}\n`, "utf8");
 
   await page.goto("/demo/entrar?destino=admin");
   await expect(page.getByRole("heading", { name: "Resumen" })).toBeVisible({ timeout: 30_000 });
@@ -18,13 +27,10 @@ test("Preview: import válido y paso 3 descarga enlace /verificar/", async ({ pa
 
   const downloadPromise = page.waitForEvent("download");
   await page.getByRole("button", { name: "Generar y descargar enlaces" }).click();
-  await expect(page.getByText(/Se generaron \d+ enlaces/i)).toBeVisible({ timeout: 30_000 });
   const download = await downloadPromise;
-  const csvText = await (await download.createReadStream())!.read?.() ?? "";
-  const body = typeof csvText === "string" ? csvText : Buffer.from([]).toString();
   const saved = join("/tmp", await download.suggestedFilename());
   await download.saveAs(saved);
-  const content = await import("node:fs/promises").then((fs) => fs.readFile(saved, "utf8"));
-  expect(content).toMatch(/\/verificar\/[A-Za-z0-9_-]+/);
-  test.info().attach("sample-link", { body: content.match(/\/verificar\/[A-Za-z0-9_-]+/)?.[0] ?? "", contentType: "text/plain" });
+  const content = readFileSync(saved, "utf8");
+  const urlMatch = content.match(/https?:\/\/[^\s,"]+\/verificar\/[A-Za-z0-9_-]+|\/verificar\/[A-Za-z0-9_-]+/);
+  expect(urlMatch).toBeTruthy();
 });
