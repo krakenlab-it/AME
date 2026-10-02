@@ -10,6 +10,10 @@ export interface LinkMailResult {
   skippedNoEmail: number;
   skippedHasLink: number;
   renewedLinks: number;
+  /** Enlaces nuevos emitidos en esta acción (sin contar renovaciones). */
+  issuedLinks: number;
+  /** Personas con enlace en el CSV de esta acción. */
+  linksPrepared: number;
   csv: string | null;
 }
 
@@ -23,16 +27,19 @@ export async function sendMissingLinkEmails(
     adminId: string;
     organization: string;
     deliver: (message: OutboundEmail) => Promise<boolean>;
-    /** Si es true, escribe a todas las personas con correo y renueva el enlace vigente para poder enviar la URL. */
+    /** Paso 3: enlace personal para cada persona importada (con o sin correo) y envío de prueba a quien tenga correo. */
     emailEveryoneWithOutreach?: boolean;
+    /** Si es false, solo se generan enlaces y CSV; no se llama a Resend. */
+    sendEmails?: boolean;
   },
 ): Promise<LinkMailResult> {
   const targets = await repo.listLinkMailTargets();
   const withEmail = targets.filter((person): person is typeof person & { email: string } => Boolean(person.email));
   const skippedNoEmail = targets.length - withEmail.length;
+  const sendEmails = input.sendEmails ?? true;
 
   const ready = input.emailEveryoneWithOutreach
-    ? withEmail
+    ? targets
     : withEmail.filter((person) => !person.has_active_token);
 
   const skippedHasLink = input.emailEveryoneWithOutreach
@@ -44,9 +51,9 @@ export async function sendMissingLinkEmails(
       actor_type: "admin",
       actor_id: input.adminId,
       action: "LINK_EMAIL_SENT",
-      metadata: { sent: 0, failed: 0, skipped_no_email: skippedNoEmail, skipped_has_link: skippedHasLink, renewed: 0 },
+      metadata: { sent: 0, failed: 0, skipped_no_email: skippedNoEmail, skipped_has_link: skippedHasLink, renewed: 0, issued: 0, prepared: 0 },
     });
-    return { sent: 0, failed: 0, skippedNoEmail, skippedHasLink, renewedLinks: 0, csv: null };
+    return { sent: 0, failed: 0, skippedNoEmail, skippedHasLink, renewedLinks: 0, issuedLinks: 0, linksPrepared: 0, csv: null };
   }
 
   let renewedLinks = 0;
@@ -54,7 +61,8 @@ export async function sendMissingLinkEmails(
   const needIssue = ready.filter((person) => !person.has_active_token);
   const needRenew = input.emailEveryoneWithOutreach ? ready.filter((person) => person.has_active_token) : [];
 
-  for (const link of await issueLinks(repo, needIssue.map((person) => person.id), input.adminId)) {
+  const issued = await issueLinks(repo, needIssue.map((person) => person.id), input.adminId);
+  for (const link of issued) {
     linkByPerson.set(link.person_id, { url: link.url, expires_at: link.expires_at });
   }
   for (const person of needRenew) {
@@ -69,10 +77,7 @@ export async function sendMissingLinkEmails(
 
   for (const person of ready) {
     const link = linkByPerson.get(person.id);
-    if (!link) {
-      failed += 1;
-      continue;
-    }
+    if (!link) continue;
     csvRows.push({
       first_names: person.first_names,
       last_names: person.last_names,
@@ -80,6 +85,7 @@ export async function sendMissingLinkEmails(
       url: link.url,
       expires_at: link.expires_at,
     });
+    if (!person.email || !sendEmails) continue;
     const message = personalLinkEmail({
       firstName: person.first_names.split(" ")[0] || person.first_names,
       url: link.url,
@@ -100,7 +106,26 @@ export async function sendMissingLinkEmails(
     actor_type: "admin",
     actor_id: input.adminId,
     action: "LINK_EMAIL_SENT",
-    metadata: { sent, failed, skipped_no_email: skippedNoEmail, skipped_has_link: skippedHasLink, renewed: renewedLinks, mode: input.emailEveryoneWithOutreach ? "all" : "missing" },
+    metadata: {
+      sent,
+      failed,
+      skipped_no_email: skippedNoEmail,
+      skipped_has_link: skippedHasLink,
+      renewed: renewedLinks,
+      issued: issued.length,
+      prepared: csvRows.length,
+      mode: input.emailEveryoneWithOutreach ? "all" : "missing",
+      send_emails: sendEmails,
+    },
   });
-  return { sent, failed, skippedNoEmail, skippedHasLink, renewedLinks, csv: linksToCsv(csvRows) };
+  return {
+    sent,
+    failed,
+    skippedNoEmail,
+    skippedHasLink,
+    renewedLinks,
+    issuedLinks: issued.length,
+    linksPrepared: csvRows.length,
+    csv: csvRows.length ? linksToCsv(csvRows) : null,
+  };
 }

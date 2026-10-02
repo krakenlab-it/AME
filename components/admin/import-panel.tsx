@@ -17,7 +17,7 @@ function download(csv: string, name: string) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-export function ImportPanel({ resendKeySet }: { resendKeySet: boolean }) {
+export function ImportPanel({ emailDeliveryReady }: { emailDeliveryReady: boolean }) {
   const [state, formAction, pending] = useActionState<ImportState, FormData>(importAction, {});
   const [linksMsg, setLinksMsg] = useState<string | null>(null);
   const [mail, setMail] = useState<LinkMailState | null>(null);
@@ -33,7 +33,7 @@ export function ImportPanel({ resendKeySet }: { resendKeySet: boolean }) {
           <p className="text-[15px] text-ink-muted">
             Suba un archivo .csv o .xlsx (máximo 5 MB). En cada fila lo único obligatorio es la <strong>cédula</strong> con exactamente 10 dígitos.
             La plantilla recomendada usa las columnas Nombres, Apellidos y Cédula; también aceptamos títulos equivalentes en el archivo.
-            Si faltan nombres, la fila se importa igual con la cédula. Un correo opcional sirve para el paso 3.
+            Si faltan nombres, la fila se importa igual con la cédula. Un correo opcional en el archivo permite probar el envío por correo en el paso 3; sin correo, igual se genera su enlace personal.
             ¿Necesita un modelo? Descargue la <a className="font-semibold text-marian underline underline-offset-2" href="/templates/initial_people.csv" download>plantilla de ejemplo</a>.
           </p>
         </div>
@@ -103,22 +103,37 @@ export function ImportPanel({ resendKeySet }: { resendKeySet: boolean }) {
       </section>
 
       <section className="sheet space-y-4 p-6">
-        <h2 className="text-xl">3. Enviar enlaces por correo a todas las personas</h2>
+        <h2 className="text-xl">3. Enlaces personales y envío de prueba por correo</h2>
         <p className="text-[15px] text-ink-muted">
-          Envía el enlace personal a <strong>todas</strong> las personas importadas que tengan correo registrado, para que completen sus datos complementarios.
-          Si ya tenían un enlace vigente, se genera uno nuevo antes del envío. Quien no tiene correo debe recibir el enlace por otro canal (paso 2).
+          Genera un <strong>enlace personal nuevo</strong> para cada persona importada en estado pendiente o iniciado, <strong>tenga o no correo</strong> en la base.
+          Se descarga un CSV con todos esos enlaces para pruebas en el sandbox. A quienes sí tienen correo registrado (en el archivo o en la ficha) también se les envía el enlace por correo para validar la entrega en esta prueba piloto.
+          Si ya tenían un enlace vigente, se renueva antes de mostrarlo o enviarlo. El paso 2 sigue sirviendo para casos puntuales fuera de esta acción masiva.
         </p>
-        {!resendKeySet && <Notice tone="warning">RESEND_API_KEY no está configurada.</Notice>}
+        {!emailDeliveryReady && (
+          <Notice tone="info" title="Envío por correo no configurado">
+            Sin <code className="text-sm">RESEND_API_KEY</code> y <code className="text-sm">EMAIL_FROM</code> igual puede generar y descargar los enlaces. Configure Resend en Vercel cuando quiera probar el correo real; el botón no se bloquea.
+            {mail?.emailFromMissing ? " Falta EMAIL_FROM aunque RESEND_API_KEY está presente." : ""}
+          </Notice>
+        )}
         <Button variant="secondary" loading={mailPending} onClick={() => startMail(async () => {
           const result = await sendLinkEmailsAction();
           setMail(result);
           if (result.csv) download(result.csv, `enlaces_correo_${stamp}.csv`);
-        })}>Enviar enlaces por correo</Button>
+        })}>Generar enlaces y enviar correos de prueba</Button>
         {mail?.error && <Notice tone="error" live>{mail.error}</Notice>}
         {mail && !mail.error && (
-          <Notice tone={mail.failed ? "warning" : "success"} live title={mail.sent ? "Correos enviados" : "Nota de envío"}>
-            Se enviaron {mail.sent ?? 0}. No se pudieron enviar {mail.failed ?? 0}. Sin correo: {mail.skippedNoEmail ?? 0}. Enlaces renovados antes del envío: {mail.renewedLinks ?? 0}.
-            {mail.csv ? " Se descargó el archivo de los enlaces nuevos, por si algún correo no llega." : ""}
+          <Notice
+            tone={mail.linksPrepared ? (mail.failed && mail.emailConfigured ? "warning" : "success") : "info"}
+            live
+            title={mail.linksPrepared ? "Enlaces listos" : "Sin personas en este paso"}
+          >
+            {mail.linksPrepared
+              ? `Se prepararon ${mail.linksPrepared} enlace${mail.linksPrepared === 1 ? "" : "s"} (${mail.issuedLinks ?? 0} nuevos, ${mail.renewedLinks ?? 0} renovados). `
+              : "No hay personas pendientes o iniciadas para este paso. Importe registros o use el paso 2 si hace falta un enlace puntual. "}
+            {mail.emailConfigured
+              ? `Correos enviados: ${mail.sent ?? 0}. No entregados: ${mail.failed ?? 0}. Sin correo en la base (solo enlace en CSV): ${mail.skippedNoEmail ?? 0}.`
+              : `Correo no enviado (falta configurar Resend). Personas sin correo en la base: ${mail.skippedNoEmail ?? 0}; con correo pendiente de envío cuando configure Resend: ${Math.max(0, (mail.linksPrepared ?? 0) - (mail.skippedNoEmail ?? 0))}.`}
+            {mail.csv ? " Se descargó el CSV con los enlaces en claro." : ""}
           </Notice>
         )}
       </section>

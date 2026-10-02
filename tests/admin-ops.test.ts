@@ -111,9 +111,21 @@ describe("envío de enlaces por correo", () => {
         return true;
       },
     });
-    expect(blast).toMatchObject({ sent: 2, renewedLinks: 2 });
+    expect(blast).toMatchObject({ sent: 2, renewedLinks: 2, linksPrepared: 3, issuedLinks: 1 });
     expect(sent).toContain("luis@correo.com");
-    expect(repo.tokens.size).toBe(4);
+    expect(repo.tokens.size).toBe(5);
+
+    const linksOnly = await sendMissingLinkEmails(repo, {
+      adminId: "adm",
+      organization: "Agrupación Marista Ecuatoriana",
+      emailEveryoneWithOutreach: true,
+      sendEmails: false,
+      deliver: async () => true,
+    });
+    expect(linksOnly.sent).toBe(0);
+    expect(linksOnly.failed).toBe(0);
+    expect(linksOnly.linksPrepared).toBe(3);
+    expect(linksOnly.csv).toContain("/verificar/");
   });
 
   it("importa una fila solo con cédula válida", () => {

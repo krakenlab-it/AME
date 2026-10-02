@@ -70,23 +70,31 @@ export interface LinkMailState {
   skippedNoEmail?: number;
   skippedHasLink?: number;
   renewedLinks?: number;
+  issuedLinks?: number;
+  linksPrepared?: number;
   csv?: string | null;
+  /** Resend listo (RESEND_API_KEY + EMAIL_FROM). Sin esto igual se generan enlaces. */
+  emailConfigured?: boolean;
+  emailFromMissing?: boolean;
 }
 
 export async function sendLinkEmailsAction(): Promise<LinkMailState> {
   const ctx = await adminForAction("links:manage");
   if (!ctx) return { error: DENIED };
-  if (!emailConfigured()) {
-    return { error: process.env.RESEND_API_KEY ? "EMAIL_FROM no está configurada." : "RESEND_API_KEY no está configurada." };
-  }
+  const configured = emailConfigured();
   const organization = process.env.ORGANIZATION_NAME?.trim() || "Agrupación Marista Ecuatoriana";
   const result = await sendMissingLinkEmails(getRepo(), {
     adminId: ctx.admin.id,
     organization,
     deliver: deliverEmail,
     emailEveryoneWithOutreach: true,
+    sendEmails: configured,
   });
-  return result;
+  return {
+    ...result,
+    emailConfigured: configured,
+    emailFromMissing: Boolean(process.env.RESEND_API_KEY && !process.env.EMAIL_FROM),
+  };
 }
 
 export interface ManualEditState {
