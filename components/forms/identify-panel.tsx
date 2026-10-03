@@ -33,7 +33,7 @@ export function IdentifyPanel({ token, turnstileSiteKey }: { token: string; turn
   return (
     <div className="sheet space-y-6 p-6 md:p-8">
       <StepCrown current={1} />
-      <div className="space-y-2">
+      <div className="space-y-2 text-center text-pretty">
         <h2 className="text-2xl">Confirma que eres tú</h2>
         <p className="text-ink-muted">Escribe tu número de cédula. Lo usamos para proteger tu información antes de mostrarte tus datos.</p>
       </div>
@@ -43,12 +43,12 @@ export function IdentifyPanel({ token, turnstileSiteKey }: { token: string; turn
       ) : (
         <form action={formAction} className="space-y-5" noValidate>
           <input type="hidden" name="token" value={token} />
-          <Field id="cedula" label="Número de cédula" required hint="10 números, sin guiones ni espacios." error={error}>
+          <Field id="cedula" label="Número de cédula" required hint="10 números, sin guiones ni espacios." error={error} textAlign="landing">
             <input
               ref={inputRef}
               id="cedula"
               name="cedula"
-              className="field-input text-xl tracking-[0.12em]"
+              className="field-input w-full text-center text-xl tracking-[0.12em] placeholder:text-center placeholder:tracking-normal"
               inputMode="numeric"
               enterKeyHint="go"
               autoComplete="off"
@@ -59,12 +59,16 @@ export function IdentifyPanel({ token, turnstileSiteKey }: { token: string; turn
               aria-describedby={describedBy("cedula", { hint: "x", error })}
             />
           </Field>
-          {needsCaptcha && <div className="cf-turnstile" data-sitekey={turnstileSiteKey!} data-language="es" />}
+          {needsCaptcha && (
+            <div className="cf-turnstile flex justify-center" data-sitekey={turnstileSiteKey!} data-language="es" />
+          )}
           <Button type="submit" block loading={pending}>
             <ShieldCheck className="h-5 w-5" aria-hidden />
             {pending ? "Verificando…" : "Verificar y continuar"}
           </Button>
-          <p className="text-sm text-ink-muted">Si te equivocas varias veces, el enlace se desactiva por seguridad y tendrás que pedir uno nuevo.</p>
+          <p className="text-center text-pretty text-sm text-ink-muted">
+            Si te equivocas varias veces, el enlace se desactiva por seguridad y tendrás que pedir uno nuevo.
+          </p>
         </form>
       )}
       <ProtectedNote />
