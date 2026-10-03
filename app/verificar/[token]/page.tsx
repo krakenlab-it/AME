@@ -1,6 +1,12 @@
 import { headers } from "next/headers";
+import { redirect } from "next/navigation";
 import { LinkIcon } from "lucide-react";
 import Link from "next/link";
+import {
+  PREVIEW_OUTREACH_LEGACY_RAW_TOKEN,
+  PREVIEW_OUTREACH_RAW_TOKEN,
+  normalizePreviewDemoToken,
+} from "@/lib/demo/preview-outreach-tokens";
 import { IdentifyPanel } from "@/components/forms/identify-panel";
 import { PortalHero } from "@/components/portal/hero";
 import { PortalShell, PortalUnavailable } from "@/components/portal/shell";
@@ -10,7 +16,9 @@ import { ipHash } from "@/lib/security/request";
 import { inspectLink, linkStateMessage } from "@/lib/services/respondent";
 
 export default async function VerifyLinkPage({ params }: { params: Promise<{ token: string }> }) {
-  const { token } = await params;
+  const { token: rawToken } = await params;
+  const token = normalizePreviewDemoToken(rawToken);
+  if (token === PREVIEW_OUTREACH_LEGACY_RAW_TOKEN) redirect(`/verificar/${PREVIEW_OUTREACH_RAW_TOKEN}`);
   const repo = getRepo();
   const privacy = await getActivePrivacy(repo);
   if (privacy.readiness.blockPortal) return <PortalUnavailable />;

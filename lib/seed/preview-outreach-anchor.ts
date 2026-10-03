@@ -2,11 +2,15 @@ import "server-only";
 import { keyedHash, sha256 } from "@/lib/encryption/crypto";
 import type { MemoryRepo } from "@/lib/database/memory-repo";
 import { previewSandboxEmptyPeople } from "@/lib/demo-mode";
+import {
+  PREVIEW_OUTREACH_LEGACY_RAW_TOKEN,
+  PREVIEW_OUTREACH_RAW_TOKEN,
+  PREVIEW_OUTREACH_SIMULATION_TO,
+} from "@/lib/demo/preview-outreach-tokens";
 import { settings } from "@/lib/services/settings";
 
-/** Token fijo en Preview: válido en cualquier instancia serverless (no depende de cookie de importación). */
-export const PREVIEW_OUTREACH_RAW_TOKEN = "PreviewJaimeDatosCompletar2026SandboxX";
-export const PREVIEW_OUTREACH_SIMULATION_TO = "yepezmancheno@gmail.com";
+export { PREVIEW_OUTREACH_RAW_TOKEN, PREVIEW_OUTREACH_SIMULATION_TO } from "@/lib/demo/preview-outreach-tokens";
+export { PREVIEW_OUTREACH_LEGACY_RAW_TOKEN } from "@/lib/demo/preview-outreach-tokens";
 const ANCHOR_CEDULA = "1710034065";
 
 export function previewOutreachAnchorEnabled(): boolean {
@@ -22,17 +26,19 @@ export function ensurePreviewOutreachAnchor(repo: MemoryRepo): void {
     personId = repo.addPerson("Persona", "Prueba correo", ANCHOR_CEDULA);
     repo.outreachEmails.set(personId, PREVIEW_OUTREACH_SIMULATION_TO);
   }
-  const tokenHash = sha256(PREVIEW_OUTREACH_RAW_TOKEN);
   const now = Date.now();
-  const hasVigente = [...repo.tokens.values()].some(
-    (t) =>
-      t.person_id === personId &&
-      t.token_hash === tokenHash &&
-      !t.used_at &&
-      !t.revoked_at &&
-      new Date(t.expires_at).getTime() > now,
-  );
-  if (!hasVigente) repo.addToken(personId, tokenHash);
+  for (const raw of [PREVIEW_OUTREACH_RAW_TOKEN, PREVIEW_OUTREACH_LEGACY_RAW_TOKEN]) {
+    const tokenHash = sha256(raw);
+    const hasVigente = [...repo.tokens.values()].some(
+      (t) =>
+        t.person_id === personId &&
+        t.token_hash === tokenHash &&
+        !t.used_at &&
+        !t.revoked_at &&
+        new Date(t.expires_at).getTime() > now,
+    );
+    if (!hasVigente) repo.addToken(personId, tokenHash);
+  }
 }
 
 export function previewOutreachCompletionUrl(): string {

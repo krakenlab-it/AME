@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { isAccessLinkToken } from "@/lib/validation/access-link-token";
 import { isValidCedula, normalizeCedula } from "./cedula";
 import { ACCOUNT_TYPES, BANKS, BANKS_REQUIRING_NAME } from "./constants";
 import { normalizePhone } from "./phone";
@@ -39,7 +40,7 @@ const mustAccept = (message: string) => z.boolean().refine((v) => v === true, { 
 // ── Paso 1: identificación ───────────────────────────────────────────────────
 export const identifySchema = z
   .object({
-    token: z.string().regex(/^[A-Za-z0-9_-]{32,128}$/, "Enlace no válido."),
+    token: z.string().refine((t) => isAccessLinkToken(t), "Enlace no válido."),
     cedula: cedulaField,
     captchaToken: z.string().max(4096).optional(),
   })

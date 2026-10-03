@@ -9,6 +9,7 @@ import { RESPONDENT_SESSION_MINUTES } from "@/lib/security/cookies";
 import { CONSENT_PURPOSE, type ConsentType } from "@/lib/privacy/notice";
 import { generateConfirmationCode } from "./confirmation";
 import { canContinueForm } from "./insured-home";
+import { isAccessLinkToken, normalizeAccessLinkToken } from "@/lib/validation/access-link-token";
 import { settings } from "./settings";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -17,7 +18,8 @@ import { settings } from "./settings";
 export type LinkState = "valid" | "expired" | "used" | "revoked" | "invalid";
 
 export async function inspectLink(repo: RespondentRepo, rawToken: string, ipHash: string): Promise<LinkState> {
-  if (!/^[A-Za-z0-9_-]{32,128}$/.test(rawToken)) {
+  const token = normalizeAccessLinkToken(rawToken);
+  if (!isAccessLinkToken(token)) {
     await repo.logSecurityEvent({ event_type: "MALFORMED_TOKEN", ip_hash: ipHash });
     return "invalid";
   }
@@ -26,13 +28,13 @@ export async function inspectLink(repo: RespondentRepo, rawToken: string, ipHash
     await repo.logSecurityEvent({ event_type: "LINK_OPEN_RATE_LIMITED", ip_hash: ipHash });
     return "invalid";
   }
-  const token = await repo.findAccessToken(sha256(rawToken));
-  if (!token) {
+  const record = await repo.findAccessToken(sha256(token));
+  if (!record) {
     await repo.logSecurityEvent({ event_type: "UNKNOWN_TOKEN", ip_hash: ipHash });
     return "invalid";
   }
-  const state = tokenState(token);
-  if (state === "valid") await repo.audit({ person_id: token.person_id, actor_type: "respondent", action: "RECORD_OPENED" });
+  const state = tokenState(record);
+  if (state === "valid") await repo.audit({ person_id: record.person_id, actor_type: "respondent", action: "RECORD_OPENED" });
   return state;
 }
 
@@ -64,6 +66,7 @@ export async function identify(repo: RespondentRepo, rawInput: unknown, deps: Id
     return { ok: false, error: fieldErrors.cedula ?? GENERIC_IDENTIFY_ERROR, fieldErrors };
   }
   const { token: rawToken, cedula, captchaToken } = parsed.data;
+  const linkToken = normalizeAccessLinkToken(rawToken);
 
   // Rate limiting por IP (distribuido en PostgreSQL)
   const limit = await repo.rateLimitHit(`identify:${deps.ipHash}`, settings.identifyLimitPerIp, settings.identifyWindowSeconds);
@@ -78,7 +81,7 @@ export async function identify(repo: RespondentRepo, rawInput: unknown, deps: Id
     if (!human) return { ok: false, error: "Confirma que no eres un robot para continuar.", requireCaptcha: true };
   }
 
-  const token = await repo.findAccessToken(sha256(rawToken));
+  const token = await repo.findAccessToken(sha256(linkToken));
   if (!token) {
     await repo.logSecurityEvent({ event_type: "UNKNOWN_TOKEN_IDENTIFY", ip_hash: deps.ipHash });
     return { ok: false, error: GENERIC_IDENTIFY_ERROR, requireCaptcha: deps.captchaEnabled && limit.hits >= settings.captchaAfterAttempts };
