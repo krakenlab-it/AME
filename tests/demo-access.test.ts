@@ -8,7 +8,7 @@ import { can } from "@/lib/security/rbac";
 
 vi.mock("server-only", () => ({}));
 
-const ENV_KEYS = ["DEMO_MODE", "VERCEL_ENV", "APP_STAGE"] as const;
+const ENV_KEYS = ["DEMO_MODE", "VERCEL_ENV", "APP_STAGE", "PORTAL_PREVIEW_SANDBOX_BUILD", "SANDBOX_PREVIEW_DEMO", "SANDBOX_PREVIEW_EMPTY"] as const;
 const saved = Object.fromEntries(ENV_KEYS.map((k) => [k, process.env[k]]));
 
 afterEach(() => {
@@ -33,6 +33,35 @@ describe("acceso rápido de pruebas (solo modo demostración)", () => {
     expect(isDemoMode()).toBe(true);
   });
 
+  it("se enciende en Vercel Preview sin variable DEMO_MODE (runtime)", () => {
+    delete process.env.DEMO_MODE;
+    delete process.env.APP_STAGE;
+    process.env.VERCEL_ENV = "preview";
+    expect(isDemoMode()).toBe(true);
+  });
+
+  it("sigue en demo en Preview aunque APP_STAGE diga production (variables compartidas en Vercel)", () => {
+    delete process.env.DEMO_MODE;
+    process.env.VERCEL_ENV = "preview";
+    process.env.APP_STAGE = "production";
+    expect(isDemoMode()).toBe(true);
+  });
+
+  it("sigue en demo en build Preview aunque DEMO_MODE=false en runtime", () => {
+    process.env.DEMO_MODE = "false";
+    process.env.PORTAL_PREVIEW_SANDBOX_BUILD = "true";
+    process.env.APP_STAGE = "production";
+    delete process.env.VERCEL_ENV;
+    expect(isDemoMode()).toBe(true);
+  });
+
+  it("no se enciende en Vercel Preview durante next build", () => {
+    delete process.env.DEMO_MODE;
+    process.env.VERCEL_ENV = "preview";
+    process.env.NEXT_PHASE = "phase-production-build";
+    expect(isDemoMode()).toBe(false);
+  });
+
   it("nunca funciona en producción, aunque la variable esté puesta", () => {
     process.env.DEMO_MODE = "true";
     process.env.VERCEL_ENV = "production";
@@ -40,6 +69,14 @@ describe("acceso rápido de pruebas (solo modo demostración)", () => {
     delete process.env.VERCEL_ENV;
     process.env.APP_STAGE = "production";
     expect(isDemoMode()).toBe(false);
+  });
+
+  it("en preview sandbox el repositorio demo arranca solo con la persona ancla de simulación", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    process.env.PORTAL_PREVIEW_SANDBOX_BUILD = "true";
+    const repo = createDemoRepo();
+    expect(repo.people.size).toBe(1);
+    expect(await repo.statusCounts()).toEqual({ PENDING: 1, STARTED: 0, COMPLETED: 0, NEEDS_REVIEW: 0 });
   });
 
   it("el repositorio demo trae un administrador por rol y personas en varios estados", async () => {
@@ -55,7 +92,7 @@ describe("acceso rápido de pruebas (solo modo demostración)", () => {
     vi.spyOn(console, "warn").mockImplementation(() => undefined);
     const repo = createDemoRepo();
     const exporter = await repo.findAdminByEmail("exportador@demo.local");
-    const token = startDemoSession(repo, exporter!.id);
+    const token = startDemoSession(repo, exporter!);
     const ctx = await getDemoAdminContext(repo, token);
     expect(ctx?.admin.role).toBe("EXPORTER");
     expect(can(ctx!.admin.role, "export:create")).toBe(true);

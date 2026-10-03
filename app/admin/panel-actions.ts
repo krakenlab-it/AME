@@ -7,12 +7,21 @@ import { adminForAction } from "@/lib/server/admin-guard";
 import { hasPlaceholder } from "@/lib/privacy/placeholders";
 import { ImportFileError, importPeople, parseImportFile, type ImportError, type ImportNote } from "@/lib/services/import";
 import { issueLinks, linksToCsv, regenerateLink, revokeLinks } from "@/lib/services/links";
-import { emailConfigured, deliverEmail } from "@/lib/services/email";
-import { sendMissingLinkEmails } from "@/lib/services/link-mail";
+import { isMemoryRepo } from "@/lib/database/memory-repo";
+import {
+  ensurePreviewOutreachAnchor,
+  previewOutreachAnchorEnabled,
+  previewOutreachCompletionUrl,
+  PREVIEW_OUTREACH_SIMULATION_TO,
+} from "@/lib/seed/preview-outreach-anchor";
+import { deliverEmail, emailConfigured, personalLinkEmail } from "@/lib/services/email";
+import { exportPersonalEntryLinks } from "@/lib/services/personal-links-export";
+import { settings } from "@/lib/services/settings";
 import { applyManualPersonEdit, parseManualEdit, type ManualEditDraft } from "@/lib/services/manual-edit";
 import { reconfirmAdminTotp } from "@/lib/server/reconfirm-totp";
 import { maskCedula } from "@/lib/security/masking";
 import { decrypt } from "@/lib/encryption/crypto";
+import { loadPreviewSandboxRepo, persistPreviewSandboxRepo } from "@/lib/demo/preview-sandbox-store";
 
 const DENIED = "No tienes permiso para esta acción o tu sesión venció.";
 
@@ -34,8 +43,11 @@ export async function importAction(_prev: ImportState, formData: FormData): Prom
   const file = formData.get("file");
   if (!(file instanceof File) || file.size === 0) return { error: "Selecciona un archivo .csv o .xlsx." };
   try {
+    await loadPreviewSandboxRepo();
+    const repo = getRepo();
     const rows = await parseImportFile(await file.arrayBuffer(), file.name);
-    const out = await importPeople(getRepo(), { rows, filename: file.name, adminId: ctx.admin.id, allowPartial: formData.get("allowPartial") === "on" });
+    const out = await importPeople(repo, { rows, filename: file.name, adminId: ctx.admin.id, allowPartial: formData.get("allowPartial") === "on" });
+    if (out.committed) await persistPreviewSandboxRepo(repo);
     revalidatePath("/admin");
     return out;
   } catch (err) {
@@ -48,6 +60,7 @@ export async function importAction(_prev: ImportState, formData: FormData): Prom
 export async function issueMissingLinksAction(): Promise<{ error?: string; csv?: string; count?: number }> {
   const ctx = await adminForAction("links:manage");
   if (!ctx) return { error: DENIED };
+  await loadPreviewSandboxRepo();
   const repo = getRepo();
   const ids = await repo.listPersonIdsWithoutActiveToken();
   if (!ids.length) return { count: 0 };
@@ -60,27 +73,47 @@ export async function issueMissingLinksAction(): Promise<{ error?: string; csv?:
       return { first_names: p?.first_names ?? "", last_names: p?.last_names ?? "", cedula_masked: masked, url: l.url, expires_at: l.expires_at };
     }),
   );
+  await persistPreviewSandboxRepo(repo);
   return { csv: linksToCsv(rows), count: rows.length };
 }
 
-export interface LinkMailState {
-  error?: string;
-  sent?: number;
-  failed?: number;
-  skippedNoEmail?: number;
-  skippedHasLink?: number;
-  csv?: string | null;
-}
-
-export async function sendLinkEmailsAction(): Promise<LinkMailState> {
+export async function generatePersonalLinksAction(): Promise<{ error?: string; count?: number; csv?: string | null }> {
   const ctx = await adminForAction("links:manage");
   if (!ctx) return { error: DENIED };
-  if (!emailConfigured()) {
-    return { error: process.env.RESEND_API_KEY ? "EMAIL_FROM no está configurada." : "RESEND_API_KEY no está configurada." };
+  await loadPreviewSandboxRepo();
+  const repo = getRepo();
+  const result = await exportPersonalEntryLinks(repo, ctx.admin.id);
+  if (result.count) await persistPreviewSandboxRepo(repo);
+  return { count: result.count, csv: result.csv };
+}
+
+export interface OutreachSimulationState {
+  error?: string;
+  sent?: boolean;
+  url?: string;
+  recipient?: string;
+}
+
+/** Preview: enlace fijo que abre el formulario público + envío real a yepezmancheno@gmail.com si hay Resend. */
+export async function simulateOutreachLinkAction(): Promise<OutreachSimulationState> {
+  const ctx = await adminForAction("links:manage");
+  if (!ctx) return { error: DENIED };
+  if (!previewOutreachAnchorEnabled()) return { error: "No disponible en este entorno." };
+  await loadPreviewSandboxRepo();
+  const repo = getRepo();
+  if (!isMemoryRepo(repo)) return { error: "No disponible en este entorno." };
+  ensurePreviewOutreachAnchor(repo);
+  const url = previewOutreachCompletionUrl();
+  const recipient = PREVIEW_OUTREACH_SIMULATION_TO;
+  let sent = false;
+  if (emailConfigured()) {
+    const organization = process.env.ORGANIZATION_NAME?.trim() || "Agrupación Marista Ecuatoriana";
+    const expiresAt = new Date(Date.now() + settings.tokenTtlDays() * 86_400_000).toISOString();
+    const draft = personalLinkEmail({ firstName: "Persona", url, expiresAt, organization });
+    sent = await deliverEmail({ ...draft, to: recipient });
   }
-  const organization = process.env.ORGANIZATION_NAME?.trim() || "Agrupación Marista Ecuatoriana";
-  const result = await sendMissingLinkEmails(getRepo(), { adminId: ctx.admin.id, organization, deliver: deliverEmail });
-  return result;
+  await persistPreviewSandboxRepo(repo);
+  return { sent, url, recipient };
 }
 
 export interface ManualEditState {

@@ -18,6 +18,7 @@ import {
   UNAVAILABLE_ERROR,
   verifyAdminTotp,
 } from "@/lib/services/admin-auth";
+import { mintDemoAdminSessionToken } from "@/lib/demo/enter-admin";
 import { changeDemoPassword, getDemoAdminContext, loginWithPassword, verifyMfa } from "@/lib/services/demo-admin-auth";
 import { signOutAndClear } from "@/lib/server/admin-guard";
 
@@ -46,7 +47,9 @@ export async function loginAction(_prev: AuthState, formData: FormData): Promise
       if (!isMemoryRepo(repo)) return { error: UNAVAILABLE_ERROR };
       const res = await loginWithPassword(repo, email, password, ipHash(await headers()));
       if (!res.ok) return { error: res.error };
-      (await cookies()).set(ADMIN_COOKIE(), res.sessionToken, cookieOptions(ADMIN_ABSOLUTE_HOURS * 3600));
+      const sessionToken = (await mintDemoAdminSessionToken(repo)) ?? res.sessionToken;
+      (await cookies()).set(ADMIN_COOKIE(), sessionToken, cookieOptions(ADMIN_ABSOLUTE_HOURS * 3600));
+      redirect("/admin");
     } else {
       const res = await signInAdmin(getRepo(), email, password, ipHash(await headers()));
       if (!res.ok) return { error: res.error };

@@ -1,7 +1,6 @@
 import { expect, test } from "@playwright/test";
-import { PRODUCT_SEED_DEMO_ADMIN, PRODUCT_SEED_DEMO_TOTP_SECRET, PRODUCT_SEED_TOKENS } from "../lib/seed/ci-seed";
+import { PRODUCT_SEED_DEMO_ADMIN, PRODUCT_SEED_TOKENS } from "../lib/seed/ci-seed";
 import { PRODUCT_PERSONAS } from "../lib/seed/product-personas";
-import { totpCode } from "../lib/security/totp";
 
 const started = PRODUCT_PERSONAS.find((persona) => persona.key === "started");
 const completed = PRODUCT_PERSONAS.find((persona) => persona.key === "completed");
@@ -64,8 +63,6 @@ test("el panel muestra las tres fichas del seed", async ({ page }) => {
   await page.locator("#email").fill(PRODUCT_SEED_DEMO_ADMIN.email);
   await page.locator("#password").fill(PRODUCT_SEED_DEMO_ADMIN.password);
   await page.getByRole("button", { name: "Ingresar" }).click();
-  await page.getByLabel("Código de 6 dígitos").fill(totpCode(PRODUCT_SEED_DEMO_TOTP_SECRET));
-  await page.getByRole("button", { name: "Verificar" }).click();
   await expect(page.getByRole("heading", { name: "Resumen" })).toBeVisible();
   await expect(page.getByRole("cell", { name: started!.currentFirstNames, exact: true })).toBeVisible();
   await expect(page.getByRole("cell", { name: completed!.currentFirstNames, exact: true })).toBeVisible();

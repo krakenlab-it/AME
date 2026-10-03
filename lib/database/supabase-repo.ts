@@ -96,6 +96,36 @@ export class SupabaseRepo implements Repo {
     return (data as AccessTokenRecord | null) ?? null;
   }
 
+  async findPersonByNationalIdHash(hash: string) {
+    const data = check(
+      await this.db
+        .from("people")
+        .select("id, first_names, last_names, national_id_encrypted, national_id_hash, national_id_last2, status, confirmation_code, submitted_at")
+        .eq("national_id_hash", hash)
+        .is("anonymized_at", null)
+        .maybeSingle(),
+      "findPersonByNationalIdHash",
+    );
+    return (data as PersonRecord | null) ?? null;
+  }
+
+  async findResumableAccessToken(personId: string) {
+    const data = check(
+      await this.db
+        .from("access_tokens")
+        .select("id, person_id, token_hash, expires_at, used_at, revoked_at, failed_attempts")
+        .eq("person_id", personId)
+        .is("revoked_at", null)
+        .is("used_at", null)
+        .gt("expires_at", new Date().toISOString())
+        .order("expires_at", { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+      "findResumableAccessToken",
+    );
+    return (data as AccessTokenRecord | null) ?? null;
+  }
+
   async registerTokenFailure(tokenId: string, threshold: number) {
     const data = check(
       await this.db.rpc("register_token_failure", { p_token_id: tokenId, p_threshold: threshold }),

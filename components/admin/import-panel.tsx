@@ -2,7 +2,13 @@
 
 import { useActionState, useState, useTransition } from "react";
 import { Download, Upload } from "lucide-react";
-import { importAction, issueMissingLinksAction, sendLinkEmailsAction, type ImportState, type LinkMailState } from "@/app/admin/panel-actions";
+import {
+  generatePersonalLinksAction,
+  importAction,
+  issueMissingLinksAction,
+  simulateOutreachLinkAction,
+  type ImportState,
+} from "@/app/admin/panel-actions";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
 import { Notice } from "@/components/ui/notice";
@@ -17,12 +23,14 @@ function download(csv: string, name: string) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-export function ImportPanel({ resendKeySet }: { resendKeySet: boolean }) {
+export function ImportPanel({ outreachSimulation = false }: { outreachSimulation?: boolean }) {
   const [state, formAction, pending] = useActionState<ImportState, FormData>(importAction, {});
   const [linksMsg, setLinksMsg] = useState<string | null>(null);
-  const [mail, setMail] = useState<LinkMailState | null>(null);
+  const [personalLinksMsg, setPersonalLinksMsg] = useState<string | null>(null);
+  const [simulation, setSimulation] = useState<{ sent?: boolean; url?: string; recipient?: string; error?: string } | null>(null);
   const [linksPending, startLinks] = useTransition();
-  const [mailPending, startMail] = useTransition();
+  const [personalPending, startPersonal] = useTransition();
+  const [simPending, startSim] = useTransition();
   const stamp = new Date().toISOString().slice(0, 10);
 
   return (
@@ -31,10 +39,10 @@ export function ImportPanel({ resendKeySet }: { resendKeySet: boolean }) {
         <div className="space-y-1">
           <h2 className="text-xl">1. Cargar base inicial</h2>
           <p className="text-[15px] text-ink-muted">
-            Sube un archivo .csv o .xlsx (máximo 5 MB). Lo único obligatorio en cada fila es la <strong>cédula</strong> de 10 dígitos.
-            La plantilla recomendada usa las columnas Nombres, Apellidos y Cédula. Esos mismos datos también se aceptan como <code>first_names</code>, <code>last_names</code> y <code>national_id</code> (la cédula).
-            Si el archivo trae el nombre y la cédula con otros títulos, también se importa. Un correo, si viene en el archivo, sirve para enviar el enlace.
-            ¿No sabes cómo armarlo? Descarga la <a className="font-semibold text-marian underline underline-offset-2" href="/templates/initial_people.csv" download>plantilla de ejemplo</a>.
+            Suba un archivo .csv o .xlsx (máximo 5 MB). En cada fila lo único obligatorio es la <strong>cédula</strong> con exactamente 10 dígitos.
+            La plantilla recomendada usa las columnas Nombres, Apellidos y Cédula; también aceptamos títulos equivalentes en el archivo.
+            Si faltan nombres, la fila se importa igual con la cédula. Un correo opcional en el archivo queda guardado en la ficha.
+            ¿Necesita un modelo? Descargue la <a className="font-semibold text-marian underline underline-offset-2" href="/templates/initial_people.csv" download>plantilla de ejemplo</a>.
           </p>
         </div>
         <Field id="import-file" label="Archivo de personas" required>
@@ -92,7 +100,7 @@ export function ImportPanel({ resendKeySet }: { resendKeySet: boolean }) {
 
       <section className="sheet space-y-4 p-6">
         <h2 className="text-xl">2. Enlaces para registros sin enlace vigente</h2>
-        <p className="text-[15px] text-ink-muted">Genera enlaces nuevos para personas pendientes o iniciadas cuyo enlace venció, fue revocado o se perdió.</p>
+        <p className="text-[15px] text-ink-muted">Genere enlaces nuevos para personas pendientes o iniciadas cuyo enlace venció, fue revocado o se perdió.</p>
         <Button variant="secondary" loading={linksPending} onClick={() => startLinks(async () => {
           const r = await issueMissingLinksAction();
           if (r.error) setLinksMsg(r.error);
@@ -103,23 +111,31 @@ export function ImportPanel({ resendKeySet }: { resendKeySet: boolean }) {
       </section>
 
       <section className="sheet space-y-4 p-6">
-        <h2 className="text-xl">3. Enviar el enlace por correo</h2>
-        <p className="text-[15px] text-ink-muted">
-          Envía el enlace personal para que la persona complete sus datos. Solo se escribe a quien tiene correo y todavía no tiene un enlace vigente, para no anular uno que ya se entregó.
-          Quien no tiene correo sigue en el paso 2.
-        </p>
-        {!resendKeySet && <Notice tone="warning">RESEND_API_KEY no está configurada.</Notice>}
-        <Button variant="secondary" loading={mailPending} onClick={() => startMail(async () => {
-          const result = await sendLinkEmailsAction();
-          setMail(result);
-          if (result.csv) download(result.csv, `enlaces_correo_${stamp}.csv`);
-        })}>Enviar enlaces por correo</Button>
-        {mail?.error && <Notice tone="error" live>{mail.error}</Notice>}
-        {mail && !mail.error && (
-          <Notice tone={mail.failed ? "warning" : "success"} live title={mail.sent ? "Correos enviados" : "Nota de envío"}>
-            Se enviaron {mail.sent ?? 0}. No se pudieron enviar {mail.failed ?? 0}. Sin correo: {mail.skippedNoEmail ?? 0}. Ya tenían enlace vigente: {mail.skippedHasLink ?? 0}.
-            {mail.csv ? " Se descargó el archivo de los enlaces nuevos, por si algún correo no llega." : ""}
-          </Notice>
+        <h2 className="text-xl">3. Enlace para completar datos</h2>
+        <Button variant="secondary" loading={personalPending} onClick={() => startPersonal(async () => {
+          setPersonalLinksMsg(null);
+          const r = await generatePersonalLinksAction();
+          if (r.error) setPersonalLinksMsg(r.error);
+          else if (!r.count) setPersonalLinksMsg("No hay registros válidos importados.");
+          else download(r.csv!, `enlaces_completar_datos_${stamp}.csv`);
+        })}>Generar y descargar enlaces</Button>
+        {personalLinksMsg && <Notice live>{personalLinksMsg}</Notice>}
+        {outreachSimulation && (
+          <>
+            <Button variant="secondary" loading={simPending} onClick={() => startSim(async () => {
+              const r = await simulateOutreachLinkAction();
+              if (r.error) setSimulation({ error: r.error });
+              else setSimulation({ sent: r.sent, url: r.url, recipient: r.recipient });
+            })}>Simular envío del enlace</Button>
+            {simulation && !simulation.error && (
+              <Notice live title="Simulación de envío">
+                <p>Destinatario: {simulation.recipient}</p>
+                <p className="break-all font-mono text-sm">{simulation.url}</p>
+                <p>{simulation.sent ? "Correo enviado." : "Correo no configurado en Preview; use el enlace de arriba."}</p>
+              </Notice>
+            )}
+            {simulation?.error && <Notice live>{simulation.error}</Notice>}
+          </>
         )}
       </section>
     </div>

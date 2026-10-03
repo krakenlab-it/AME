@@ -3,11 +3,33 @@ import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
 
 export function Field({
-  id, label, required, hint, error, children, className,
-}: { id: string; label: string; required?: boolean; hint?: string; error?: string; children: ReactNode; className?: string }) {
+  id,
+  label,
+  required,
+  hint,
+  error,
+  children,
+  className,
+  textAlign = "default",
+}: {
+  id: string;
+  label: string;
+  required?: boolean;
+  hint?: string;
+  error?: string;
+  children: ReactNode;
+  className?: string;
+  /** Landing cédula panel: centered labels, helpers, and errors. */
+  textAlign?: "default" | "landing";
+}) {
+  const landing = textAlign === "landing";
+  const labelClass = landing ? "text-center text-pretty" : "";
+  const hintClass = landing ? "text-center text-pretty" : "";
+  const errorClass = landing ? "justify-center text-center" : "items-start";
+
   return (
     <div className={cn("space-y-1.5", className)}>
-      <label htmlFor={id} className="block text-[15px] font-semibold text-ink">
+      <label htmlFor={id} className={cn("block text-[15px] font-semibold text-ink", labelClass)}>
         {label}
         {required ? (
           <>
@@ -18,12 +40,12 @@ export function Field({
           <span className="font-normal text-ink-muted"> (opcional)</span>
         )}
       </label>
-      {hint && <p id={`${id}-hint`} className="text-sm text-ink-muted">{hint}</p>}
+      {hint && <p id={`${id}-hint`} className={cn("text-sm text-ink-muted", hintClass)}>{hint}</p>}
       {children}
       {error && (
-        <p id={`${id}-error`} role="alert" className="flex items-start gap-1.5 text-sm font-medium text-alert">
+        <p id={`${id}-error`} role="alert" className={cn("flex gap-1.5 text-sm font-medium text-alert", errorClass)}>
           <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
-          <span>{error}</span>
+          <span className={landing ? "text-pretty" : undefined}>{error}</span>
         </p>
       )}
     </div>

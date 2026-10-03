@@ -73,7 +73,6 @@ describe("fichas sintéticas KAN-106", () => {
           accountNumber: persona.bank!.account_number,
           accountNumberConfirm: persona.bank!.account_number,
           accountHolderName: persona.bank!.account_holder_name,
-          accountHolderCedula: persona.bank!.account_holder_cedula,
           ownershipDeclared: true,
         },
         consents: { privacyAccepted: true, sharingAccepted: true, accuracyDeclared: true },

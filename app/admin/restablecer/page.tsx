@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { AdminAuthCard, AdminAuthLink } from "@/components/admin/auth-card";
+import { AdminAuthBackToLogin, AdminAuthCard, AdminAuthLink } from "@/components/admin/auth-card";
 import { SetPasswordForm } from "@/components/admin/auth-form";
 import { readAdminGate, signOutAndClear } from "@/lib/server/admin-guard";
 import { setPasswordAction } from "../auth-actions";
@@ -25,11 +25,12 @@ export default async function ResetPasswordPage() {
   }
 
   return (
-    <AdminAuthCard title="Nueva contraseña" subtitle="Elige una contraseña distinta a la anterior.">
+    <AdminAuthCard title="Nueva contraseña" subtitle="Elija una contraseña distinta a la anterior.">
       <SetPasswordForm action={setPasswordAction} submitLabel="Guardar contraseña" />
       <p className="text-sm">
         <AdminAuthLink href="/admin/recuperar">Pedir otro enlace</AdminAuthLink>
       </p>
+      <AdminAuthBackToLogin clearSession />
     </AdminAuthCard>
   );
 }

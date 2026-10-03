@@ -75,6 +75,17 @@ export class MemoryRepo implements Repo {
 
   // ── titular ──
   async findAccessToken(hash: string) { return [...this.tokens.values()].find((t) => t.token_hash === hash) ?? null; }
+  async findPersonByNationalIdHash(hash: string) {
+    return [...this.people.values()].find((p) => p.national_id_hash === hash) ?? null;
+  }
+  async findResumableAccessToken(personId: string) {
+    const now = Date.now();
+    return (
+      [...this.tokens.values()].find(
+        (t) => t.person_id === personId && !t.revoked_at && !t.used_at && new Date(t.expires_at).getTime() > now,
+      ) ?? null
+    );
+  }
   async registerTokenFailure(id: string, threshold: number) {
     const t = this.tokens.get(id)!;
     t.failed_attempts += 1;

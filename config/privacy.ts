@@ -31,9 +31,46 @@ function readRetention(): RetentionPolicy {
   }
 }
 
+/** Valores antiguos del sandbox en Vercel Preview; se sustituyen por los validados. */
+const PRIVACY_STALE_PREVIEW_ENV: Record<string, string> = {
+  PRIVACY_EMAIL: "privacidad@ame.local",
+  PRIVACY_PHONE: "+593 2 000 0000",
+  PRIVACY_RESPONSIBLE_RUC: "1790000000001",
+  PRIVACY_RECIPIENT_LEGAL_NAME: "AIG Metropolitana",
+  SUPPORT_CONTACT: "soporte@ame.local",
+};
+
+/** Valores validados para sandbox / preview / DEMO_MODE cuando no hay variable de entorno. */
+export const PRIVACY_DEMO_FALLBACKS: Record<string, string> = {
+  PRIVACY_RESPONSIBLE_LEGAL_NAME: "Agrupación Marista Ecuatoriana",
+  PRIVACY_RESPONSIBLE_RUC: "1791758528001",
+  PRIVACY_RESPONSIBLE_ADDRESS: "Quito, Ecuador",
+  PRIVACY_EMAIL: "amecooradm@fmsnor.org",
+  PRIVACY_PHONE: "255-0660",
+  PRIVACY_RECIPIENT_LEGAL_NAME: "AIG y Unibrokers",
+  SUPPORT_CONTACT: "amecooradm@fmsnor.org",
+  PRIVACY_NOTICE_EFFECTIVE_DATE: "2026-09-30",
+};
+
+function privacyDemoFallbacksEnabled(): boolean {
+  if (process.env.APP_STAGE === "production" || process.env.VERCEL_ENV === "production") return false;
+  return true;
+}
+
 const v = (name: string, placeholder: string) => {
-  const value = process.env[name]?.trim();
-  return value ? value : placeholder;
+  const raw = process.env[name]?.trim();
+  if (raw) {
+    if (
+      process.env.VERCEL_ENV === "preview" &&
+      PRIVACY_STALE_PREVIEW_ENV[name] === raw &&
+      PRIVACY_DEMO_FALLBACKS[name]
+    ) {
+      return PRIVACY_DEMO_FALLBACKS[name];
+    }
+    return raw;
+  }
+  if (privacyDemoFallbacksEnabled() && PRIVACY_DEMO_FALLBACKS[name]) return PRIVACY_DEMO_FALLBACKS[name];
+  return placeholder;
 };
 
 export function getPrivacyConfig() {

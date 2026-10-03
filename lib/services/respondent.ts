@@ -1,7 +1,7 @@
 import { encrypt, decrypt, keyedHash, randomToken, safeEqual, sha256 } from "@/lib/encryption/crypto";
 import { RepoError, type PersonRecord, type RespondentRepo, type RespondentSessionRecord } from "@/lib/database/types";
 import { GENERIC_IDENTIFY_ERROR } from "@/lib/validation/constants";
-import { flattenIssues, identifySchema, submissionSchema } from "@/lib/validation/schemas";
+import { flattenIssues, cedulaResumeSchema, identifySchema, submissionSchema } from "@/lib/validation/schemas";
 import { cleanText, sanitizeDeep } from "@/lib/validation/sanitize";
 import { normalizePhone } from "@/lib/validation/phone";
 import { maskCedula } from "@/lib/security/masking";
@@ -9,6 +9,7 @@ import { RESPONDENT_SESSION_MINUTES } from "@/lib/security/cookies";
 import { CONSENT_PURPOSE, type ConsentType } from "@/lib/privacy/notice";
 import { generateConfirmationCode } from "./confirmation";
 import { canContinueForm } from "./insured-home";
+import { isAccessLinkToken, normalizeAccessLinkToken } from "@/lib/validation/access-link-token";
 import { settings } from "./settings";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -17,7 +18,8 @@ import { settings } from "./settings";
 export type LinkState = "valid" | "expired" | "used" | "revoked" | "invalid";
 
 export async function inspectLink(repo: RespondentRepo, rawToken: string, ipHash: string): Promise<LinkState> {
-  if (!/^[A-Za-z0-9_-]{32,128}$/.test(rawToken)) {
+  const token = normalizeAccessLinkToken(rawToken);
+  if (!isAccessLinkToken(token)) {
     await repo.logSecurityEvent({ event_type: "MALFORMED_TOKEN", ip_hash: ipHash });
     return "invalid";
   }
@@ -26,13 +28,13 @@ export async function inspectLink(repo: RespondentRepo, rawToken: string, ipHash
     await repo.logSecurityEvent({ event_type: "LINK_OPEN_RATE_LIMITED", ip_hash: ipHash });
     return "invalid";
   }
-  const token = await repo.findAccessToken(sha256(rawToken));
-  if (!token) {
+  const record = await repo.findAccessToken(sha256(token));
+  if (!record) {
     await repo.logSecurityEvent({ event_type: "UNKNOWN_TOKEN", ip_hash: ipHash });
     return "invalid";
   }
-  const state = tokenState(token);
-  if (state === "valid") await repo.audit({ person_id: token.person_id, actor_type: "respondent", action: "RECORD_OPENED" });
+  const state = tokenState(record);
+  if (state === "valid") await repo.audit({ person_id: record.person_id, actor_type: "respondent", action: "RECORD_OPENED" });
   return state;
 }
 
@@ -64,6 +66,7 @@ export async function identify(repo: RespondentRepo, rawInput: unknown, deps: Id
     return { ok: false, error: fieldErrors.cedula ?? GENERIC_IDENTIFY_ERROR, fieldErrors };
   }
   const { token: rawToken, cedula, captchaToken } = parsed.data;
+  const linkToken = normalizeAccessLinkToken(rawToken);
 
   // Rate limiting por IP (distribuido en PostgreSQL)
   const limit = await repo.rateLimitHit(`identify:${deps.ipHash}`, settings.identifyLimitPerIp, settings.identifyWindowSeconds);
@@ -78,7 +81,7 @@ export async function identify(repo: RespondentRepo, rawInput: unknown, deps: Id
     if (!human) return { ok: false, error: "Confirma que no eres un robot para continuar.", requireCaptcha: true };
   }
 
-  const token = await repo.findAccessToken(sha256(rawToken));
+  const token = await repo.findAccessToken(sha256(linkToken));
   if (!token) {
     await repo.logSecurityEvent({ event_type: "UNKNOWN_TOKEN_IDENTIFY", ip_hash: deps.ipHash });
     return { ok: false, error: GENERIC_IDENTIFY_ERROR, requireCaptcha: deps.captchaEnabled && limit.hits >= settings.captchaAfterAttempts };
@@ -123,6 +126,67 @@ export async function identify(repo: RespondentRepo, rawInput: unknown, deps: Id
 /** Misma verificación de enlace + cédula, también si el enlace ya se usó, para abrir /mi-cuenta en lectura. */
 export function openInsuredHome(repo: RespondentRepo, rawInput: unknown, deps: IdentifyDeps): Promise<IdentifyResult> {
   return identify(repo, rawInput, deps, "home");
+}
+
+/** Inicio público: cédula de una persona ya importada + enlace vigente → sesión del formulario. */
+export async function resumeImportedPersonByCedula(repo: RespondentRepo, rawInput: unknown, deps: IdentifyDeps): Promise<IdentifyResult> {
+  const parsed = cedulaResumeSchema.safeParse(sanitizeDeep(rawInput));
+  if (!parsed.success) {
+    const fieldErrors = flattenIssues(parsed.error);
+    return { ok: false, error: fieldErrors.cedula ?? GENERIC_IDENTIFY_ERROR, fieldErrors };
+  }
+  const { cedula, captchaToken } = parsed.data;
+
+  const limit = await repo.rateLimitHit(`identify:${deps.ipHash}`, settings.identifyLimitPerIp, settings.identifyWindowSeconds);
+  if (!limit.allowed) {
+    await repo.logSecurityEvent({ event_type: "IDENTIFY_RATE_LIMITED", ip_hash: deps.ipHash, detail: { hits: limit.hits, surface: "landing-cedula" } });
+    return { ok: false, error: "Hiciste demasiados intentos. Espera 15 minutos y vuelve a intentarlo." };
+  }
+
+  if (deps.captchaEnabled && limit.hits > settings.captchaAfterAttempts) {
+    const human = await deps.verifyCaptcha(captchaToken);
+    if (!human) return { ok: false, error: "Confirma que no eres un robot para continuar.", requireCaptcha: true };
+  }
+
+  const person = await repo.findPersonByNationalIdHash(keyedHash(cedula, "national_id"));
+  if (!person) {
+    await repo.logSecurityEvent({ event_type: "LANDING_CEDULA_UNKNOWN", ip_hash: deps.ipHash });
+    return { ok: false, error: GENERIC_IDENTIFY_ERROR, requireCaptcha: deps.captchaEnabled && limit.hits >= settings.captchaAfterAttempts };
+  }
+
+  if (!canContinueForm(person)) {
+    await repo.logSecurityEvent({ event_type: "LANDING_CEDULA_NOT_EDITABLE", ip_hash: deps.ipHash, detail: { person_id: person.id } });
+    return { ok: false, error: GENERIC_IDENTIFY_ERROR, requireCaptcha: deps.captchaEnabled && limit.hits >= settings.captchaAfterAttempts };
+  }
+
+  const token = await repo.findResumableAccessToken(person.id);
+  if (!token) {
+    await repo.logSecurityEvent({ event_type: "LANDING_CEDULA_NO_TOKEN", ip_hash: deps.ipHash, detail: { person_id: person.id } });
+    return { ok: false, error: GENERIC_IDENTIFY_ERROR, requireCaptcha: deps.captchaEnabled && limit.hits >= settings.captchaAfterAttempts };
+  }
+
+  const state = tokenState(token);
+  if (state !== "valid") {
+    return { ok: false, error: linkStateMessage(state), linkState: state };
+  }
+
+  const sessionToken = randomToken(32);
+  const expiresAt = new Date(Date.now() + RESPONDENT_SESSION_MINUTES * 60_000).toISOString();
+  await repo.createRespondentSession({
+    session_hash: sha256(sessionToken),
+    person_id: person.id,
+    access_token_id: token.id,
+    expires_at: expiresAt,
+    submitted_at: null,
+  });
+  await repo.markStarted(person.id);
+  await repo.audit({
+    person_id: person.id,
+    actor_type: "respondent",
+    action: "IDENTITY_VERIFIED",
+    metadata: { surface: "landing-cedula" },
+  });
+  return { ok: true, sessionToken, expiresAt };
 }
 
 export function linkStateMessage(state: LinkState): string {
@@ -213,8 +277,18 @@ export async function submitResponse(repo: RespondentRepo, sessionToken: string 
     newFirst.toLocaleLowerCase("es") !== person.first_names.toLocaleLowerCase("es") ||
     newLast.toLocaleLowerCase("es") !== person.last_names.toLocaleLowerCase("es");
 
-  const holderHash = keyedHash(data.bank.accountHolderCedula, "national_id");
-  const holderIsTitular = Boolean(person.national_id_hash) && safeEqual(holderHash, person.national_id_hash!);
+  let verifiedCedula: string | null = null;
+  try {
+    verifiedCedula = person.national_id_encrypted ? decrypt(person.national_id_encrypted) : null;
+  } catch {
+    verifiedCedula = null;
+  }
+  if (!verifiedCedula) {
+    return { ok: false, error: "No pudimos confirmar su cédula. Vuelva a abrir el enlace que recibió." };
+  }
+  const holderName = cleanText(data.bank.accountHolderName);
+  const holderIsTitular =
+    holderName.toLocaleLowerCase("es") === `${person.first_names} ${person.last_names}`.toLocaleLowerCase("es");
 
   const reviewReasons: string[] = [];
   if (namesChanged) reviewReasons.push("NAMES_CORRECTED");
@@ -248,8 +322,8 @@ export async function submitResponse(repo: RespondentRepo, sessionToken: string 
       account_type: data.bank.accountType,
       account_number_encrypted: encrypt(data.bank.accountNumber),
       account_number_last4: data.bank.accountNumber.slice(-4),
-      account_holder_name: cleanText(data.bank.accountHolderName),
-      account_holder_national_id_encrypted: encrypt(data.bank.accountHolderCedula),
+      account_holder_name: holderName,
+      account_holder_national_id_encrypted: encrypt(verifiedCedula),
       holder_is_titular: holderIsTitular,
       ownership_declared: data.bank.ownershipDeclared,
     },

@@ -4,6 +4,7 @@ import { MemoryRepo } from "@/lib/database/memory-repo";
 import { can, ForbiddenError } from "@/lib/security/rbac";
 import { importNovedades, parseImportFile, validateImportRows } from "@/lib/services/import";
 import { sendMissingLinkEmails } from "@/lib/services/link-mail";
+import { exportPersonalEntryLinks } from "@/lib/services/personal-links-export";
 import { applyManualPersonEdit, parseManualEdit } from "@/lib/services/manual-edit";
 import { buildUnibrokersTable, createUnibrokersPackage, unibrokersSyncMissing } from "@/lib/services/unibrokers";
 import { makeCedula } from "./helpers/cedula";
@@ -77,6 +78,22 @@ describe("cambio manual con verificación", () => {
   });
 });
 
+describe("exportación de enlaces personales (paso 3)", () => {
+  it("emite un enlace por persona pendiente o iniciada, no por completadas", async () => {
+    const repo = new MemoryRepo();
+    const pending = repo.addPerson("Ana", "Paz", CEDULA);
+    const started = repo.addPerson("Luis", "Paz", makeCedula("010203040"), "STARTED");
+    repo.addPerson("Hecho", "Paz", makeCedula("171234567"), "COMPLETED");
+    const out = await exportPersonalEntryLinks(repo, "adm");
+    expect(out.count).toBe(2);
+    expect(out.csv).toContain("/verificar/");
+    expect(out.csv).toContain("Ana");
+    expect(out.csv).not.toContain("Hecho");
+    expect(repo.tokens.size).toBe(2);
+    expect([...repo.tokens.values()].every((t) => t.person_id === pending || t.person_id === started)).toBe(true);
+  });
+});
+
 describe("envío de enlaces por correo", () => {
   it("escribe solo a quien no tiene enlace vigente y no anula el que ya existe", async () => {
     const repo = new MemoryRepo();
@@ -98,20 +115,42 @@ describe("envío de enlaces por correo", () => {
       },
     });
     expect(repo.outreachEmails.has(noMail)).toBe(false);
-    expect(first).toMatchObject({ sent: 1, failed: 0, skippedNoEmail: 1, skippedHasLink: 1 });
+    expect(first).toMatchObject({ sent: 1, failed: 0, skippedNoEmail: 1, skippedHasLink: 1, renewedLinks: 0 });
     expect(sent).toEqual(["ana@correo.com"]);
     expect(repo.tokens.size).toBe(2);
 
-    const second = await sendMissingLinkEmails(repo, {
+    const blast = await sendMissingLinkEmails(repo, {
       adminId: "adm",
       organization: "Agrupación Marista Ecuatoriana",
-      deliver: async () => {
-        throw new Error("no debía enviar");
+      emailEveryoneWithOutreach: true,
+      deliver: async (message) => {
+        sent.push(message.to);
+        return true;
       },
     });
-    expect(second.sent).toBe(0);
-    expect(second.skippedHasLink).toBe(2);
-    expect(repo.tokens.size).toBe(2);
+    expect(blast).toMatchObject({ sent: 2, renewedLinks: 2, linksPrepared: 3, issuedLinks: 1 });
+    expect(sent).toContain("luis@correo.com");
+    expect(repo.tokens.size).toBe(5);
+
+    const linksOnly = await sendMissingLinkEmails(repo, {
+      adminId: "adm",
+      organization: "Agrupación Marista Ecuatoriana",
+      emailEveryoneWithOutreach: true,
+      sendEmails: false,
+      deliver: async () => true,
+    });
+    expect(linksOnly.sent).toBe(0);
+    expect(linksOnly.failed).toBe(0);
+    expect(linksOnly.linksPrepared).toBe(3);
+    expect(linksOnly.csv).toContain("/verificar/");
+  });
+
+  it("importa una fila solo con cédula válida", () => {
+    const cedula = makeCedula("171003406");
+    const checked = validateImportRows([{ row: 2, first_names: "", last_names: "", national_id: cedula, outreach_email: "" }]);
+    expect(checked.valid).toHaveLength(1);
+    expect(checked.valid[0]?.first_names).toBe("Sin nombre");
+    expect(checked.notes[0]?.text).toMatch(/solo con la cédula/i);
   });
 });
 
