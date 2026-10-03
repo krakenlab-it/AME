@@ -2,7 +2,13 @@
 
 import { useActionState, useState, useTransition } from "react";
 import { Download, Upload } from "lucide-react";
-import { generatePersonalLinksAction, importAction, issueMissingLinksAction, type ImportState } from "@/app/admin/panel-actions";
+import {
+  generatePersonalLinksAction,
+  importAction,
+  issueMissingLinksAction,
+  simulateOutreachLinkAction,
+  type ImportState,
+} from "@/app/admin/panel-actions";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
 import { Notice } from "@/components/ui/notice";
@@ -17,12 +23,14 @@ function download(csv: string, name: string) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-export function ImportPanel() {
+export function ImportPanel({ outreachSimulation = false }: { outreachSimulation?: boolean }) {
   const [state, formAction, pending] = useActionState<ImportState, FormData>(importAction, {});
   const [linksMsg, setLinksMsg] = useState<string | null>(null);
   const [personalLinksMsg, setPersonalLinksMsg] = useState<string | null>(null);
+  const [simulation, setSimulation] = useState<{ sent?: boolean; url?: string; recipient?: string; error?: string } | null>(null);
   const [linksPending, startLinks] = useTransition();
   const [personalPending, startPersonal] = useTransition();
+  const [simPending, startSim] = useTransition();
   const stamp = new Date().toISOString().slice(0, 10);
 
   return (
@@ -112,6 +120,23 @@ export function ImportPanel() {
           else download(r.csv!, `enlaces_completar_datos_${stamp}.csv`);
         })}>Generar y descargar enlaces</Button>
         {personalLinksMsg && <Notice live>{personalLinksMsg}</Notice>}
+        {outreachSimulation && (
+          <>
+            <Button variant="secondary" loading={simPending} onClick={() => startSim(async () => {
+              const r = await simulateOutreachLinkAction();
+              if (r.error) setSimulation({ error: r.error });
+              else setSimulation({ sent: r.sent, url: r.url, recipient: r.recipient });
+            })}>Simular envío del enlace</Button>
+            {simulation && !simulation.error && (
+              <Notice live title="Simulación de envío">
+                <p>Destinatario: {simulation.recipient}</p>
+                <p className="break-all font-mono text-sm">{simulation.url}</p>
+                <p>{simulation.sent ? "Correo enviado." : "Correo no configurado en Preview; use el enlace de arriba."}</p>
+              </Notice>
+            )}
+            {simulation?.error && <Notice live>{simulation.error}</Notice>}
+          </>
+        )}
       </section>
     </div>
   );

@@ -37,6 +37,7 @@ const PRIVACY_STALE_PREVIEW_ENV: Record<string, string> = {
   PRIVACY_PHONE: "+593 2 000 0000",
   PRIVACY_RESPONSIBLE_RUC: "1790000000001",
   PRIVACY_RECIPIENT_LEGAL_NAME: "AIG Metropolitana",
+  SUPPORT_CONTACT: "soporte@ame.local",
 };
 
 /** Valores validados para sandbox / preview / DEMO_MODE cuando no hay variable de entorno. */

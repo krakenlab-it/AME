@@ -8,6 +8,7 @@ import type { Repo } from "@/lib/database/types";
 import type { AccessTokenRecord, PersonRecord } from "@/lib/database/types";
 import { encrypt, decrypt } from "@/lib/encryption/crypto";
 import { ADMIN_ABSOLUTE_HOURS, cookieOptions } from "@/lib/security/cookies";
+import { ensurePreviewOutreachAnchor } from "@/lib/seed/preview-outreach-anchor";
 import { cache } from "react";
 
 const COOKIE_BASE = () => (process.env.NODE_ENV === "production" ? "__Host-ame_prv" : "ame_prv");
@@ -34,8 +35,8 @@ export const loadPreviewSandboxRepo = cache(async (): Promise<void> => {
   const repo = getRepo();
   if (!isMemoryRepo(repo)) return;
   const snap = await readSnapshotFromCookies();
-  if (!snap) return;
-  applyPreviewSandboxSnapshot(repo, snap);
+  if (snap) applyPreviewSandboxSnapshot(repo, snap);
+  ensurePreviewOutreachAnchor(repo);
 });
 
 export async function persistPreviewSandboxRepo(repo: Repo): Promise<void> {

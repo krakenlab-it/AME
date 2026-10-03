@@ -38,6 +38,11 @@ export default async function VerifyLinkPage({ params }: { params: Promise<{ tok
               <p className="rounded-xl bg-marian-soft/60 px-4 py-3 text-[15px]">
                 <span className="font-semibold">¿Necesitas ayuda?</span> Escribe a {privacy.config.supportContact}.
               </p>
+              <p>
+                <Link href="/" className="font-semibold text-marian underline underline-offset-4 hover:underline">
+                  Volver al inicio
+                </Link>
+              </p>
             </div>
           )
         }

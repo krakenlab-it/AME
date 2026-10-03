@@ -7,7 +7,16 @@ import { adminForAction } from "@/lib/server/admin-guard";
 import { hasPlaceholder } from "@/lib/privacy/placeholders";
 import { ImportFileError, importPeople, parseImportFile, type ImportError, type ImportNote } from "@/lib/services/import";
 import { issueLinks, linksToCsv, regenerateLink, revokeLinks } from "@/lib/services/links";
+import { isMemoryRepo } from "@/lib/database/memory-repo";
+import {
+  ensurePreviewOutreachAnchor,
+  previewOutreachAnchorEnabled,
+  previewOutreachCompletionUrl,
+  PREVIEW_OUTREACH_SIMULATION_TO,
+} from "@/lib/seed/preview-outreach-anchor";
+import { deliverEmail, emailConfigured, personalLinkEmail } from "@/lib/services/email";
 import { exportPersonalEntryLinks } from "@/lib/services/personal-links-export";
+import { settings } from "@/lib/services/settings";
 import { applyManualPersonEdit, parseManualEdit, type ManualEditDraft } from "@/lib/services/manual-edit";
 import { reconfirmAdminTotp } from "@/lib/server/reconfirm-totp";
 import { maskCedula } from "@/lib/security/masking";
@@ -76,6 +85,35 @@ export async function generatePersonalLinksAction(): Promise<{ error?: string; c
   const result = await exportPersonalEntryLinks(repo, ctx.admin.id);
   if (result.count) await persistPreviewSandboxRepo(repo);
   return { count: result.count, csv: result.csv };
+}
+
+export interface OutreachSimulationState {
+  error?: string;
+  sent?: boolean;
+  url?: string;
+  recipient?: string;
+}
+
+/** Preview: enlace fijo que abre el formulario público + envío real a yepezmancheno@gmail.com si hay Resend. */
+export async function simulateOutreachLinkAction(): Promise<OutreachSimulationState> {
+  const ctx = await adminForAction("links:manage");
+  if (!ctx) return { error: DENIED };
+  if (!previewOutreachAnchorEnabled()) return { error: "No disponible en este entorno." };
+  await loadPreviewSandboxRepo();
+  const repo = getRepo();
+  if (!isMemoryRepo(repo)) return { error: "No disponible en este entorno." };
+  ensurePreviewOutreachAnchor(repo);
+  const url = previewOutreachCompletionUrl();
+  const recipient = PREVIEW_OUTREACH_SIMULATION_TO;
+  let sent = false;
+  if (emailConfigured()) {
+    const organization = process.env.ORGANIZATION_NAME?.trim() || "Agrupación Marista Ecuatoriana";
+    const expiresAt = new Date(Date.now() + settings.tokenTtlDays() * 86_400_000).toISOString();
+    const draft = personalLinkEmail({ firstName: "Persona", url, expiresAt, organization });
+    sent = await deliverEmail({ ...draft, to: recipient });
+  }
+  await persistPreviewSandboxRepo(repo);
+  return { sent, url, recipient };
 }
 
 export interface ManualEditState {

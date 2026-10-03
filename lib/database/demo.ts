@@ -6,6 +6,7 @@ import { loadProductSeed } from "@/lib/seed/load-memory";
 import { PRODUCT_PERSONAS } from "@/lib/seed/product-personas";
 import { seedDemoAdmin } from "@/lib/services/demo-admin-auth";
 import { generateTotpSecret } from "@/lib/security/totp";
+import { ensurePreviewOutreachAnchor } from "@/lib/seed/preview-outreach-anchor";
 import { MemoryRepo } from "./memory-repo";
 
 /**
@@ -62,6 +63,7 @@ export function createDemoRepo(): MemoryRepo {
   for (const [email, full_name, role] of admins) {
     seedDemoAdmin(repo, { email, full_name, role, password: PRODUCT_SEED_DEMO_ADMIN.password, totpSecret: secret });
   }
+  ensurePreviewOutreachAnchor(repo);
   const seedNote = previewSandboxEmptyPeople()
     ? " Preview sandbox vacío: importe personas desde el panel."
     : seedProductUsers()

@@ -71,12 +71,12 @@ describe("acceso rápido de pruebas (solo modo demostración)", () => {
     expect(isDemoMode()).toBe(false);
   });
 
-  it("en preview sandbox el repositorio demo arranca sin personas importadas", async () => {
+  it("en preview sandbox el repositorio demo arranca solo con la persona ancla de simulación", async () => {
     vi.spyOn(console, "warn").mockImplementation(() => undefined);
     process.env.PORTAL_PREVIEW_SANDBOX_BUILD = "true";
     const repo = createDemoRepo();
-    expect(repo.people.size).toBe(0);
-    expect(await repo.statusCounts()).toEqual({ PENDING: 0, STARTED: 0, COMPLETED: 0, NEEDS_REVIEW: 0 });
+    expect(repo.people.size).toBe(1);
+    expect(await repo.statusCounts()).toEqual({ PENDING: 1, STARTED: 0, COMPLETED: 0, NEEDS_REVIEW: 0 });
   });
 
   it("el repositorio demo trae un administrador por rol y personas en varios estados", async () => {

@@ -1,5 +1,6 @@
 import { headers } from "next/headers";
 import { LinkIcon } from "lucide-react";
+import Link from "next/link";
 import { ReopenPanel } from "@/components/forms/reopen-panel";
 import { PortalShell, PortalUnavailable } from "@/components/portal/shell";
 import { getRepo } from "@/lib/database";
@@ -28,6 +29,11 @@ export default async function ReopenAccountPage({ params }: { params: Promise<{ 
             <p className="text-ink-muted">{linkStateMessage(state)}</p>
             <p className="rounded-xl bg-marian-soft/60 px-4 py-3 text-[15px]">
               <span className="font-semibold">¿Necesitas ayuda?</span> Escribe a {privacy.config.supportContact}.
+            </p>
+            <p>
+              <Link href="/" className="font-semibold text-marian underline underline-offset-4 hover:underline">
+                Volver al inicio
+              </Link>
             </p>
           </div>
         )}

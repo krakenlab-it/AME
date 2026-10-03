@@ -74,8 +74,10 @@ describe("aviso de privacidad y placeholders", () => {
     process.env.PRIVACY_PHONE = "+593 2 000 0000";
     process.env.PRIVACY_RESPONSIBLE_RUC = "1790000000001";
     process.env.PRIVACY_RECIPIENT_LEGAL_NAME = "AIG Metropolitana";
+    process.env.SUPPORT_CONTACT = "soporte@ame.local";
     const config = getPrivacyConfig();
     expect(config.privacyEmail).toBe("amecooradm@fmsnor.org");
+    expect(config.supportContact).toBe("amecooradm@fmsnor.org");
     expect(config.privacyPhone).toBe("255-0660");
     expect(config.responsibleRuc).toBe("1791758528001");
     expect(config.recipientLegalName).toBe("AIG y Unibrokers");
