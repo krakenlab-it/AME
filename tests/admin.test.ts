@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import ExcelJS from "exceljs";
-import { encrypt, sha256 } from "@/lib/encryption/crypto";
+import { decrypt, encrypt, keyedHash, sha256 } from "@/lib/encryption/crypto";
 import { MemoryRepo } from "@/lib/database/memory-repo";
 import type { ExportSourceRow } from "@/lib/database/types";
 import { can, ForbiddenError } from "@/lib/security/rbac";
@@ -107,6 +107,37 @@ describe("importación inicial", () => {
     expect(v.errors.map((e) => e.row)).toEqual([4, 5, 6]);
     expect(v.errors[0]!.reason).toContain("duplicada");
     expect(JSON.stringify(v.errors)).not.toContain(C1); // el reporte enmascara la cédula
+  });
+
+  it("acepta pasaportes BH823158 y BA086520 y no descarta en silencio un documento inválido", async () => {
+    const rows = [
+      { row: 2, first_names: "OSCAR ALEXANDER", last_names: "BOLIVAR BOLIVAR", national_id: "bh 823158" },
+      { row: 3, first_names: "JAVIER ALFONSO", last_names: "ECHEVERRY VELASQUEZ", national_id: "BA086520" },
+      { row: 4, first_names: "ANA", last_names: "RUIDO", national_id: "AAAAAA" },
+      { row: 5, first_names: "LUIS", last_names: "CORTO", national_id: "86520" },
+      { row: 6, first_names: "PEDRO", last_names: "CEDULA", national_id: "17100340A5" },
+      { row: 7, first_names: "MARIA", last_names: "DUPLICADA", national_id: "BH-823158" },
+    ];
+    const v = validateImportRows(rows);
+    expect(v.valid.map((row) => row.national_id)).toEqual(["BH823158", "BA086520"]);
+    expect(v.errors.map((error) => error.row)).toEqual([4, 5, 6, 7]);
+    expect(v.errors[0]!.reason).toMatch(/Documento no válido/);
+    expect(v.errors[1]!.reason).toMatch(/Cédula inválida/);
+    expect(v.errors[2]!.reason).toMatch(/Documento no válido/);
+    expect(v.errors[3]!.reason).toMatch(/duplicado/);
+    expect(JSON.stringify(v.errors)).not.toContain("BH823158");
+    expect(JSON.stringify(v.errors)).not.toContain("BA086520");
+
+    const repo = new MemoryRepo();
+    const out = await importPeople(repo, { rows, filename: "pasaportes.csv", adminId: "a", allowPartial: true });
+    expect(out.imported).toBe(2);
+    expect(out.rejected).toHaveLength(4);
+    expect(out.linksCsv).toMatch(/\/verificar\/[A-Za-z0-9_-]+/);
+    const stored = [...repo.people.values()].map((person) => decrypt(person.national_id_encrypted!)).sort();
+    expect(stored).toEqual(["BA086520", "BH823158"]);
+    const oscar = [...repo.people.values()].find((person) => person.first_names === "OSCAR ALEXANDER")!;
+    expect(oscar.national_id_hash).toBe(keyedHash("BH823158", "national_id"));
+    expect(oscar.national_id_last2).toBe("58");
   });
 
   it("no importa nada si hay errores y no se autorizó la importación parcial", async () => {

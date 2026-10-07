@@ -1,7 +1,7 @@
-/** 1712345645 -> 17******45 */
+/** 1712345645 -> 17******45. BH823158 -> BH****58. Conserva letras del pasaporte. */
 export function maskCedula(cedula: string | null | undefined): string {
   if (!cedula) return "**********";
-  const v = cedula.replace(/\D/g, "");
+  const v = cedula.replace(/[^A-Za-z0-9]/g, "").toUpperCase();
   if (v.length < 4) return "*".repeat(v.length);
   return `${v.slice(0, 2)}${"*".repeat(v.length - 4)}${v.slice(-2)}`;
 }
