@@ -1,3 +1,4 @@
+import { isForeignDocument, normalizeDocument } from "@/lib/validation/document";
 import { cleanText } from "@/lib/validation/sanitize";
 
 /**
@@ -65,9 +66,15 @@ const ID_HEADERS = new Set([
   "ci",
   "dni",
   "documento",
+  "documento de identidad",
   "identificacion",
   "numero de cedula",
   "nro de cedula",
+  "pasaporte",
+  "passport",
+  "numero de pasaporte",
+  "nro de pasaporte",
+  "numero de documento",
 ]);
 
 const EMAIL_HEADERS = new Set([
@@ -113,7 +120,7 @@ export function headerRole(header: string): HeaderRole {
   if (FIRST_HEADERS.has(normalized)) return "first";
   if (LAST_HEADERS.has(normalized)) return "last";
   if (EMAIL_HEADERS.has(normalized) || normalized.includes("correo") || normalized === "email") return "email";
-  if (ID_HEADERS.has(normalized) || normalized.includes("cedula")) return "id";
+  if (ID_HEADERS.has(normalized) || normalized.includes("cedula") || normalized.includes("pasaporte") || normalized.includes("passport")) return "id";
   return "other";
 }
 
@@ -125,6 +132,11 @@ export function looksLikeEmail(value: string): boolean {
 export function tenDigitId(value: string): string | null {
   const compact = value.replace(/[\s-]/g, "");
   return /^\d{10}$/.test(compact) ? compact : null;
+}
+
+/** Pasaporte encontrado por contenido. El valor ya va normalizado (mayúsculas, sin espacios). */
+export function passportId(value: string): string | null {
+  return isForeignDocument(value) ? normalizeDocument(value) : null;
 }
 
 function isAllDigits(value: string): boolean {
@@ -204,6 +216,7 @@ interface PreparedCell {
   role: HeaderRole;
   text: string;
   cedula: string | null;
+  passport: string | null;
 }
 
 /**
@@ -215,11 +228,13 @@ interface PreparedCell {
 export function interpretImportCells(cells: ImportCell[]): InterpretedImport {
   const prepared: PreparedCell[] = cells.map((cell, index) => {
     const text = repairImportedText(cleanText(cell.value));
-    return { index, role: headerRole(cell.header), text, cedula: tenDigitId(text) };
+    return { index, role: headerRole(cell.header), text, cedula: tenDigitId(text), passport: passportId(text) };
   });
 
   const idCandidates = prepared.filter((cell) => cell.cedula);
   const idPick = [...idCandidates].sort((a, b) => rankIdColumn(b.role) - rankIdColumn(a.role) || a.index - b.index)[0];
+  const passportCandidates = prepared.filter((cell) => cell.passport);
+  const passportPick = [...passportCandidates].sort((a, b) => rankIdColumn(b.role) - rankIdColumn(a.role) || a.index - b.index)[0];
 
   const usedAsId = new Set<number>();
   let nationalId = "";
@@ -227,6 +242,11 @@ export function interpretImportCells(cells: ImportCell[]): InterpretedImport {
     nationalId = idPick.cedula;
     for (const cell of prepared) {
       if (cell.cedula === idPick.cedula) usedAsId.add(cell.index);
+    }
+  } else if (passportPick?.passport) {
+    nationalId = passportPick.passport;
+    for (const cell of prepared) {
+      if (cell.passport === passportPick.passport) usedAsId.add(cell.index);
     }
   } else {
     const hinted = prepared.find((cell) => cell.role === "id" && cell.text.trim());
@@ -249,7 +269,7 @@ export function interpretImportCells(cells: ImportCell[]): InterpretedImport {
     if (looksLikeEmail(cell.text)) return false;
     // Un apellido que es la cédula (solo dígitos, o el mismo valor que la columna de identidad) no es un apellido.
     if (isAllDigits(cell.text)) return false;
-    if (nationalId && cell.text.replace(/[\s-]/g, "") === nationalId) return false;
+    if (nationalId && normalizeDocument(cell.text) === nationalId) return false;
     return /\p{L}/u.test(cell.text);
   });
 

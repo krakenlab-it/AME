@@ -34,11 +34,12 @@ describe("extracto Marista (caso real de datos mal armados)", () => {
     expect(parsed).toHaveLength(166);
 
     const validated = validateImportRows(parsed);
-    // 162 cédulas de persona natural. Las otras 4 no son una cédula de 10 dígitos válida
-    // (pasaporte, número corto, o tercer dígito 6). El rechazo es la cédula, no el apellido.
-    expect(validated.valid).toHaveLength(162);
-    expect(validated.errors).toHaveLength(4);
+    // 162 cédulas de persona natural y el pasaporte BH823158. Las otras 3 no son un documento válido
+    // (número corto 86520, o cédula con verificador/provincia incorrectos). El rechazo es el documento, no el apellido.
+    expect(validated.valid).toHaveLength(163);
+    expect(validated.errors).toHaveLength(3);
     expect(validated.errors.every((error) => error.reason.includes("Cédula inválida"))).toBe(true);
+    expect(byId(validated.valid, "BH823158")).toMatchObject({ last_names: "BOLIVAR BOLIVAR", first_names: "OSCAR ALEXANDER" });
     expect(validated.errors.some((error) => error.reason.includes("Apellidos"))).toBe(false);
 
     expect(validated.valid.every((row) => !/^\d+$/.test(row.last_names))).toBe(true);
@@ -53,7 +54,7 @@ describe("extracto Marista (caso real de datos mal armados)", () => {
 
     const repo = new MemoryRepo();
     const outcome = await importPeople(repo, { rows: parsed, filename: "agrupacion-marista-base-datos-1.xlsx", adminId: "a", allowPartial: true });
-    expect(outcome.imported).toBe(162);
+    expect(outcome.imported).toBe(163);
     expect(outcome.committed).toBe(true);
     const milton = [...repo.people.values()].find((person) => person.first_names === "MILTON RODOLFO");
     expect(milton?.national_id_encrypted).toBeTruthy();
@@ -94,5 +95,14 @@ describe("otros formatos de columnas", () => {
     const parsed = await parseImportFile(buffer as ArrayBuffer, "numeros.xlsx");
     expect(parsed[0]).toMatchObject({ first_names: "JOSE ALBERTO", last_names: "ACUÑA VITE", national_id: cedula });
     expect(parsed[0]!.last_names).not.toBe(cedula);
+  });
+
+  it("lee un pasaporte en la columna national_id aunque el apellido repita el mismo documento", async () => {
+    const csv = new TextEncoder().encode("first_names,last_names,national_id\nBOLIVAR BOLIVAR OSCAR ALEXANDER,BH823158,bh823158\nECHEVERRY VELASQUEZ JAVIER ALFONSO,BA086520,BA086520\n");
+    const parsed = await parseImportFile(csv.buffer as ArrayBuffer, "pasaportes.csv");
+    expect(parsed[0]).toMatchObject({ first_names: "OSCAR ALEXANDER", last_names: "BOLIVAR BOLIVAR", national_id: "BH823158" });
+    expect(parsed[1]).toMatchObject({ first_names: "JAVIER ALFONSO", last_names: "ECHEVERRY VELASQUEZ", national_id: "BA086520" });
+    expect(validateImportRows(parsed).valid).toHaveLength(2);
+    expect(validateImportRows(parsed).errors).toHaveLength(0);
   });
 });

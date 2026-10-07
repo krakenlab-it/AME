@@ -107,6 +107,20 @@ describe("identificación con enlace individual", () => {
     expect((await identify(repo, { token: mariaToken, cedula: MARIA, captchaToken: "ok" }, d)).ok).toBe(true);
   });
 
+  it("acepta el pasaporte guardado en la importación, con espacios o minúsculas", async () => {
+    const passport = "BH823158";
+    const personId = repo.addPerson("Oscar Alexander", "Bolivar Bolivar", passport);
+    const token = randomToken();
+    repo.addToken(personId, sha256(token));
+    expect((await identify(repo, { token, cedula: "bh 823158" }, deps("ip-pass"))).ok).toBe(true);
+
+    const other = repo.addPerson("Javier Alfonso", "Echeverry Velasquez", "BA086520");
+    const otherToken = randomToken();
+    repo.addToken(other, sha256(otherToken));
+    expect((await identify(repo, { token: otherToken, cedula: "ba-086520" }, deps("ip-pass-2"))).ok).toBe(true);
+    expect((await identify(repo, { token: otherToken, cedula: "17100340A5" }, deps("ip-pass-3"))).ok).toBe(false);
+  });
+
   it("valida el formato de la cédula antes de consultar", async () => {
     const r = await identify(repo, { token: juanToken, cedula: "123" }, deps());
     expect(r.ok).toBe(false);

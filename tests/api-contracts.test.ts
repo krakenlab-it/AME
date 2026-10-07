@@ -108,6 +108,10 @@ describe("formas de petición y respuesta", () => {
     const token = "a".repeat(32);
     const cedula = makeCedula("171003406");
     expect(identifySchema.safeParse({ token, cedula }).success).toBe(true);
+    expect(identifySchema.safeParse({ token, cedula: "bh-823158" }).data?.cedula).toBe("BH823158");
+    expect(identifySchema.safeParse({ token, cedula: "BA086520" }).success).toBe(true);
+    expect(identifySchema.safeParse({ token, cedula: "1234567890" }).success).toBe(false);
+    expect(identifySchema.safeParse({ token, cedula: "AAAAAA" }).success).toBe(false);
     expect(identifySchema.safeParse({ token, cedula, personId: "otro" }).success).toBe(false);
     expect(identifyFailureSchema.parse({ error: "Enlace no válido.", linkState: "invalid" }).linkState).toBe("invalid");
   });

@@ -31,9 +31,9 @@ export function ImportPanel({ resendKeySet }: { resendKeySet: boolean }) {
         <div className="space-y-1">
           <h2 className="text-xl">1. Cargar base inicial</h2>
           <p className="text-[15px] text-ink-muted">
-            Sube un archivo .csv o .xlsx (máximo 5 MB). Lo único obligatorio en cada fila es la <strong>cédula</strong> de 10 dígitos.
-            La plantilla recomendada usa las columnas Nombres, Apellidos y Cédula. Esos mismos datos también se aceptan como <code>first_names</code>, <code>last_names</code> y <code>national_id</code> (la cédula).
-            Si el archivo trae el nombre y la cédula con otros títulos, también se importa. Un correo, si viene en el archivo, sirve para enviar el enlace.
+            Sube un archivo .csv o .xlsx (máximo 5 MB). Lo único obligatorio en cada fila es el <strong>documento</strong>: cédula ecuatoriana de 10 dígitos, o pasaporte de 6 a 12 caracteres (1 a 3 letras y después números, por ejemplo BH823158).
+            La plantilla recomendada usa las columnas Nombres, Apellidos y Cédula. Esos mismos datos también se aceptan como <code>first_names</code>, <code>last_names</code> y <code>national_id</code>.
+            Si el archivo trae el nombre y el documento con otros títulos, también se importa. Un correo, si viene en el archivo, sirve para enviar el enlace.
             ¿No sabes cómo armarlo? Descarga la <a className="font-semibold text-marian underline underline-offset-2" href="/templates/initial_people.csv" download>plantilla de ejemplo</a>.
           </p>
         </div>
