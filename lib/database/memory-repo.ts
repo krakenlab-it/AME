@@ -444,7 +444,7 @@ export class MemoryRepo implements Repo {
     };
   }
 
-  async findPersonByNationalIdHash(hash: string): Promise<GeneralAuthRecord | null> {
+  async findGeneralAuthByNationalIdHash(hash: string): Promise<GeneralAuthRecord | null> {
     const person = [...this.people.values()].find((item) => item.national_id_hash === hash);
     if (!person) return null;
     return this.toGeneral(person, this.ensureGeneral(person.id));

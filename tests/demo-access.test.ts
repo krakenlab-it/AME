@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { isDemoMode } from "@/lib/demo-mode";
+import { assertSupabaseConfigured, isDemoMode } from "@/lib/demo-mode";
 import { isMemoryRepo, MemoryRepo } from "@/lib/database/memory-repo";
 import { createDemoRepo } from "@/lib/database/demo";
 import { getDemoAdminContext, startDemoSession } from "@/lib/services/demo-admin-auth";
@@ -8,7 +8,7 @@ import { can } from "@/lib/security/rbac";
 
 vi.mock("server-only", () => ({}));
 
-const ENV_KEYS = ["DEMO_MODE", "VERCEL_ENV", "APP_STAGE", "PORTAL_PREVIEW_SANDBOX_BUILD", "SANDBOX_PREVIEW_DEMO", "SANDBOX_PREVIEW_EMPTY"] as const;
+const ENV_KEYS = ["DEMO_MODE", "VERCEL_ENV", "VERCEL", "APP_STAGE", "PORTAL_E2E", "PORTAL_PREVIEW_SANDBOX_BUILD", "SANDBOX_PREVIEW_DEMO", "SANDBOX_PREVIEW_EMPTY"] as const;
 const saved = Object.fromEntries(ENV_KEYS.map((k) => [k, process.env[k]]));
 
 afterEach(() => {
@@ -25,34 +25,57 @@ describe("acceso rápido de pruebas (solo modo demostración)", () => {
     expect(isDemoMode()).toBe(false);
   });
 
-  it("se enciende con DEMO_MODE=true en desarrollo y preview", () => {
+  it("se enciende con DEMO_MODE=true solo fuera de Vercel y de producción", () => {
     process.env.DEMO_MODE = "true";
     delete process.env.VERCEL_ENV;
+    delete process.env.APP_STAGE;
     expect(isDemoMode()).toBe(true);
     process.env.VERCEL_ENV = "preview";
-    expect(isDemoMode()).toBe(true);
+    expect(isDemoMode()).toBe(false);
   });
 
-  it("se enciende en Vercel Preview sin variable DEMO_MODE (runtime)", () => {
+  it("no se enciende en Vercel Preview aunque falte DEMO_MODE", () => {
     delete process.env.DEMO_MODE;
     delete process.env.APP_STAGE;
     process.env.VERCEL_ENV = "preview";
-    expect(isDemoMode()).toBe(true);
+    expect(isDemoMode()).toBe(false);
   });
 
-  it("sigue en demo en Preview aunque APP_STAGE diga production (variables compartidas en Vercel)", () => {
+  it("no se enciende en Preview aunque APP_STAGE diga production", () => {
     delete process.env.DEMO_MODE;
     process.env.VERCEL_ENV = "preview";
     process.env.APP_STAGE = "production";
-    expect(isDemoMode()).toBe(true);
+    expect(isDemoMode()).toBe(false);
   });
 
-  it("sigue en demo en build Preview aunque DEMO_MODE=false en runtime", () => {
-    process.env.DEMO_MODE = "false";
-    process.env.PORTAL_PREVIEW_SANDBOX_BUILD = "true";
-    process.env.APP_STAGE = "production";
+  it("PORTAL_E2E enciende la base en memoria solo fuera de Vercel", () => {
+    delete process.env.DEMO_MODE;
+    process.env.PORTAL_E2E = "true";
+    delete process.env.VERCEL;
     delete process.env.VERCEL_ENV;
+    delete process.env.APP_STAGE;
     expect(isDemoMode()).toBe(true);
+    process.env.VERCEL_ENV = "production";
+    expect(isDemoMode()).toBe(false);
+  });
+
+  it("sin Supabase y sin base de prueba, el arranque falla cerrado", () => {
+    const url = process.env.SUPABASE_URL;
+    const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    delete process.env.DEMO_MODE;
+    delete process.env.PORTAL_E2E;
+    process.env.APP_STAGE = "production";
+    delete process.env.SUPABASE_URL;
+    delete process.env.SUPABASE_SERVICE_ROLE_KEY;
+    try {
+      expect(isDemoMode()).toBe(false);
+      expect(() => assertSupabaseConfigured()).toThrow(/SUPABASE_URL y SUPABASE_SERVICE_ROLE_KEY/);
+    } finally {
+      if (url === undefined) delete process.env.SUPABASE_URL;
+      else process.env.SUPABASE_URL = url;
+      if (key === undefined) delete process.env.SUPABASE_SERVICE_ROLE_KEY;
+      else process.env.SUPABASE_SERVICE_ROLE_KEY = key;
+    }
   });
 
   it("no se enciende en Vercel Preview durante next build", () => {

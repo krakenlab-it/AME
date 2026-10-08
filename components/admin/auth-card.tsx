@@ -78,8 +78,7 @@ export function AdminAuthLink({ href, children }: { href: string; children: Reac
 }
 
 /**
- * Vuelve a /admin/login. Con `clearSession`, cierra la sesión a medias (p. ej. tras login sin MFA)
- * para que el ingreso muestre de nuevo «Probar el portal» y el acceso demo.
+ * Vuelve a /admin/login. Con `clearSession`, cierra la sesión a medias (por ejemplo tras el login, antes del código del teléfono).
  */
 export function AdminAuthBackToLogin({
   clearSession = false,

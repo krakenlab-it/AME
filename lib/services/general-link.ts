@@ -85,7 +85,7 @@ export async function startGeneralAccess(repo: RespondentRepo, rawInput: unknown
   }
 
   const providedHash = keyedHash(code || "blank-fingerprint", "fingerprint_code");
-  const person = await repo.findPersonByNationalIdHash(cedulaHash);
+  const person = await repo.findGeneralAuthByNationalIdHash(cedulaHash);
   const comparable = person?.fingerprint_code_hash ?? keyedHash("unregistered-person", "fingerprint_code");
   const equal = safeEqual(providedHash, comparable);
   const requireCaptcha = needsCaptcha(deps, ipLimit.hits);

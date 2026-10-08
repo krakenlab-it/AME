@@ -49,30 +49,39 @@ export function isPreviewSandboxDeployment(): boolean {
 }
 
 /**
- * Modo demostración explícito (DEMO_MODE=true), automático en Preview de Vercel,
- * o build Preview (PORTAL_PREVIEW_SANDBOX_BUILD). DEMO_MODE=false no apaga el sandbox Preview.
+ * Base en memoria solo para pruebas locales y el servidor de e2e.
+ * Nunca en Vercel (producción ni Preview) y nunca si APP_STAGE es production.
+ * PORTAL_E2E lo enciende el runner de Playwright; next start usa NODE_ENV=production.
  */
-function demoModeRequested(): boolean {
-  if (process.env.SANDBOX_PREVIEW_DEMO === "false") return false;
-  if (process.env.DEMO_MODE === "true") return true;
-  if (isPreviewSandboxDeployment()) return true;
-  if (process.env.DEMO_MODE === "false") return false;
-  return false;
-}
-
-/** Datos ficticios en memoria. Nunca en producción, aunque la variable esté presente. */
-export function isDemoMode(): boolean {
+export function memoryRepoAllowed(): boolean {
   if (isNextProductionBuild()) return false;
-  if (deployStage() === "production" && !isPreviewSandboxBuild()) return false;
-  return demoModeRequested();
+  if (process.env.VERCEL_ENV === "production" || process.env.VERCEL_ENV === "preview") return false;
+  if (process.env.APP_STAGE === "production") return false;
+  if (process.env.PORTAL_E2E === "true" && !process.env.VERCEL) return true;
+  if (process.env.NODE_ENV === "production") return false;
+  return process.env.DEMO_MODE === "true";
 }
 
-/** El proceso debe negarse a arrancar si DEMO_MODE llega a producción. */
+/** Alias histórico: el panel y las pruebas hablan de modo demostración. */
+export function isDemoMode(): boolean {
+  return memoryRepoAllowed();
+}
+
+/** Se niega a arrancar si alguien intenta encender la base de prueba en producción. */
 export function assertDemoAllowed(): void {
-  if (deployStage() === "production" && !isPreviewSandboxBuild() && isDemoMode()) {
+  const production = process.env.VERCEL_ENV === "production" || process.env.APP_STAGE === "production";
+  if (process.env.DEMO_MODE === "true" && production) {
     throw new Error("DEMO_MODE no está permitido en producción");
   }
-  if (process.env.DEMO_MODE === "true" && deployStage() === "production" && !isPreviewSandboxBuild()) {
-    throw new Error("DEMO_MODE no está permitido en producción");
+  if (process.env.PORTAL_E2E === "true" && (process.env.VERCEL_ENV === "production" || process.env.VERCEL_ENV === "preview")) {
+    throw new Error("PORTAL_E2E no está permitido en Vercel");
+  }
+}
+
+/** Producción y Preview usan solo Supabase. Si faltan las variables, no hay base de respaldo. */
+export function assertSupabaseConfigured(): void {
+  if (memoryRepoAllowed()) return;
+  if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    throw new Error("El portal no puede arrancar: faltan SUPABASE_URL y SUPABASE_SERVICE_ROLE_KEY. En este entorno no hay una base en memoria de respaldo.");
   }
 }

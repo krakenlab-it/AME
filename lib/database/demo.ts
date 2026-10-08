@@ -11,8 +11,7 @@ import { MemoryRepo } from "./memory-repo";
 
 /**
  * Modo demostración: base en memoria con datos ficticios para probar el portal sin Supabase.
- * Solo se activa con DEMO_MODE=true y NUNCA en producción (ver lib/database/index.ts).
- * El panel de demostración no usa Supabase Auth: la contraseña y el TOTP quedan solo en memoria.
+ * Solo cuando memoryRepoAllowed() es verdadero (pruebas locales o PORTAL_E2E). Nunca en Vercel.
  */
 function seedProductUsers(): boolean {
   if (process.env.SEED_PRODUCT_USERS === "false") return false;
@@ -22,8 +21,6 @@ function seedProductUsers(): boolean {
 
 export function createDemoRepo(): MemoryRepo {
   const repo = new MemoryRepo();
-  const base = (process.env.APP_BASE_URL ?? "http://localhost:3000").replace(/\/$/, "");
-  const lines: string[] = [];
   if (!previewSandboxEmptyPeople()) {
     const people: [string, string, string][] = [
       ["Juan Carlos", "Pérez López", "1710034065"],
@@ -31,14 +28,10 @@ export function createDemoRepo(): MemoryRepo {
     ];
     for (const [first, last, ced] of people) {
       const id = repo.addPerson(first, last, ced);
-      const token = randomToken();
-      repo.addToken(id, sha256(token));
-      lines.push(`  ${first} ${last} · cédula ${ced}\n    ${base}/verificar/${token}`);
+      repo.addToken(id, sha256(randomToken()));
     }
     if (seedProductUsers()) {
-      for (const link of loadProductSeed(repo)) {
-        lines.push(`  ${link.name} · cédula ${link.cedula} · ${link.status} · ${link.linkState}\n    ${base}/verificar/${link.rawToken}`);
-      }
+      loadProductSeed(repo);
     } else {
       for (const persona of PRODUCT_PERSONAS) {
         const id = repo.addPerson(persona.currentFirstNames, persona.currentLastNames, persona.cedula, persona.status);
@@ -48,9 +41,7 @@ export function createDemoRepo(): MemoryRepo {
           person.review_reasons = [...persona.reviewReasons];
           if (persona.status === "COMPLETED" || persona.status === "NEEDS_REVIEW") person.submitted_at = new Date().toISOString();
         }
-        const token = randomToken();
-        repo.addToken(id, sha256(token));
-        lines.push(`  ${persona.currentFirstNames} ${persona.currentLastNames} · cédula ${persona.cedula} (${persona.status})\n    ${base}/verificar/${token}`);
+        repo.addToken(id, sha256(randomToken()));
       }
     }
   }
@@ -69,7 +60,6 @@ export function createDemoRepo(): MemoryRepo {
     : seedProductUsers()
       ? " Seed KAN-106 con enlaces fijos para las pruebas."
       : "";
-  const linkNote = lines.length ? `\nEnlaces:\n${lines.join("\n")}\n` : "\n";
-  console.warn(`\n[DEMO_MODE] Base en memoria.${seedNote}${linkNote}  Admin: ${PRODUCT_SEED_DEMO_ADMIN.email} / ${PRODUCT_SEED_DEMO_ADMIN.password} · TOTP secreto: ${secret}\n`);
+  console.warn(`\n[DEMO_MODE] Base en memoria para pruebas locales.${seedNote}\n`);
   return repo;
 }

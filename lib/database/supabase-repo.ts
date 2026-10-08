@@ -621,7 +621,7 @@ export class SupabaseRepo implements Repo {
     check(await this.db.rpc("purge_expired_sessions"), "purge_expired_sessions");
   }
 
-  async findPersonByNationalIdHash(hash: string): Promise<GeneralAuthRecord | null> {
+  async findGeneralAuthByNationalIdHash(hash: string): Promise<GeneralAuthRecord | null> {
     const data = check(
       await this.db
         .from("people")

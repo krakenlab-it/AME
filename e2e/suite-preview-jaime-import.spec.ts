@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { signInTestAdmin } from "./helpers/admin-login";
 
 function makeCedula(first9: string): string {
   let sum = 0;
@@ -17,8 +18,7 @@ test("Preview: import válido y paso 3 descarga enlace /verificar/", async ({ pa
   const csvPath = join("/tmp", `jaime-smoke-${Date.now()}.csv`);
   writeFileSync(csvPath, `Nombres,Apellidos,Cédula\nJaime,Demo,${cedula}\n`, "utf8");
 
-  await page.goto("/demo/entrar?destino=admin");
-  await expect(page.getByRole("heading", { name: "Resumen" })).toBeVisible({ timeout: 30_000 });
+  await signInTestAdmin(page);
 
   await page.goto("/admin/importar");
   await page.locator("#import-file").setInputFiles(csvPath);

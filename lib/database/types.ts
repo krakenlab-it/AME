@@ -133,7 +133,8 @@ export interface RespondentRepo {
   getActiveNotice(): Promise<NoticeRecord | null>;
   /** Resumen del propio titular. Sin cédula ni cuenta en claro. */
   getInsuredRecord(personId: string): Promise<InsuredRecord | null>;
-  findPersonByNationalIdHash(hash: string): Promise<GeneralAuthRecord | null>;
+  /** Cédula hasheada más el código dactilar (hash) y el TOTP cifrado. No va al navegador. */
+  findGeneralAuthByNationalIdHash(hash: string): Promise<GeneralAuthRecord | null>;
   registerGeneralFailure(personId: string, threshold: number, lockMinutes: number): Promise<{ failed_attempts: number; locked: boolean }>;
   claimFingerprintCode(personId: string, codeHash: string): Promise<"claimed" | "matched" | "mismatch" | "missing">;
   beginGeneralChallenge(personId: string, input: GeneralChallengeInput): Promise<boolean>;

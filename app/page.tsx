@@ -8,7 +8,6 @@ import {
   LandingStaffFooter,
 } from "@/components/portal/landing-entry-card";
 import { PortalShell, PortalUnavailable } from "@/components/portal/shell";
-import { DemoAccess } from "@/components/demo/demo-access";
 import { ButtonLink } from "@/components/ui/button";
 import { Notice } from "@/components/ui/notice";
 import { getRepo } from "@/lib/database";
@@ -63,9 +62,6 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
                 </LandingStaffFooter>
               </LandingRightEntry>
             )}
-            <div className="landing-right-entry mt-5 w-full [&_aside]:text-center">
-              <DemoAccess />
-            </div>
           </div>
         }
       />

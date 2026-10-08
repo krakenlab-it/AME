@@ -1,4 +1,6 @@
 import { expect, test } from "@playwright/test";
+import { signInTestAdmin } from "./helpers/admin-login";
+import { PRODUCT_SEED_TOKENS } from "../lib/seed/ci-seed";
 import { PRODUCT_PERSONAS } from "../lib/seed/product-personas";
 
 const started = PRODUCT_PERSONAS.find((persona) => persona.key === "started");
@@ -32,18 +34,18 @@ test("quien no tiene sesión se queda en la portada", async ({ page }) => {
 });
 
 test("una sesión de administración vuelve al panel desde la portada", async ({ page }) => {
-  await page.goto("/");
-  await page.getByRole("link", { name: "Entrar como administrador" }).click();
-  await expect(page).toHaveURL(/\/admin$/);
-
+  await signInTestAdmin(page);
   await page.goto("/");
   await expect(page).toHaveURL(/\/admin$/);
   await expect(page.getByRole("heading", { name: "Resumen" })).toBeVisible();
 });
 
 test("una sesión del asegurado vuelve a mi cuenta desde la portada", async ({ page }) => {
-  await page.goto("/");
-  await page.getByRole("button", { name: /Entrar a mi cuenta/ }).click();
+  const completed = PRODUCT_PERSONAS.find((persona) => persona.key === "completed");
+  expect(completed).toBeTruthy();
+  await page.goto(`/verificar/${PRODUCT_SEED_TOKENS.completed}/estado`);
+  await page.getByLabel("Número de cédula").fill(completed!.cedula);
+  await page.getByRole("button", { name: "Ver mi cuenta" }).click();
   await expect(page).toHaveURL(/\/mi-cuenta$/);
 
   await page.goto("/");
@@ -52,8 +54,11 @@ test("una sesión del asegurado vuelve a mi cuenta desde la portada", async ({ p
 });
 
 test("el enlace /empezar reinicia en la portada aunque haya sesión de mi cuenta", async ({ page }) => {
-  await page.goto("/");
-  await page.getByRole("button", { name: /Entrar a mi cuenta/ }).click();
+  const completed = PRODUCT_PERSONAS.find((persona) => persona.key === "completed");
+  expect(completed).toBeTruthy();
+  await page.goto(`/verificar/${PRODUCT_SEED_TOKENS.completed}/estado`);
+  await page.getByLabel("Número de cédula").fill(completed!.cedula);
+  await page.getByRole("button", { name: "Ver mi cuenta" }).click();
   await expect(page).toHaveURL(/\/mi-cuenta$/);
 
   await page.goto("/empezar");
