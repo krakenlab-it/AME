@@ -6,6 +6,8 @@ import { getRepo } from "@/lib/database";
 import { adminForAction } from "@/lib/server/admin-guard";
 import { hasPlaceholder } from "@/lib/privacy/placeholders";
 import { ImportFileError, importPeople, parseImportFile, type ImportError, type ImportNote } from "@/lib/services/import";
+import { FingerprintImportError, importFingerprintCodes, type FingerprintImportReport } from "@/lib/services/fingerprint-import";
+import { resetPersonGeneralAuth } from "@/lib/services/general-link";
 import { issueLinks, linksToCsv, regenerateLink, revokeLinks } from "@/lib/services/links";
 import { isMemoryRepo } from "@/lib/database/memory-repo";
 import {
@@ -206,5 +208,36 @@ export async function publishNoticeAction(_prev: NoticeState, formData: FormData
   await repo.publishNotice({ version, body, body_hash: createHash("sha256").update(body).digest("hex"), effective_date: effective || null, created_by: ctx.admin.id });
   await repo.audit({ actor_type: "admin", actor_id: ctx.admin.id, action: "NOTICE_PUBLISHED", metadata: { version, has_placeholders: warning } });
   revalidatePath("/admin/aviso");
+  return { ok: true };
+}
+
+export type FingerprintImportState = { error?: string } & Partial<FingerprintImportReport>;
+
+export async function importFingerprintAction(_prev: FingerprintImportState, formData: FormData): Promise<FingerprintImportState> {
+  const ctx = await adminForAction("people:import");
+  if (!ctx) return { error: DENIED };
+  const file = formData.get("file");
+  if (!(file instanceof File) || file.size === 0) return { error: "Selecciona un archivo .xlsx o .csv." };
+  try {
+    const report = await importFingerprintCodes(getRepo(), await file.arrayBuffer(), file.name, ctx.admin.id);
+    revalidatePath("/admin");
+    return report;
+  } catch (err) {
+    if (err instanceof FingerprintImportError) return { error: err.message };
+    console.error("[fingerprint-import] error inesperado");
+    return { error: "No se pudo procesar el archivo." };
+  }
+}
+
+export async function resetGeneralAuthAction(_prev: ManualEditState, formData: FormData): Promise<ManualEditState> {
+  const ctx = await adminForAction("people:reset-factors");
+  if (!ctx) return { error: DENIED };
+  const personId = String(formData.get("personId") ?? "");
+  if (!/^[0-9a-f-]{36}$/i.test(personId)) return { error: "Registro no válido." };
+  const totp = await reconfirmAdminTotp(String(formData.get("totp") ?? ""));
+  if (!totp.ok) return { error: totp.error };
+  const cleared = await resetPersonGeneralAuth(getRepo(), personId, ctx.admin.id);
+  if (!cleared) return { error: "No encontramos a esa persona." };
+  revalidatePath(`/admin/personas/${personId}`);
   return { ok: true };
 }

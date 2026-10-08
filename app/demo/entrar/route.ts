@@ -62,6 +62,7 @@ export async function POST(req: Request) {
       session_hash: sha256(sessionToken),
       person_id: person.id,
       access_token_id: token.id,
+      entry_method: "token",
       expires_at: new Date(Date.now() + RESPONDENT_SESSION_MINUTES * 60_000).toISOString(),
       submitted_at: destino === "cuenta" ? person.submitted_at : null,
     });

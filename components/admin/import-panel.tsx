@@ -5,8 +5,10 @@ import { Download, Upload } from "lucide-react";
 import {
   generatePersonalLinksAction,
   importAction,
+  importFingerprintAction,
   issueMissingLinksAction,
   simulateOutreachLinkAction,
+  type FingerprintImportState,
   type ImportState,
 } from "@/app/admin/panel-actions";
 import { Button } from "@/components/ui/button";
@@ -25,6 +27,7 @@ function download(csv: string, name: string) {
 
 export function ImportPanel({ outreachSimulation = false }: { outreachSimulation?: boolean }) {
   const [state, formAction, pending] = useActionState<ImportState, FormData>(importAction, {});
+  const [finger, fingerAction, fingerPending] = useActionState<FingerprintImportState, FormData>(importFingerprintAction, {});
   const [linksMsg, setLinksMsg] = useState<string | null>(null);
   const [personalLinksMsg, setPersonalLinksMsg] = useState<string | null>(null);
   const [simulation, setSimulation] = useState<{ sent?: boolean; url?: string; recipient?: string; error?: string } | null>(null);
@@ -138,6 +141,28 @@ export function ImportPanel({ outreachSimulation = false }: { outreachSimulation
           </>
         )}
       </section>
+
+      <form action={fingerAction} className="sheet space-y-5 p-6">
+        <div className="space-y-1">
+          <h2 className="text-xl">4. Precargar códigos dactilares</h2>
+          <p className="text-[15px] text-ink-muted">
+            Opcional. El enlace general para las personas es <strong>/ingresar</strong>. Hoy la cédula basta para entrar; si la persona escribe un código y todavía no había uno, ese queda guardado. Si ya hay uno, tiene que coincidir.
+            Este archivo puede dejarlo listo antes: columnas <code>cedula</code> y <code>codigo_dactilar</code>. El código no se guarda ni se muestra en claro.
+            Si ya hay uno distinto, no se cambia: hay que restablecerlo desde la ficha.
+            Plantilla: <a className="font-semibold text-marian underline underline-offset-2" href="/templates/codigo_dactilar.csv" download>ejemplo.csv</a>.
+          </p>
+        </div>
+        <Field id="fingerprint-file" label="Archivo de códigos" required>
+          <input id="fingerprint-file" name="file" type="file" accept=".csv,.xlsx" required className="block w-full rounded-xl border border-marian-line bg-white p-2 text-[15px] file:mr-4 file:min-h-[44px] file:cursor-pointer file:rounded-lg file:border-0 file:bg-marian-soft file:px-4 file:font-semibold file:text-marian hover:border-marian" />
+        </Field>
+        <Button type="submit" variant="secondary" loading={fingerPending}><Upload className="h-4 w-4" aria-hidden /> {fingerPending ? "Cargando…" : "Cargar códigos"}</Button>
+        {finger.error && <Notice tone="error" live>{finger.error}</Notice>}
+        {finger.total !== undefined && !finger.error && (
+          <Notice tone="success" live title="Carga de códigos">
+            Filas: {finger.total}. Actualizadas: {finger.updated}. Ya iguales: {finger.unchanged}. No encontradas: {finger.notFound}. Formato no válido: {finger.invalid}. Duplicadas: {finger.duplicates}. Con otro código (sin cambio): {finger.conflicts}.
+          </Notice>
+        )}
+      </form>
     </div>
   );
 }

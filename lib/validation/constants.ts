@@ -55,3 +55,10 @@ export const STATUS_LABELS: Record<PersonStatus, string> = {
 
 export const GENERIC_IDENTIFY_ERROR =
   "No pudimos verificar la información proporcionada. Revisa los datos o utiliza el enlace que recibiste.";
+
+/** Mismo texto para cédula desconocida, código incorrecto o bloqueo. No dice cuál falló. */
+export const GENERIC_GENERAL_ERROR =
+  "No pudimos verificar la información proporcionada. Revisa los datos o contacta al administrador.";
+
+export const PASSPORT_GENERAL_MESSAGE =
+  "Si tu documento es un pasaporte, usa el enlace personal que recibiste. Este ingreso es para cédula y código dactilar.";

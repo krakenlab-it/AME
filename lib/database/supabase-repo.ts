@@ -2,12 +2,18 @@ import "server-only";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import type { PersonStatus } from "@/lib/validation/constants";
 import { PERSON_STATUSES } from "@/lib/validation/constants";
+import { safeEqual } from "@/lib/encryption/crypto";
 import {
   RepoError,
   type AccessTokenRecord,
   type AdminUserRecord,
   type AuditRow,
+  type EntryMethod,
   type ExportSourceRow,
+  type FingerprintAssignResult,
+  type GeneralAuthRecord,
+  type GeneralChallengeInput,
+  type GeneralChallengeRecord,
   type InsuredRecord,
   type LinkMailTarget,
   type ManualPersonPatch,
@@ -151,7 +157,7 @@ export class SupabaseRepo implements Repo {
     check(await this.db.from("people").update({ status: "STARTED" }).eq("id", personId).eq("status", "PENDING"), "markStarted");
   }
 
-  async createRespondentSession(s: { session_hash: string; person_id: string; access_token_id: string; expires_at: string; submitted_at?: string | null }) {
+  async createRespondentSession(s: { session_hash: string; person_id: string; access_token_id: string | null; entry_method: EntryMethod; expires_at: string; submitted_at?: string | null }) {
     const data = check(await this.db.from("respondent_sessions").insert(s).select().single(), "createRespondentSession");
     return data as RespondentSessionRecord;
   }
@@ -160,12 +166,14 @@ export class SupabaseRepo implements Repo {
     const data = check(
       await this.db
         .from("respondent_sessions")
-        .select("id, session_hash, person_id, access_token_id, expires_at, submitted_at, revoked_at")
+        .select("id, session_hash, person_id, access_token_id, entry_method, expires_at, submitted_at, revoked_at")
         .eq("session_hash", sessionHash)
         .maybeSingle(),
       "findRespondentSession",
-    );
-    return (data as RespondentSessionRecord | null) ?? null;
+    ) as (Omit<RespondentSessionRecord, "entry_method"> & { entry_method?: string | null }) | null;
+    if (!data) return null;
+    const entryMethod: EntryMethod = data.entry_method === "general" ? "general" : "token";
+    return { ...data, entry_method: entryMethod };
   }
 
   async revokeRespondentSession(id: string) {
@@ -293,13 +301,18 @@ export class SupabaseRepo implements Repo {
     const personRow = check(
       await this.db
         .from("people")
-        .select("id, first_names, last_names, national_id_encrypted, national_id_hash, national_id_last2, status, confirmation_code, submitted_at, created_at, updated_at, review_reasons, reviewed_at, anonymized_at, retention_until, outreach_email")
+        .select("id, first_names, last_names, national_id_encrypted, national_id_hash, national_id_last2, status, confirmation_code, submitted_at, created_at, updated_at, review_reasons, reviewed_at, anonymized_at, retention_until, outreach_email, fingerprint_code_hash, totp_enabled_at, general_locked_until")
         .eq("id", id)
         .maybeSingle(),
       "getPersonDetail.person",
-    ) as (PersonDetail["person"] & { outreach_email: string | null }) | null;
+    ) as (PersonDetail["person"] & { outreach_email: string | null; fingerprint_code_hash: string | null; totp_enabled_at: string | null; general_locked_until: string | null }) | null;
     if (!personRow) return null;
-    const { outreach_email: outreachEmail, ...person } = personRow;
+    const { outreach_email: outreachEmail, fingerprint_code_hash: fingerprintHash, totp_enabled_at: totpEnabledAt, general_locked_until: lockedUntil, ...person } = personRow;
+    const generalAccess: PersonDetail["general_access"] = {
+      fingerprint_set: Boolean(fingerprintHash),
+      totp_enabled: Boolean(totpEnabledAt),
+      locked: Boolean(lockedUntil && new Date(lockedUntil).getTime() > Date.now()),
+    };
 
     const [contact, bank, consents, nameChanges, tokens, audit] = await Promise.all([
       this.db.from("contact_information").select("primary_email, secondary_email, mobile_phone, address_line_1, address_line_2, city, province, country, postal_code, updated_at").eq("person_id", id).maybeSingle(),
@@ -318,6 +331,7 @@ export class SupabaseRepo implements Repo {
       tokens: (check(tokens, "detail.tokens") ?? []) as PersonDetail["tokens"],
       audit: (check(audit, "detail.audit") ?? []) as AuditRow[],
       outreach_email: outreachEmail,
+      general_access: generalAccess,
     };
   }
 
@@ -605,5 +619,175 @@ export class SupabaseRepo implements Repo {
 
   async purgeExpiredSessions() {
     check(await this.db.rpc("purge_expired_sessions"), "purge_expired_sessions");
+  }
+
+  async findPersonByNationalIdHash(hash: string): Promise<GeneralAuthRecord | null> {
+    const data = check(
+      await this.db
+        .from("people")
+        .select("id, first_names, last_names, national_id_last2, status, submitted_at, fingerprint_code_hash, totp_secret_encrypted, totp_enabled_at, general_failed_attempts, general_locked_until")
+        .eq("national_id_hash", hash)
+        .is("anonymized_at", null)
+        .maybeSingle(),
+      "findPersonByNationalIdHash",
+    ) as GeneralAuthRecord | null;
+    return data;
+  }
+
+  async registerGeneralFailure(personId: string, threshold: number, lockMinutes: number) {
+    const data = check(
+      await this.db.rpc("register_general_failure", { p_person_id: personId, p_threshold: threshold, p_lock_minutes: lockMinutes }),
+      "register_general_failure",
+    ) as { failed_attempts: number; locked: boolean }[] | null;
+    return data?.[0] ?? { failed_attempts: threshold, locked: true };
+  }
+
+  async claimFingerprintCode(personId: string, codeHash: string): Promise<"claimed" | "matched" | "mismatch" | "missing"> {
+    const claimed = check(
+      await this.db
+        .from("people")
+        .update({ fingerprint_code_hash: codeHash, fingerprint_claimed_at: new Date().toISOString() })
+        .eq("id", personId)
+        .is("fingerprint_code_hash", null)
+        .is("anonymized_at", null)
+        .select("id"),
+      "claimFingerprintCode",
+    ) as { id: string }[] | null;
+    if (claimed && claimed.length > 0) return "claimed";
+    const current = check(
+      await this.db.from("people").select("fingerprint_code_hash").eq("id", personId).is("anonymized_at", null).maybeSingle(),
+      "claimFingerprintCode.read",
+    ) as { fingerprint_code_hash: string | null } | null;
+    if (!current) return "missing";
+    if (!current.fingerprint_code_hash) return "mismatch";
+    return safeEqual(current.fingerprint_code_hash, codeHash) ? "matched" : "mismatch";
+  }
+
+  async beginGeneralChallenge(personId: string, input: GeneralChallengeInput): Promise<boolean> {
+    const patch: Record<string, string | null> = {
+      general_challenge_hash: input.challengeHash,
+      general_challenge_expires_at: input.expiresAt,
+      general_challenge_purpose: input.purpose,
+    };
+    let query = this.db.from("people").update(patch).eq("id", personId).is("anonymized_at", null);
+    if (input.purpose === "enroll") {
+      if (!input.totpSecretEncrypted) return false;
+      patch.totp_secret_encrypted = input.totpSecretEncrypted;
+      patch.totp_enabled_at = null;
+      query = this.db.from("people").update(patch).eq("id", personId).is("anonymized_at", null).is("totp_enabled_at", null);
+    } else {
+      query = query.not("totp_enabled_at", "is", null);
+    }
+    const data = check(await query.select("id"), "beginGeneralChallenge") as { id: string }[] | null;
+    return Boolean(data && data.length > 0);
+  }
+
+  async findGeneralChallenge(challengeHash: string): Promise<GeneralChallengeRecord | null> {
+    const data = check(
+      await this.db
+        .from("people")
+        .select("id, first_names, last_names, national_id_last2, status, submitted_at, general_challenge_purpose, general_challenge_expires_at, totp_secret_encrypted, totp_enabled_at, general_locked_until")
+        .eq("general_challenge_hash", challengeHash)
+        .is("anonymized_at", null)
+        .maybeSingle(),
+      "findGeneralChallenge",
+    ) as {
+      id: string;
+      first_names: string;
+      last_names: string;
+      national_id_last2: string | null;
+      status: GeneralChallengeRecord["status"];
+      submitted_at: string | null;
+      general_challenge_purpose: string | null;
+      general_challenge_expires_at: string | null;
+      totp_secret_encrypted: string | null;
+      totp_enabled_at: string | null;
+      general_locked_until: string | null;
+    } | null;
+    if (!data?.general_challenge_expires_at || (data.general_challenge_purpose !== "enroll" && data.general_challenge_purpose !== "verify")) return null;
+    return {
+      person_id: data.id,
+      first_names: data.first_names,
+      last_names: data.last_names,
+      national_id_last2: data.national_id_last2,
+      status: data.status,
+      submitted_at: data.submitted_at,
+      purpose: data.general_challenge_purpose,
+      expires_at: data.general_challenge_expires_at,
+      totp_secret_encrypted: data.totp_secret_encrypted,
+      totp_enabled_at: data.totp_enabled_at,
+      general_locked_until: data.general_locked_until,
+    };
+  }
+
+  async completeGeneralChallenge(personId: string, challengeHash: string, mode: "enroll" | "verify"): Promise<boolean> {
+    const patch: Record<string, string | null | number> = {
+      general_challenge_hash: null,
+      general_challenge_expires_at: null,
+      general_challenge_purpose: null,
+      general_failed_attempts: 0,
+      general_locked_until: null,
+    };
+    if (mode === "enroll") patch.totp_enabled_at = new Date().toISOString();
+    const data = check(
+      await this.db
+        .from("people")
+        .update(patch)
+        .eq("id", personId)
+        .eq("general_challenge_hash", challengeHash)
+        .eq("general_challenge_purpose", mode)
+        .select("id"),
+      "completeGeneralChallenge",
+    ) as { id: string }[] | null;
+    return Boolean(data && data.length > 0);
+  }
+
+  async assignFingerprintHash(nationalIdHash: string, codeHash: string): Promise<FingerprintAssignResult> {
+    const current = check(
+      await this.db.from("people").select("id, fingerprint_code_hash").eq("national_id_hash", nationalIdHash).is("anonymized_at", null).maybeSingle(),
+      "assignFingerprintHash.read",
+    ) as { id: string; fingerprint_code_hash: string | null } | null;
+    if (!current) return "not_found";
+    if (current.fingerprint_code_hash && safeEqual(current.fingerprint_code_hash, codeHash)) return "unchanged";
+    if (current.fingerprint_code_hash) return "conflict";
+    const updated = check(
+      await this.db.from("people").update({ fingerprint_code_hash: codeHash }).eq("id", current.id).is("fingerprint_code_hash", null).select("id"),
+      "assignFingerprintHash.write",
+    ) as { id: string }[] | null;
+    if (updated && updated.length > 0) return "updated";
+    const again = check(
+      await this.db.from("people").select("fingerprint_code_hash").eq("id", current.id).maybeSingle(),
+      "assignFingerprintHash.reread",
+    ) as { fingerprint_code_hash: string | null } | null;
+    if (again?.fingerprint_code_hash && safeEqual(again.fingerprint_code_hash, codeHash)) return "unchanged";
+    return "conflict";
+  }
+
+  async resetGeneralAuth(personId: string): Promise<boolean> {
+    const data = check(
+      await this.db
+        .from("people")
+        .update({
+          fingerprint_code_hash: null,
+          fingerprint_claimed_at: null,
+          totp_secret_encrypted: null,
+          totp_enabled_at: null,
+          general_failed_attempts: 0,
+          general_locked_until: null,
+          general_challenge_hash: null,
+          general_challenge_expires_at: null,
+          general_challenge_purpose: null,
+        })
+        .eq("id", personId)
+        .is("anonymized_at", null)
+        .select("id"),
+      "resetGeneralAuth",
+    ) as { id: string }[] | null;
+    if (!data || data.length === 0) return false;
+    check(
+      await this.db.from("respondent_sessions").update({ revoked_at: new Date().toISOString() }).eq("person_id", personId).is("revoked_at", null),
+      "resetGeneralAuth.sessions",
+    );
+    return true;
   }
 }

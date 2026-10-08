@@ -2,7 +2,8 @@ import { z } from "zod";
 import { isAccessLinkToken } from "@/lib/validation/access-link-token";
 import { isValidCedula, normalizeCedula } from "./cedula";
 import { assessNationalId, identityDocumentMessage } from "./document";
-import { ACCOUNT_TYPES, BANKS, BANKS_REQUIRING_NAME } from "./constants";
+import { FINGERPRINT_CODE_RE, normalizeFingerprintCode } from "./fingerprint";
+import { ACCOUNT_TYPES, BANKS, BANKS_REQUIRING_NAME, PASSPORT_GENERAL_MESSAGE } from "./constants";
 import { normalizePhone } from "./phone";
 
 const REQUIRED = "Este campo es obligatorio.";
@@ -65,6 +66,52 @@ export const cedulaResumeSchema = z
   .object({
     cedula: identityDocumentField,
     captchaToken: z.string().max(4096).optional(),
+  })
+  .strict();
+
+const FINGERPRINT_FORMAT = "El código dactilar tiene una letra, 4 números, una letra y 4 números.";
+
+export const fingerprintCodeField = z
+  .string()
+  .transform((value) => normalizeFingerprintCode(value))
+  .refine((value) => FINGERPRINT_CODE_RE.test(value), FINGERPRINT_FORMAT);
+
+/** Cédula ecuatoriana. Un pasaporte se rechaza con un mensaje fijo, sin consultar la base. */
+const generalCedulaField = z
+  .string()
+  .trim()
+  .superRefine((value, ctx) => {
+    const assessed = assessNationalId(value);
+    if (assessed.ok && assessed.kind === "foreign") {
+      ctx.addIssue({ code: "custom", message: PASSPORT_GENERAL_MESSAGE });
+      return;
+    }
+    const message = identityDocumentMessage(value);
+    if (message) ctx.addIssue({ code: "custom", message });
+  })
+  .transform((value) => {
+    const assessed = assessNationalId(value);
+    return assessed.ok && assessed.kind === "cedula" ? assessed.value : normalizeCedula(value);
+  });
+
+/** Vacío si no lo escriben. Si escriben algo, tiene que cumplir el formato. */
+export const optionalFingerprintField = z
+  .string()
+  .optional()
+  .transform((value) => normalizeFingerprintCode(value ?? ""))
+  .refine((value) => value === "" || FINGERPRINT_CODE_RE.test(value), FINGERPRINT_FORMAT);
+
+export const generalIdentifySchema = z
+  .object({
+    cedula: generalCedulaField,
+    codigoDactilar: optionalFingerprintField,
+    captchaToken: z.string().max(4096).optional(),
+  })
+  .strict();
+
+export const generalTotpSchema = z
+  .object({
+    code: z.string().trim().regex(/^\d{6}$/, "El código tiene 6 números."),
   })
   .strict();
 

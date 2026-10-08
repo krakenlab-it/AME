@@ -34,7 +34,7 @@ export default async function FormPage() {
         <div className="mx-auto max-w-xl space-y-4 px-5 py-16">
           <h1 className="text-3xl">Tu sesión no está activa</h1>
           <Notice tone="warning">
-            Por seguridad, la sesión se cierra después de 30 minutos o al terminar el proceso. Abre otra vez el enlace personal que recibiste.
+            Por seguridad, la sesión se cierra después de 30 minutos o al terminar el proceso. Vuelve a entrar con el mismo enlace que usaste.
           </Notice>
           <p className="text-ink-muted">Si el enlace ya no funciona, escribe a {config.supportContact}.</p>
         </div>
