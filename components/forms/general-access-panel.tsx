@@ -1,8 +1,9 @@
 "use client";
 
 import { useActionState, useEffect, useState } from "react";
-import { ShieldCheck } from "lucide-react";
+import { KeyRound, ShieldCheck } from "lucide-react";
 import { confirmGeneralAction, startGeneralAction, type GeneralAccessState } from "@/app/ingresar/actions";
+import { FingerprintHelp } from "@/components/forms/fingerprint-help";
 import { ProtectedNote } from "@/components/portal/hero";
 import { Button } from "@/components/ui/button";
 import { describedBy, Field } from "@/components/ui/field";
@@ -12,15 +13,25 @@ export function GeneralAccessPanel({ turnstileSiteKey, requireFingerprint }: { t
   const [started, startAction, startPending] = useActionState<GeneralAccessState, FormData>(startGeneralAction, {});
   const [confirmed, confirmAction, confirmPending] = useActionState<GeneralAccessState, FormData>(confirmGeneralAction, {});
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
+  const [manualKey, setManualKey] = useState<string | null>(null);
+  const [otpauthUrl, setOtpauthUrl] = useState<string | null>(null);
 
   const phase = confirmed.phase ?? started.phase ?? "identify";
   const active = phase === "identify" ? started : { ...started, ...confirmed, qrDataUrl: confirmed.qrDataUrl ?? qrDataUrl ?? started.qrDataUrl };
   const needsCaptcha = Boolean(active.requireCaptcha && turnstileSiteKey && phase === "identify");
 
   useEffect(() => {
-    if (started.phase === "enroll" && started.qrDataUrl) setQrDataUrl(started.qrDataUrl);
-    if (started.phase === "identify" || confirmed.phase === "identify") setQrDataUrl(null);
-  }, [started.phase, started.qrDataUrl, confirmed.phase]);
+    if (started.phase === "enroll" && started.qrDataUrl) {
+      setQrDataUrl(started.qrDataUrl);
+      setManualKey(started.manualKey ?? null);
+      setOtpauthUrl(started.otpauthUrl ?? null);
+    }
+    if (started.phase === "identify" || confirmed.phase === "identify") {
+      setQrDataUrl(null);
+      setManualKey(null);
+      setOtpauthUrl(null);
+    }
+  }, [started.phase, started.qrDataUrl, started.manualKey, started.otpauthUrl, confirmed.phase]);
 
   useEffect(() => {
     if (!needsCaptcha || document.getElementById("cf-turnstile-script")) return;
@@ -43,6 +54,8 @@ export function GeneralAccessPanel({ turnstileSiteKey, requireFingerprint }: { t
           pending={confirmPending}
           action={confirmAction}
           qrDataUrl={active.qrDataUrl ?? qrDataUrl ?? undefined}
+          manualKey={started.manualKey ?? manualKey ?? undefined}
+          otpauthUrl={started.otpauthUrl ?? otpauthUrl ?? undefined}
         />
       )}
       <ProtectedNote />
@@ -115,6 +128,7 @@ function IdentifyStep({
             aria-describedby={describedBy("codigo-dactilar", { hint: "x", error: codeError })}
           />
         </Field>
+        <FingerprintHelp />
         {needsCaptcha && siteKey && <div className="cf-turnstile" data-sitekey={siteKey} data-language="es" />}
         <Button type="submit" block loading={pending}>
           <ShieldCheck className="h-5 w-5" aria-hidden />
@@ -131,12 +145,16 @@ function TotpStep({
   pending,
   action,
   qrDataUrl,
+  manualKey,
+  otpauthUrl,
 }: {
   phase: "enroll" | "totp";
   state: GeneralAccessState;
   pending: boolean;
   action: (payload: FormData) => void;
   qrDataUrl?: string;
+  manualKey?: string;
+  otpauthUrl?: string;
 }) {
   const codeError = state.fieldErrors?.code;
   const banner = state.error && state.error !== "Revisa los campos marcados." ? state.error : undefined;
@@ -147,16 +165,46 @@ function TotpStep({
         <h2 className="text-2xl">{phase === "enroll" ? "Configura tu verificación" : "Código de verificación"}</h2>
         <p className="text-ink-muted">
           {phase === "enroll"
-            ? "Abre Google Authenticator u otra aplicación compatible, escanea el código y escribe los 6 números que aparecen."
+            ? "Google Authenticator u otra aplicación compatible. El icono de aquí es solo una ayuda visual, no el de la tienda."
             : "Abre la aplicación con la que configuraste tu ingreso y escribe los 6 números."}
         </p>
       </div>
       {banner && <Notice tone="error" live>{banner}</Notice>}
-      {phase === "enroll" && qrDataUrl && (
-        <div className="flex justify-center">
-          {/* El QR lleva el secreto para la app del teléfono. No se muestra como texto. */}
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={qrDataUrl} alt="Código para agregar la cuenta en tu aplicación de verificación" width={220} height={220} className="rounded-xl border border-marian-line bg-white p-2" />
+      {phase === "enroll" && (
+        <div className="space-y-4">
+          <div className="flex items-start gap-3">
+            <KeyRound className="mt-0.5 h-5 w-5 shrink-0 text-marian" aria-hidden />
+            <ol className="list-decimal space-y-1 pl-5 text-[15px]">
+              <li>Instala la aplicación.</li>
+              <li>Escanea el código.</li>
+              <li>Escribe el código de 6 dígitos.</li>
+            </ol>
+          </div>
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
+            {qrDataUrl && (
+              <div className="flex justify-center">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={qrDataUrl} alt="Código para agregar la cuenta en tu aplicación de verificación" width={220} height={220} className="rounded-xl border border-marian-line bg-white p-2" />
+              </div>
+            )}
+            <div className="flex flex-col items-start gap-3">
+              <a href="https://play.google.com/store/apps/details?id=com.google.android.apps.authenticator2" target="_blank" rel="noopener noreferrer">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src="/badges/google-play-es.png" alt="Disponible en Google Play" width={162} height={63} className="h-10 w-auto" />
+              </a>
+              <a href="https://apps.apple.com/app/google-authenticator/id388497605" target="_blank" rel="noopener noreferrer">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src="/badges/app-store-es.svg" alt="Descargar en el App Store" width={135} height={40} className="h-10 w-auto" />
+              </a>
+            </div>
+          </div>
+          {manualKey && otpauthUrl && (
+            <div className="space-y-2 rounded-xl bg-marian-soft/50 p-4 md:hidden">
+              <p className="text-sm font-semibold">Si no puedes escanear</p>
+              <p className="break-all font-mono text-sm tracking-wide">{manualKey}</p>
+              <a href={otpauthUrl} className="inline-flex min-h-11 items-center font-semibold text-marian underline-offset-4 hover:underline">Abrir en Authenticator</a>
+            </div>
+          )}
         </div>
       )}
       <form action={action} className="space-y-5" noValidate>

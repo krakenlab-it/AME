@@ -16,6 +16,8 @@ export interface GeneralAccessState {
   requireCaptcha?: boolean;
   phase?: "identify" | "enroll" | "totp";
   qrDataUrl?: string;
+  otpauthUrl?: string;
+  manualKey?: string;
 }
 
 function deps(h: Headers) {
@@ -40,7 +42,9 @@ export async function startGeneralAction(_prev: GeneralAccessState, formData: Fo
     );
     if (!result.ok) return { error: result.error, fieldErrors: result.fieldErrors, requireCaptcha: result.requireCaptcha };
     (await cookies()).set(GENERAL_CHALLENGE_COOKIE(), result.challengeToken, cookieOptions(settings.generalChallengeMinutes * 60));
-    if (result.phase === "enroll") return { phase: "enroll", qrDataUrl: result.qrDataUrl };
+    if (result.phase === "enroll") {
+      return { phase: "enroll", qrDataUrl: result.qrDataUrl, otpauthUrl: result.otpauthUrl, manualKey: result.manualKey };
+    }
     return { phase: "totp" };
   } catch {
     return { error: "El servicio no está disponible en este momento. Intenta nuevamente en unos minutos." };

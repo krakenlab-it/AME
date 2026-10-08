@@ -8,6 +8,9 @@ test("el enlace general pide cédula y código dactilar", async ({ page }) => {
   expect(started).toBeTruthy();
   await page.goto("/ingresar");
   await expect(page.getByRole("heading", { name: "Entra con tu cédula" })).toBeVisible();
+  await page.getByText("¿Dónde encuentro mi código dactilar?").click();
+  await expect(page.getByRole("img", { name: /cédula anterior/i })).toBeVisible();
+  await expect(page.getByRole("img", { name: /cédula electrónica/i })).toBeVisible();
   await expect(page.getByLabel("Código dactilar")).toBeVisible();
   await page.getByLabel("Número de cédula").fill("1300000013");
   await page.getByRole("button", { name: "Continuar" }).click();
@@ -21,6 +24,21 @@ test("la primera vez muestra el código para la aplicación de verificación", a
   await page.getByRole("button", { name: "Continuar" }).click();
   await expect(page.getByRole("heading", { name: "Configura tu verificación" })).toBeVisible();
   await expect(page.getByRole("img", { name: "Código para agregar la cuenta en tu aplicación de verificación" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Disponible en Google Play" })).toHaveAttribute("target", "_blank");
+  await expect(page.getByRole("link", { name: "Descargar en el App Store" })).toHaveAttribute("rel", /noopener/);
+  await expect(page.getByText("Instala la aplicación.")).toBeVisible();
+  await expect(page.getByText(started!.cedula)).toHaveCount(0);
+});
+
+test("en el teléfono se puede abrir la aplicación sin escanear", async ({ page }) => {
+  expect(started).toBeTruthy();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/ingresar");
+  await page.getByLabel("Número de cédula").fill(started!.cedula);
+  await page.getByRole("button", { name: "Continuar" }).click();
+  const openApp = page.getByRole("link", { name: "Abrir en Authenticator" });
+  await expect(openApp).toBeVisible();
+  await expect(openApp).toHaveAttribute("href", /^otpauth:\/\/totp\//);
   await expect(page.getByText(started!.cedula)).toHaveCount(0);
 });
 

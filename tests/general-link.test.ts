@@ -69,6 +69,10 @@ describe("ingreso general", () => {
     expect(first.qrDataUrl.startsWith("data:image/")).toBe(true);
     expect(first.qrDataUrl).not.toContain(CODE);
     expect(first.qrDataUrl).not.toContain(JUAN);
+    expect(first.otpauthUrl.startsWith("otpauth://totp/")).toBe(true);
+    expect(first.otpauthUrl).toContain("AME%20Portal");
+    expect(first.otpauthUrl).not.toContain(JUAN);
+    expect(first.manualKey.replace(/\s/g, "")).toBe(secret);
     const label = totpAccountLabel({ first_names: "Juan Carlos", last_names: "Pérez López", national_id_last2: "65" });
     expect(label).not.toContain(JUAN);
     expect(label).toContain("65");

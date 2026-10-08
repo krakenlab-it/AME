@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 230" role="img" aria-labelledby="cedula-nueva-titulo cedula-nueva-desc">
+  <title id="cedula-nueva-titulo">Reverso simplificado de una cédula electrónica</title>
+  <desc id="cedula-nueva-desc">Ilustración original de la cédula electrónica. El código dactilar de ejemplo V1234V5678 está resaltado en la esquina superior derecha del reverso.</desc>
+  <rect width="360" height="230" rx="18" fill="#e8eef8"/>
+  <rect x="12" y="12" width="336" height="206" rx="16" fill="#f8fafc" stroke="#31527a" stroke-width="2"/>
+  <rect x="12" y="12" width="10" height="206" fill="#163a63"/>
+  <text x="32" y="36" fill="#163a63" font-family="Arial, sans-serif" font-size="12" font-weight="700">REVERSO · EJEMPLO DE CÉDULA ELECTRÓNICA</text>
+  <text x="32" y="54" fill="#5c6b7a" font-family="Arial, sans-serif" font-size="11">Documento ficticio, sin chip ni datos reales.</text>
+  <g>
+    <rect x="168" y="68" width="164" height="78" rx="10" fill="#fff4cc" stroke="#c98600" stroke-width="3"/>
+    <text x="180" y="90" fill="#8a5a00" font-family="Arial, sans-serif" font-size="11" font-weight="700">CÓDIGO DACTILAR</text>
+    <text x="180" y="118" fill="#1a1a1a" font-family="ui-monospace, monospace" font-size="20" font-weight="700">V1234V5678</text>
+  </g>
+  <g transform="translate(36,78)">
+    <rect x="0" y="0" width="52" height="52" rx="6" fill="none" stroke="#8aa0b8" stroke-width="2"/>
+    <path d="M8 8h8v8H8zM22 8h8v8h-8zM36 8h8v8h-8zM8 22h8v8H8zM36 22h8v8h-8zM8 36h8v8H8zM22 36h8v8h-8zM36 36h8v8h-8z" fill="#8aa0b8"/>
+    <text x="26" y="68" text-anchor="middle" fill="#5c6b7a" font-family="Arial, sans-serif" font-size="10">marca de ejemplo</text>
+  </g>
+  <text x="32" y="168" fill="#24343d" font-family="ui-monospace, monospace" font-size="11">IDECU&lt;EJEMPLO&lt;&lt;NO&lt;REAL&lt;&lt;&lt;&lt;&lt;&lt;&lt;</text>
+  <text x="32" y="186" fill="#24343d" font-family="ui-monospace, monospace" font-size="11">0000000000&lt;0ECU0000000&lt;&lt;&lt;&lt;00</text>
+  <text x="32" y="206" fill="#5c6b7a" font-family="Arial, sans-serif" font-size="10">Misma zona: esquina superior derecha del reverso</text>
+</svg>

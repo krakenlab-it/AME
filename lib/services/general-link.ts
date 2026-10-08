@@ -23,7 +23,7 @@ export interface GeneralDeps {
 }
 
 export type GeneralStartResult =
-  | { ok: true; phase: "enroll"; challengeToken: string; qrDataUrl: string }
+  | { ok: true; phase: "enroll"; challengeToken: string; qrDataUrl: string; otpauthUrl: string; manualKey: string }
   | { ok: true; phase: "totp"; challengeToken: string }
   | { ok: false; error: string; fieldErrors?: Record<string, string>; requireCaptcha?: boolean };
 
@@ -152,7 +152,12 @@ async function openTotpStep(repo: RespondentRepo, person: GeneralAuthRecord): Pr
   const account = totpAccountLabel(person);
   const url = otpauthUrl(secret, account, ISSUER);
   const qrDataUrl = await QRCode.toDataURL(url, { margin: 1, width: 220 });
-  return { ok: true, phase: "enroll", challengeToken, qrDataUrl };
+  return { ok: true, phase: "enroll", challengeToken, qrDataUrl, otpauthUrl: url, manualKey: formatTotpManualKey(secret) };
+}
+
+/** Agrupa el secreto para copiarlo a mano. No se registra en auditoría. */
+export function formatTotpManualKey(secret: string): string {
+  return secret.replace(/\s/g, "").replace(/(.{4})/g, "$1 ").trim();
 }
 
 /** Paso 2: confirma el TOTP y abre la sesión del formulario. */
