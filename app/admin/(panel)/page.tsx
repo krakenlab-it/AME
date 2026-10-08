@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Notice } from "@/components/ui/notice";
 import { getRepo } from "@/lib/database";
 import { keyedHash } from "@/lib/encryption/crypto";
-import { isValidCedula } from "@/lib/validation/cedula";
+import { assessNationalId } from "@/lib/validation/document";
 import { PERSON_STATUSES, STATUS_LABELS, type PersonStatus } from "@/lib/validation/constants";
 import { maskCedulaTail } from "@/lib/security/masking";
 import { can } from "@/lib/security/rbac";
@@ -35,12 +35,13 @@ export default async function AdminDashboard({ searchParams }: { searchParams: P
   const status = PERSON_STATUSES.includes(sp.estado as PersonStatus) ? (sp.estado as PersonStatus) : undefined;
   const q = (sp.q ?? "").trim().slice(0, 60);
   const page = Math.max(1, Number(sp.p) || 1);
+  const documentQuery = assessNationalId(q);
   const list = canView
     ? await repo.listPeople({
         status,
         page,
         pageSize: PAGE_SIZE,
-        ...(isValidCedula(q) ? { nationalIdHash: keyedHash(q, "national_id") } : { search: q || undefined }),
+        ...(documentQuery.ok ? { nationalIdHash: keyedHash(documentQuery.value, "national_id") } : { search: q || undefined }),
       })
     : null;
 
@@ -119,8 +120,8 @@ export default async function AdminDashboard({ searchParams }: { searchParams: P
             </h2>
             <form className="flex flex-wrap gap-2" role="search">
               <div>
-                <label className="sr-only" htmlFor="q">Buscar por nombre, cédula o código de confirmación</label>
-                <input id="q" name="q" type="search" defaultValue={q} placeholder="Nombre, cédula o AIG-…" className="field-input !min-h-[44px] w-full !py-2 text-sm sm:w-72" />
+                <label className="sr-only" htmlFor="q">Buscar por nombre, cédula, pasaporte o código de confirmación</label>
+                <input id="q" name="q" type="search" defaultValue={q} placeholder="Nombre, cédula, pasaporte o AIG-…" className="field-input !min-h-[44px] w-full !py-2 text-sm sm:w-72" />
               </div>
               <div>
                 <label className="sr-only" htmlFor="estado">Filtrar por estado</label>

@@ -44,6 +44,7 @@ describe("cifrado y hashing", () => {
 
   it("enmascara cédula y cuenta", () => {
     expect(maskCedula("1710034065")).toBe("17******65");
+    expect(maskCedula("BH823158")).toBe("BH****58");
     expect(maskAccount("4821")).toBe("••••••••4821");
   });
 

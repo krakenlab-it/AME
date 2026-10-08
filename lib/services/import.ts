@@ -2,7 +2,7 @@ import Papa from "papaparse";
 import ExcelJS from "exceljs";
 import { encrypt, keyedHash } from "@/lib/encryption/crypto";
 import type { AdminRepo } from "@/lib/database/types";
-import { isValidCedula, normalizeCedula } from "@/lib/validation/cedula";
+import { assessNationalId } from "@/lib/validation/document";
 import { cleanText } from "@/lib/validation/sanitize";
 import { maskCedula } from "@/lib/security/masking";
 import { interpretImportCells, looksLikeEmail, type ImportCell } from "./import-layout";
@@ -12,7 +12,7 @@ export const IMPORT_MAX_ROWS = 20_000;
 export const IMPORT_MAX_BYTES = 5 * 1024 * 1024;
 const NAME_RE = /^[\p{L}][\p{L}\p{M}' .-]*$/u;
 const TEMPLATE_HINT =
-  "No encontramos una columna de cédula con 10 dígitos. Use la plantilla con las columnas Nombres, Apellidos y Cédula, o un archivo equivalente con esos datos.";
+  "No encontramos una cédula ni un pasaporte. La plantilla recomendada usa las columnas Nombres, Apellidos y Cédula. Esos mismos datos también se aceptan como first_names, last_names y national_id.";
 
 export interface RawImportRow {
   row: number; // número de fila en el archivo (1 = encabezado)
@@ -124,6 +124,19 @@ function excelCellString(cell: ExcelJS.Cell): string {
 
 export class ImportFileError extends Error {}
 
+function duplicateDocumentLabel(kind: "cedula" | "foreign"): string {
+  switch (kind) {
+    case "cedula":
+      return "Cédula duplicada";
+    case "foreign":
+      return "Documento duplicado";
+    default: {
+      const exhaustive: never = kind;
+      return exhaustive;
+    }
+  }
+}
+
 /** Valida formato, cédula y duplicados dentro del archivo. Nada se descarta en silencio. */
 export function validateImportRows(rows: RawImportRow[]): ValidatedImport {
   const valid: RawImportRow[] = [];
@@ -133,16 +146,12 @@ export function validateImportRows(rows: RawImportRow[]): ValidatedImport {
   for (const raw of rows) {
     const first = cleanText(raw.first_names);
     const last = cleanText(raw.last_names);
-    // Excel puede eliminar el 0 inicial de las cédulas de Azuay, Bolívar… (01–09)
-    let id = normalizeCedula(cleanText(raw.national_id));
-    if (/^\d{9}$/.test(id)) id = `0${id}`;
-    const masked = /^\d{10}$/.test(id) ? maskCedula(id) : "—";
+    const assessed = assessNationalId(cleanText(raw.national_id));
+    const id = assessed.value;
+    const masked = id.length >= 4 ? maskCedula(id) : "—";
     const reasons: string[] = [];
-    if (!/^\d{10}$/.test(id) || !isValidCedula(id)) {
-      reasons.push("Cédula inválida: debe tener exactamente 10 dígitos y ser una cédula ecuatoriana válida");
-    } else if (seen.has(id)) {
-      reasons.push(`Cédula duplicada en el archivo (fila ${seen.get(id)})`);
-    }
+    if (!assessed.ok) reasons.push(assessed.message);
+    else if (seen.has(id)) reasons.push(`${duplicateDocumentLabel(assessed.kind)} en el archivo (fila ${seen.get(id)})`);
     if (reasons.length) {
       errors.push({ row: raw.row, reason: reasons.join("; "), cedula: masked });
       continue;

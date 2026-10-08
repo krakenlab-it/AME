@@ -35,7 +35,7 @@ export function IdentifyPanel({ token, turnstileSiteKey }: { token: string; turn
       <StepCrown current={1} />
       <div className="space-y-2 text-center text-pretty">
         <h2 className="text-2xl">Confirma que eres tú</h2>
-        <p className="text-ink-muted">Escribe tu número de cédula. Lo usamos para proteger tu información antes de mostrarte tus datos.</p>
+        <p className="text-ink-muted">Escribe tu número de cédula o de pasaporte. Lo usamos para proteger tu información antes de mostrarte tus datos.</p>
       </div>
 
       {state.linkState ? (
@@ -43,17 +43,19 @@ export function IdentifyPanel({ token, turnstileSiteKey }: { token: string; turn
       ) : (
         <form action={formAction} className="space-y-5" noValidate>
           <input type="hidden" name="token" value={token} />
-          <Field id="cedula" label="Número de cédula" required hint="10 números, sin guiones ni espacios." error={error} textAlign="landing">
+          <Field id="cedula" label="Número de cédula o pasaporte" required hint="Cédula: 10 números. Pasaporte: letras y números, como en el documento." error={error} textAlign="landing">
             <input
               ref={inputRef}
               id="cedula"
               name="cedula"
               className="field-input w-full text-center text-xl tracking-[0.12em] placeholder:text-center placeholder:tracking-normal"
-              inputMode="numeric"
+              inputMode="text"
               enterKeyHint="go"
               autoComplete="off"
-              maxLength={12}
-              pattern="[0-9 -]*"
+              autoCapitalize="characters"
+              spellCheck={false}
+              maxLength={16}
+              pattern="[A-Za-z0-9 -]*"
               required
               aria-invalid={Boolean(error)}
               aria-describedby={describedBy("cedula", { hint: "x", error })}

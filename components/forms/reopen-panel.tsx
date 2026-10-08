@@ -34,7 +34,7 @@ export function ReopenPanel({ token, turnstileSiteKey }: { token: string; turnst
       <div className="space-y-2">
         <h2 className="text-2xl">Consulta tu registro</h2>
         <p className="text-ink-muted">
-          Este enlace ya se usó para enviar la información. Confirma tu cédula para ver el estado, los avisos y el resumen. No se vuelve a abrir el formulario.
+          Este enlace ya se usó para enviar la información. Confirma tu cédula o pasaporte para ver el estado, los avisos y el resumen. No se vuelve a abrir el formulario.
         </p>
       </div>
       {state.linkState ? (
@@ -42,17 +42,19 @@ export function ReopenPanel({ token, turnstileSiteKey }: { token: string; turnst
       ) : (
         <form action={formAction} className="space-y-5" noValidate>
           <input type="hidden" name="token" value={token} />
-          <Field id="cedula" label="Número de cédula" required hint="10 números, sin guiones ni espacios." error={error}>
+          <Field id="cedula" label="Número de cédula o pasaporte" required hint="Cédula: 10 números. Pasaporte: letras y números, como en el documento." error={error}>
             <input
               ref={inputRef}
               id="cedula"
               name="cedula"
               className="field-input text-xl tracking-[0.12em]"
-              inputMode="numeric"
+              inputMode="text"
               enterKeyHint="go"
               autoComplete="off"
-              maxLength={12}
-              pattern="[0-9 -]*"
+              autoCapitalize="characters"
+              spellCheck={false}
+              maxLength={16}
+              pattern="[A-Za-z0-9 -]*"
               required
               aria-invalid={Boolean(error)}
               aria-describedby={describedBy("cedula", { hint: "x", error })}

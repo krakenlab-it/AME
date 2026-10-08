@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { isAccessLinkToken } from "@/lib/validation/access-link-token";
 import { isValidCedula, normalizeCedula } from "./cedula";
+import { assessNationalId, identityDocumentMessage } from "./document";
 import { ACCOUNT_TYPES, BANKS, BANKS_REQUIRING_NAME } from "./constants";
 import { normalizePhone } from "./phone";
 
@@ -35,21 +36,34 @@ export const cedulaField = z
   .refine((v) => /^\d{10}$/.test(v), "La cédula debe tener exactamente 10 números.")
   .refine(isValidCedula, "El número de cédula no es válido. Revisa los dígitos.");
 
+/** Cédula ecuatoriana o pasaporte. El valor de salida es el mismo que se cifra en la importación. */
+export const identityDocumentField = z
+  .string()
+  .trim()
+  .superRefine((value, ctx) => {
+    const message = identityDocumentMessage(value);
+    if (message) ctx.addIssue({ code: "custom", message });
+  })
+  .transform((value) => {
+    const assessed = assessNationalId(value);
+    return assessed.ok ? assessed.value : normalizeCedula(value);
+  });
+
 const mustAccept = (message: string) => z.boolean().refine((v) => v === true, { message });
 
 // ── Paso 1: identificación ───────────────────────────────────────────────────
 export const identifySchema = z
   .object({
     token: z.string().refine((t) => isAccessLinkToken(t), "Enlace no válido."),
-    cedula: cedulaField,
+    cedula: identityDocumentField,
     captchaToken: z.string().max(4096).optional(),
   })
   .strict();
 
-/** Retomar desde el inicio público con cédula (solo personas ya importadas). */
+/** Retomar desde el inicio público con cédula o pasaporte (solo personas ya importadas). */
 export const cedulaResumeSchema = z
   .object({
-    cedula: cedulaField,
+    cedula: identityDocumentField,
     captchaToken: z.string().max(4096).optional(),
   })
   .strict();
