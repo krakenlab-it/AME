@@ -3,10 +3,32 @@ import { findPlaceholders, hasPlaceholder } from "./placeholders";
 
 export type DeployStage = "production" | "preview" | "development";
 
+/**
+ * Etapa de despliegue. En Vercel, VERCEL_ENV manda sobre APP_STAGE compartida:
+ * muchos proyectos tienen APP_STAGE=production en todas las variables y eso no
+ * debe tratar los despliegues Preview como producción.
+ */
 export function deployStage(): DeployStage {
-  if (process.env.APP_STAGE === "production" || process.env.VERCEL_ENV === "production") return "production";
-  if (process.env.VERCEL_ENV === "preview" || process.env.APP_STAGE === "preview") return "preview";
-  return "development";
+  switch (process.env.VERCEL_ENV) {
+    case "preview":
+      return "preview";
+    case "development":
+      return "development";
+    case "production":
+      return "production";
+    default:
+      break;
+  }
+  switch (process.env.APP_STAGE) {
+    case "preview":
+      return "preview";
+    case "production":
+      return "production";
+    case "development":
+      return "development";
+    default:
+      return "development";
+  }
 }
 
 export interface LegalReadiness {

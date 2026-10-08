@@ -23,6 +23,8 @@ export default defineConfig({
     timeout: 120_000,
     env: {
       ...process.env,
+      // GitHub sets CI=true. Next must not inherit it: the manual-edit server action then stalls.
+      CI: "",
       DEMO_MODE: "true",
       SEED_PRODUCT_USERS: "true",
       APP_STAGE: "development",

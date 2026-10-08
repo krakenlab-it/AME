@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { isAccessLinkToken } from "@/lib/validation/access-link-token";
 import { isValidCedula, normalizeCedula } from "./cedula";
 import { assessNationalId, identityDocumentMessage } from "./document";
 import { ACCOUNT_TYPES, BANKS, BANKS_REQUIRING_NAME } from "./constants";
@@ -53,7 +54,15 @@ const mustAccept = (message: string) => z.boolean().refine((v) => v === true, { 
 // ── Paso 1: identificación ───────────────────────────────────────────────────
 export const identifySchema = z
   .object({
-    token: z.string().regex(/^[A-Za-z0-9_-]{32,128}$/, "Enlace no válido."),
+    token: z.string().refine((t) => isAccessLinkToken(t), "Enlace no válido."),
+    cedula: identityDocumentField,
+    captchaToken: z.string().max(4096).optional(),
+  })
+  .strict();
+
+/** Retomar desde el inicio público con cédula o pasaporte (solo personas ya importadas). */
+export const cedulaResumeSchema = z
+  .object({
     cedula: identityDocumentField,
     captchaToken: z.string().max(4096).optional(),
   })
@@ -102,7 +111,6 @@ export const bankSchema = z
     accountNumber: z.string().trim().regex(/^\d{5,20}$/, "El número de cuenta debe tener entre 5 y 20 dígitos, sin espacios ni guiones."),
     accountNumberConfirm: z.string().trim(),
     accountHolderName: nameField,
-    accountHolderCedula: cedulaField,
     ownershipDeclared: mustAccept("Debes confirmar esta declaración para continuar."),
   })
   .strict()

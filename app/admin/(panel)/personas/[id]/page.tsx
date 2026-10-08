@@ -9,6 +9,7 @@ import { getRepo } from "@/lib/database";
 import { decrypt } from "@/lib/encryption/crypto";
 import { maskAccount, maskCedula } from "@/lib/security/masking";
 import { can } from "@/lib/security/rbac";
+import { manualEditVerificationQr } from "@/lib/server/manual-edit-qr";
 import { requireAdmin } from "@/lib/server/admin-guard";
 import { formatDateTime } from "@/lib/utils";
 
@@ -22,6 +23,7 @@ export default async function PersonPage({ params }: { params: Promise<{ id: str
   await repo.audit({ person_id: id, actor_type: "admin", actor_id: admin.id, action: "ADMIN_VIEWED" });
 
   const { person, contact, bank, consents, nameChanges, tokens, audit } = detail;
+  const verificationQr = can(admin.role, "people:edit") ? await manualEditVerificationQr() : null;
   let cedula = "—";
   try { cedula = person.national_id_encrypted ? maskCedula(decrypt(person.national_id_encrypted)) : "—"; } catch { /* enmascarado */ }
 
@@ -60,6 +62,7 @@ export default async function PersonPage({ params }: { params: Promise<{ id: str
             country: contact.country ?? "Ecuador",
             postalCode: contact.postal_code ?? "",
           } : null}
+          verificationQr={verificationQr}
         />
       )}
 

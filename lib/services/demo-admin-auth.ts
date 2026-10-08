@@ -6,6 +6,13 @@ import { ADMIN_ABSOLUTE_HOURS, ADMIN_IDLE_MINUTES } from "@/lib/security/cookies
 import { hashPassword, hashPasswordSync, verifyPassword } from "@/lib/security/password";
 import type { AdminRole } from "@/lib/security/rbac";
 import { generateTotpSecret, verifyTotp } from "@/lib/security/totp";
+import { isDemoAdminMfaBypass } from "@/lib/demo/admin-sandbox";
+import {
+  issueStatelessDemoAdminSession,
+  parseStatelessDemoAdminSession,
+  statelessDemoAdminSessionEnabled,
+} from "@/lib/demo/stateless-admin-session";
+import { isDemoMode } from "@/lib/demo-mode";
 import { settings } from "./settings";
 
 const GENERIC_LOGIN_ERROR = "Correo o contraseña incorrectos.";
@@ -148,13 +155,14 @@ export async function loginWithPassword(repo: MemoryRepo, email: string, passwor
 }
 
 /** Atajo de pruebas: abre una sesión con MFA ya resuelto. Solo se invoca bajo isDemoMode() sobre la base en memoria. */
-export function startDemoSession(repo: MemoryRepo, adminId: string): string {
+export function startDemoSession(repo: MemoryRepo, admin: { id: string; email: string }): string {
+  if (statelessDemoAdminSessionEnabled()) return issueStatelessDemoAdminSession(admin.email, true);
   const sessionToken = randomToken(32);
   const now = new Date().toISOString();
   const session: DemoSession = {
     id: randomUUID(),
     sessionHash: sha256(sessionToken),
-    adminId,
+    adminId: admin.id,
     mfaVerified: true,
     lastSeenAt: now,
     expiresAt: new Date(Date.now() + ADMIN_ABSOLUTE_HOURS * 3_600_000).toISOString(),
@@ -175,7 +183,26 @@ export async function getDemoAdminContext(
   sessionToken: string | undefined,
   opts: { requireMfa?: boolean } = {},
 ): Promise<DemoAdminContext | null> {
-  if (!sessionToken || !/^[A-Za-z0-9_-]{32,128}$/.test(sessionToken)) return null;
+  if (!sessionToken) return null;
+
+  const stateless = parseStatelessDemoAdminSession(sessionToken);
+  if (stateless) {
+    if ((opts.requireMfa ?? true) && !stateless.mfaVerified) return null;
+    const admin = await repo.findAdminByEmail(stateless.email);
+    if (!admin || !admin.active) return null;
+    const session: DemoSession = {
+      id: "stateless",
+      sessionHash: "",
+      adminId: admin.id,
+      mfaVerified: stateless.mfaVerified,
+      lastSeenAt: new Date().toISOString(),
+      expiresAt: new Date(stateless.exp).toISOString(),
+      revokedAt: null,
+    };
+    return { admin, session, totpEncrypted: state(repo).credentials.get(admin.id)?.totpEncrypted ?? null };
+  }
+
+  if (!/^[A-Za-z0-9_-]{32,128}$/.test(sessionToken)) return null;
   const bag = state(repo);
   const session = [...bag.sessions.values()].find((item) => item.sessionHash === sha256(sessionToken));
   if (!session || session.revokedAt) return null;
@@ -213,23 +240,31 @@ export async function verifyMfa(
     await repo.logSecurityEvent({ event_type: "ADMIN_MFA_RATE_LIMITED", ip_hash: ipHash });
     return { ok: false, error: "Demasiados intentos. Espera 15 minutos." };
   }
-  if (!ctx.totpEncrypted) return { ok: false, error: "Primero configura tu aplicación autenticadora." };
-  const secret = decrypt(ctx.totpEncrypted);
-  if (!verifyTotp(secret, code)) {
-    await repo.audit({ actor_type: "admin", actor_id: ctx.admin.id, action: "ADMIN_LOGIN_FAILED", metadata: { step: "mfa" } });
-    return { ok: false, error: "El código no es correcto o ya venció." };
+  const bypass = isDemoMode() && isDemoAdminMfaBypass(code);
+  if (!bypass) {
+    if (!ctx.totpEncrypted) return { ok: false, error: "Primero configura tu aplicación autenticadora." };
+    const secret = decrypt(ctx.totpEncrypted);
+    if (!verifyTotp(secret, code)) {
+      await repo.audit({ actor_type: "admin", actor_id: ctx.admin.id, action: "ADMIN_LOGIN_FAILED", metadata: { step: "mfa" } });
+      return { ok: false, error: "El código no es correcto o ya venció." };
+    }
   }
   if (!ctx.admin.mfa_enabled) {
     await repo.updateAdmin(ctx.admin.id, { mfa_enabled: true });
     await repo.audit({ actor_type: "admin", actor_id: ctx.admin.id, action: "MFA_ENROLLED" });
   }
-  const newToken = randomToken(32);
-  ctx.session.sessionHash = sha256(newToken);
-  ctx.session.mfaVerified = true;
-  ctx.session.lastSeenAt = new Date().toISOString();
   await repo.updateAdmin(ctx.admin.id, { last_login_at: new Date().toISOString() });
   await repo.audit({ actor_type: "admin", actor_id: ctx.admin.id, action: "ADMIN_LOGIN" });
-  return { ok: true, sessionToken: newToken };
+  const sessionToken = statelessDemoAdminSessionEnabled()
+    ? issueStatelessDemoAdminSession(ctx.admin.email, true)
+    : (() => {
+        const newToken = randomToken(32);
+        ctx.session.sessionHash = sha256(newToken);
+        ctx.session.mfaVerified = true;
+        ctx.session.lastSeenAt = new Date().toISOString();
+        return newToken;
+      })();
+  return { ok: true, sessionToken };
 }
 
 export async function logoutDemo(repo: MemoryRepo, sessionToken: string | undefined): Promise<void> {

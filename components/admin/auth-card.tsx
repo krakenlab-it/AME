@@ -1,13 +1,20 @@
-import { History, KeyRound, ShieldCheck } from "lucide-react";
+import { History, KeyRound, ShieldCheck, Users } from "lucide-react";
 import Link from "next/link";
 import type { ReactNode } from "react";
+import { logoutAction } from "@/app/admin/auth-actions";
 import { MaristaLogo } from "@/components/brand/logos";
-import { Reveal } from "@/components/motion/primitives";
+import { Button } from "@/components/ui/button";
+
+/**
+ * Regla de UX del portal: pantallas de autenticación y pasos intermedios (MFA, contraseña)
+ * siempre ofrecen una salida visible; nunca dejar al usuario atrapado sin volver al ingreso.
+ */
 
 const ASSURANCES = [
-  { Icon: ShieldCheck, title: "Solo por invitación", text: "Nadie puede crear su propio acceso." },
-  { Icon: KeyRound, title: "Verificación en dos pasos", text: "Cada ingreso se confirma con tu teléfono." },
-  { Icon: History, title: "Todo queda registrado", text: "Cada consulta y descarga se guarda en la auditoría." },
+  { Icon: ShieldCheck, title: "Solo por invitación", text: "Nadie puede crear su propio acceso administrativo." },
+  { Icon: Users, title: "Gestión de personas y enlaces", text: "Usted importa registros, genera enlaces seguros y hace seguimiento del avance." },
+  { Icon: KeyRound, title: "Verificación en dos pasos", text: "Cada ingreso se confirma con su aplicación autenticadora." },
+  { Icon: History, title: "Auditoría completa", text: "Cada consulta, cambio manual y exportación queda registrada con su usuario." },
 ];
 
 export function AdminAuthCard({ title, subtitle, children }: { title: string; subtitle?: string; children: ReactNode }) {
@@ -18,9 +25,9 @@ export function AdminAuthCard({ title, subtitle, children }: { title: string; su
         <div className="max-w-md space-y-8">
           <div className="space-y-3">
             <p className="text-sm font-semibold uppercase tracking-wide text-marian">Versión administrador</p>
-            <h2 className="text-4xl leading-tight">Estás en la versión administrador</h2>
+            <h2 className="text-4xl leading-tight">Usted está en la versión administrador</h2>
             <p className="text-lg text-ink-muted">
-              Este acceso es solo para el personal invitado. No es la página de la persona asegurada. Desde aquí sigues el avance de cada persona y gestionas su información con control y trazabilidad.
+              Este acceso es exclusivo para personal invitado. No es la página de la persona asegurada. Desde aquí usted administra personas importadas, enlaces individuales, envíos por correo, exportaciones y el registro de auditoría.
             </p>
           </div>
           <ul className="space-y-5">
@@ -41,7 +48,7 @@ export function AdminAuthCard({ title, subtitle, children }: { title: string; su
       </section>
 
       <div className="flex items-center justify-center px-5 py-10">
-        <Reveal className="w-full max-w-md">
+        <div className="w-full max-w-md">
           <div className="sheet space-y-6 p-7 sm:p-8">
             <div className="flex items-center gap-3">
               <MaristaLogo className="w-12 lg:hidden" />
@@ -50,13 +57,13 @@ export function AdminAuthCard({ title, subtitle, children }: { title: string; su
                 <h1 className="text-2xl">{title}</h1>
                 {subtitle && <p className="text-[15px] text-ink-muted">{subtitle}</p>}
                 <p className="mt-2 text-sm text-ink-muted lg:hidden">
-                  Acceso solo por invitación, con verificación en dos pasos y auditoría de cada consulta.
+                  Acceso solo por invitación, con verificación en dos pasos y auditoría de cada acción.
                 </p>
               </div>
             </div>
             {children}
           </div>
-        </Reveal>
+        </div>
       </div>
     </main>
   );
@@ -67,5 +74,32 @@ export function AdminAuthLink({ href, children }: { href: string; children: Reac
     <Link href={href} className="inline-flex min-h-[44px] items-center text-[15px] font-semibold text-marian underline underline-offset-2">
       {children}
     </Link>
+  );
+}
+
+/**
+ * Vuelve a /admin/login. Con `clearSession`, cierra la sesión a medias (p. ej. tras login sin MFA)
+ * para que el ingreso muestre de nuevo «Probar el portal» y el acceso demo.
+ */
+export function AdminAuthBackToLogin({
+  clearSession = false,
+  children = "Volver al ingreso",
+}: {
+  clearSession?: boolean;
+  children?: ReactNode;
+}) {
+  if (clearSession) {
+    return (
+      <form action={logoutAction} className="mb-2">
+        <Button type="submit" variant="secondary" block className="min-h-[48px] text-base font-semibold">
+          ← {children}
+        </Button>
+      </form>
+    );
+  }
+  return (
+    <p className="text-sm">
+      <AdminAuthLink href="/admin/login">{children}</AdminAuthLink>
+    </p>
   );
 }

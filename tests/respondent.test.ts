@@ -179,7 +179,7 @@ describe("envío del formulario", () => {
   it("marca para revisión si la cuenta pertenece a un tercero", async () => {
     const session = await login();
     const base = validSubmission();
-    await submitResponse(repo, session, { ...base, bank: { ...base.bank, accountHolderCedula: MARIA, accountHolderName: "María José Andrade" } }, submitDeps);
+    await submitResponse(repo, session, { ...base, bank: { ...base.bank, accountHolderName: "María José Andrade" } }, submitDeps);
     expect(repo.people.get(juanId)!.review_reasons).toContain("THIRD_PARTY_ACCOUNT");
   });
 

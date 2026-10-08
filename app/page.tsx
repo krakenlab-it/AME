@@ -1,8 +1,15 @@
 import { redirect } from "next/navigation";
-import { Mail } from "lucide-react";
-import { PortalHero, ProtectedNote } from "@/components/portal/hero";
+import { CedulaCta } from "@/components/forms/cedula-cta";
+import { PortalHero } from "@/components/portal/hero";
+import {
+  LandingIntro,
+  LandingProtectedPanel,
+  LandingRightEntry,
+  LandingStaffFooter,
+} from "@/components/portal/landing-entry-card";
 import { PortalShell, PortalUnavailable } from "@/components/portal/shell";
 import { DemoAccess } from "@/components/demo/demo-access";
+import { ButtonLink } from "@/components/ui/button";
 import { Notice } from "@/components/ui/notice";
 import { getRepo } from "@/lib/database";
 import { getActivePrivacy } from "@/lib/privacy/active";
@@ -29,29 +36,36 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
     <PortalShell readiness={privacy.readiness} organizationName={privacy.config.organizationName}>
       <PortalHero
         action={
-          <div className="sheet space-y-5 p-6 md:p-8">
+          <div className="sheet p-6 md:p-8">
             {fin ? (
-              <Notice tone="success" title={fin === "cuenta" ? "Sesión cerrada" : "Proceso finalizado"}>
-                Tu sesión se cerró de forma segura. Ya puedes cerrar esta ventana.
-              </Notice>
+              <LandingRightEntry>
+                <Notice tone="success" title={fin === "cuenta" ? "Sesión cerrada" : "Proceso finalizado"}>
+                  Su sesión se cerró de forma segura. Ya puede cerrar esta ventana.
+                </Notice>
+                <LandingStaffFooter>
+                  <ButtonLink href="/admin/login" variant="ghost" size="sm">
+                    Iniciar sesión con correo
+                  </ButtonLink>
+                </LandingStaffFooter>
+              </LandingRightEntry>
             ) : (
-              <>
-                <div className="flex items-start gap-3">
-                  <Mail className="mt-1 h-6 w-6 shrink-0 text-marian" aria-hidden />
-                  <div>
-                    <h2 className="text-xl">Para comenzar, abre tu enlace personal</h2>
-                    <p className="mt-2 text-ink-muted">
-                      Cada persona recibe un enlace individual por correo o mensaje. Ábrelo desde ese mensaje para iniciar el proceso.
-                    </p>
-                  </div>
-                </div>
-                <p className="text-[15px] text-ink-muted">
-                  Por seguridad, este portal no permite buscar registros por nombre o cédula.
-                </p>
-              </>
+              <LandingRightEntry>
+                <LandingIntro>
+                  Usted ha ingresado desde un enlace seguro enviado para la protección de sus datos personales. Confirme su cédula a continuación para continuar con la actualización.
+                </LandingIntro>
+                <LandingProtectedPanel>
+                  <CedulaCta turnstileSiteKey={process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY ?? null} />
+                </LandingProtectedPanel>
+                <LandingStaffFooter>
+                  <ButtonLink href="/admin/login" variant="ghost" size="sm">
+                    Iniciar sesión con correo
+                  </ButtonLink>
+                </LandingStaffFooter>
+              </LandingRightEntry>
             )}
-            <ProtectedNote />
-            <DemoAccess />
+            <div className="landing-right-entry mt-5 w-full [&_aside]:text-center">
+              <DemoAccess />
+            </div>
           </div>
         }
       />

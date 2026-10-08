@@ -10,7 +10,7 @@ export function validSubmission(overrides: Partial<SubmissionInput> = {}): Submi
     },
     bank: {
       bankName: "Banco Pichincha", bankOtherName: "", accountType: "Ahorros", accountNumber: "2200004821",
-      accountNumberConfirm: "2200004821", accountHolderName: "Juan Carlos Pérez López", accountHolderCedula: "1710034065",
+      accountNumberConfirm: "2200004821", accountHolderName: "Juan Carlos Pérez López",
       ownershipDeclared: true,
     },
     consents: { privacyAccepted: true, sharingAccepted: true, accuracyDeclared: true },

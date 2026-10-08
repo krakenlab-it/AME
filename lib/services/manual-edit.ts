@@ -89,7 +89,7 @@ export async function applyManualPersonEdit(
     actor_id: input.adminId,
     action: "MANUAL_EDIT",
     changed_fields: result.changed,
-    metadata: { mfa: "totp" },
+    metadata: { mfa: "totp-qr" },
   });
   return { ok: true, changed: result.changed };
 }

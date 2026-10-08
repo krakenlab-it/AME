@@ -18,7 +18,7 @@ const LEGAL_ENV = {
 };
 
 afterEach(() => {
-  for (const k of [...Object.keys(LEGAL_ENV), "LEGAL_REVIEW_APPROVED", "APP_STAGE"]) delete process.env[k];
+  for (const k of [...Object.keys(LEGAL_ENV), "LEGAL_REVIEW_APPROVED", "APP_STAGE", "VERCEL_ENV"]) delete process.env[k];
 });
 
 describe("aviso de privacidad y placeholders", () => {
@@ -57,6 +57,30 @@ describe("aviso de privacidad y placeholders", () => {
   it("en preview no bloquea (muestra banner de prueba)", () => {
     const config = getPrivacyConfig();
     expect(checkLegalReadiness(config, "").blockPortal).toBe(false);
+  });
+
+  it("usa los datos de contacto del sandbox cuando faltan variables fuera de producción", () => {
+    process.env.APP_STAGE = "preview";
+    const config = getPrivacyConfig();
+    expect(config.privacyEmail).toBe("amecooradm@fmsnor.org");
+    expect(config.privacyPhone).toBe("255-0660");
+    expect(config.responsibleRuc).toBe("1791758528001");
+    expect(config.recipientLegalName).toBe("AIG y Unibrokers");
+  });
+
+  it("en preview sustituye valores antiguos del entorno de demostración", () => {
+    process.env.VERCEL_ENV = "preview";
+    process.env.PRIVACY_EMAIL = "privacidad@ame.local";
+    process.env.PRIVACY_PHONE = "+593 2 000 0000";
+    process.env.PRIVACY_RESPONSIBLE_RUC = "1790000000001";
+    process.env.PRIVACY_RECIPIENT_LEGAL_NAME = "AIG Metropolitana";
+    process.env.SUPPORT_CONTACT = "soporte@ame.local";
+    const config = getPrivacyConfig();
+    expect(config.privacyEmail).toBe("amecooradm@fmsnor.org");
+    expect(config.supportContact).toBe("amecooradm@fmsnor.org");
+    expect(config.privacyPhone).toBe("255-0660");
+    expect(config.responsibleRuc).toBe("1791758528001");
+    expect(config.recipientLegalName).toBe("AIG y Unibrokers");
   });
 
   it("el correo de confirmación no contiene datos sensibles", () => {

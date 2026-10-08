@@ -45,7 +45,7 @@ const STEP_FIELDS: Record<number, Path[]> = {
   ],
   4: [
     "bank.bankName", "bank.bankOtherName", "bank.accountType", "bank.accountNumber", "bank.accountNumberConfirm",
-    "bank.accountHolderName", "bank.accountHolderCedula", "bank.ownershipDeclared",
+    "bank.accountHolderName", "bank.ownershipDeclared",
   ],
   5: ["consents.privacyAccepted", "consents.sharingAccepted", "consents.accuracyDeclared"],
 };
@@ -70,7 +70,6 @@ const FIELD_LABELS: Partial<Record<Path, string>> = {
   "bank.accountNumber": "Número de cuenta",
   "bank.accountNumberConfirm": "Confirmar número de cuenta",
   "bank.accountHolderName": "Nombre del titular",
-  "bank.accountHolderCedula": "Cédula del titular",
   "bank.ownershipDeclared": "Declaración sobre la cuenta",
   "consents.privacyAccepted": "Aviso de privacidad",
   "consents.sharingAccepted": "Comunicación de datos a AIG",
@@ -115,7 +114,7 @@ export function UpdateWizard({ registered, privacy, supportContact }: WizardProp
       bank: {
         bankName: "" as BankOption, bankOtherName: "", accountType: "" as (typeof ACCOUNT_TYPES)[number],
         accountNumber: "", accountNumberConfirm: "", accountHolderName: `${registered.firstNames} ${registered.lastNames}`,
-        accountHolderCedula: "", ownershipDeclared: false,
+        ownershipDeclared: false,
       },
       consents: { privacyAccepted: false, sharingAccepted: false, accuracyDeclared: false },
       noticeVersion: privacy.version,
@@ -349,29 +348,29 @@ export function UpdateWizard({ registered, privacy, supportContact }: WizardProp
         {/* ── Paso 4: Información bancaria ─────────────────────── */}
         {step === 4 && (
           <>
-            <header className="space-y-2">
+            <header className="wizard-bank-step space-y-2 text-center">
               <h1 id="step-title" ref={headingRef} tabIndex={-1} className="text-[28px]">Información para reembolsos</h1>
-              <p className="text-ink-muted">Usaremos esta información para pagar los reembolsos de tus reclamos, cuando corresponda.</p>
+              <p className="text-ink-muted">Usaremos esta información para pagar los reembolsos de sus reclamos, cuando corresponda.</p>
             </header>
-            <div className="flex gap-2 rounded-xl bg-marian-soft/60 px-4 py-3 text-sm">
-              <Lock className="mt-0.5 h-4 w-4 shrink-0 text-marian" aria-hidden />
-              El número de cuenta se guarda cifrado. Después solo se muestran los últimos 4 dígitos.
+            <div className="wizard-bank-step space-y-2 rounded-xl bg-marian-soft/60 px-4 py-3 text-center text-sm">
+              <Lock className="mx-auto h-4 w-4 text-marian" aria-hidden />
+              <p>El número de cuenta se guarda cifrado. Después solo se muestran los últimos 4 dígitos.</p>
             </div>
             <ErrorSummary items={summaryItems} onSelect={focusField} />
             <RequiredLegend />
-            <div className="grid gap-5">
-              <Field id="bank.bankName" label="Banco" required error={err("bank.bankName")}>
+            <div className="wizard-bank-step grid gap-5">
+              <Field id="bank.bankName" label="Banco" required error={err("bank.bankName")} textAlign="landing">
                 <select {...input("bank.bankName")} {...bindSelect("bank.bankName")}>
                   <option value="">Selecciona tu banco</option>
                   {BANKS.map((b) => <option key={b} value={b}>{b}</option>)}
                 </select>
               </Field>
               {BANKS_REQUIRING_NAME.includes(bankName) && (
-                <Field id="bank.bankOtherName" label={bankName === "Cooperativa" ? "Nombre de la cooperativa" : "Nombre de la institución financiera"} required error={err("bank.bankOtherName")}>
+                <Field id="bank.bankOtherName" label={bankName === "Cooperativa" ? "Nombre de la cooperativa" : "Nombre de la institución financiera"} required error={err("bank.bankOtherName")} textAlign="landing">
                   <input {...input("bank.bankOtherName")} autoComplete="off" {...register("bank.bankOtherName")} />
                 </Field>
               )}
-              <fieldset className="space-y-2">
+              <fieldset className="space-y-2 text-center">
                 <legend className="text-[15px] font-semibold">Tipo de cuenta <span className="text-alert" aria-hidden>*</span><span className="sr-only"> (obligatorio)</span></legend>
                 <div className="grid grid-cols-2 gap-3">
                   {ACCOUNT_TYPES.map((t) => (
@@ -383,19 +382,16 @@ export function UpdateWizard({ registered, privacy, supportContact }: WizardProp
                 </div>
                 {err("bank.accountType") && <p role="alert" id="bank.accountType-error" className="text-sm font-medium text-alert">{err("bank.accountType")}</p>}
               </fieldset>
-              <Field id="bank.accountNumber" label="Número de cuenta" required hint="Solo números, sin espacios ni guiones." error={err("bank.accountNumber")}>
+              <Field id="bank.accountNumber" label="Número de cuenta" required hint="Solo números, sin espacios ni guiones." error={err("bank.accountNumber")} textAlign="landing">
                 <input {...input("bank.accountNumber", "hint")} inputMode="numeric" autoComplete="off" spellCheck={false} {...register("bank.accountNumber")} />
               </Field>
-              <Field id="bank.accountNumberConfirm" label="Confirmar número de cuenta" required error={err("bank.accountNumberConfirm")}>
+              <Field id="bank.accountNumberConfirm" label="Confirmar número de cuenta" required error={err("bank.accountNumberConfirm")} textAlign="landing">
                 <input {...input("bank.accountNumberConfirm")} inputMode="numeric" autoComplete="off" spellCheck={false} {...register("bank.accountNumberConfirm")} />
               </Field>
-              <Field id="bank.accountHolderName" label="Nombre del titular de la cuenta" required error={err("bank.accountHolderName")}>
+              <Field id="bank.accountHolderName" label="Nombre del titular de la cuenta" required error={err("bank.accountHolderName")} textAlign="landing">
                 <input {...input("bank.accountHolderName")} autoComplete="off" {...register("bank.accountHolderName")} />
               </Field>
-              <Field id="bank.accountHolderCedula" label="Cédula del titular" hint="Si la cuenta es tuya, es tu misma cédula." required error={err("bank.accountHolderCedula")}>
-                <input {...input("bank.accountHolderCedula", "hint")} inputMode="numeric" autoComplete="off" maxLength={12} {...register("bank.accountHolderCedula")} />
-              </Field>
-              <Checkbox id="bank.ownershipDeclared" error={err("bank.ownershipDeclared")} label={privacy.consentTexts.BANK_ACCOUNT_AUTHORIZATION} registration={register("bank.ownershipDeclared")} />
+              <Checkbox id="bank.ownershipDeclared" centerLabel error={err("bank.ownershipDeclared")} label={privacy.consentTexts.BANK_ACCOUNT_AUTHORIZATION} registration={register("bank.ownershipDeclared")} />
             </div>
             <StepNav onBack={() => setStep(3)} onNext={next} />
           </>
@@ -531,10 +527,10 @@ function ReviewCard({ icon: Icon, title, onEdit, children }: { icon: typeof Mail
   );
 }
 
-function Checkbox({ id, label, error, registration }: { id: string; label: string; error?: string; registration: UseFormRegisterReturn }) {
+function Checkbox({ id, label, error, registration, centerLabel }: { id: string; label: string; error?: string; registration: UseFormRegisterReturn; centerLabel?: boolean }) {
   return (
     <div>
-      <label htmlFor={id} className={cn("choice items-start !py-4 text-[15.5px] leading-snug", error && "!border-alert border-2")}>
+      <label htmlFor={id} className={cn("choice !py-4 text-[15.5px] leading-snug", centerLabel ? "flex-col items-center text-center" : "items-start", error && "!border-alert border-2")}>
         <input id={id} type="checkbox" className="mt-0.5 h-6 w-6 shrink-0 accent-marian" aria-invalid={Boolean(error)} aria-describedby={error ? `${id}-error` : undefined} {...registration} />
         <span>{label}</span>
       </label>

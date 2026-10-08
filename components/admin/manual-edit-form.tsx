@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState } from "react";
+import { QrCode } from "lucide-react";
 import { manualEditAction, type ManualEditState } from "@/app/admin/panel-actions";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
@@ -24,12 +25,14 @@ export function ManualEditForm({
   lastNames,
   outreachEmail,
   contact,
+  verificationQr,
 }: {
   personId: string;
   firstNames: string;
   lastNames: string;
   outreachEmail: string;
   contact: ManualContactValues | null;
+  verificationQr?: string | null;
 }) {
   const [state, action, pending] = useActionState<ManualEditState, FormData>(manualEditAction, {});
 
@@ -38,7 +41,7 @@ export function ManualEditForm({
       <div className="space-y-1">
         <h2 className="text-lg">Cambio manual</h2>
         <p className="text-[15px] text-ink-muted">
-          Para guardar, confirma el código de 6 dígitos de tu aplicación autenticadora (el mismo QR del ingreso). Así la auditoría registra quién cambió la ficha.
+          Antes de guardar, confirme su identidad con la misma aplicación autenticadora (código QR) que usa para ingresar al panel. La auditoría registrará su usuario y los campos modificados.
         </p>
       </div>
       <input type="hidden" name="personId" value={personId} />
@@ -51,7 +54,7 @@ export function ManualEditForm({
           <input id="edit-last" name="lastNames" defaultValue={lastNames} required minLength={2} maxLength={80} className="field-input" />
         </Field>
       </div>
-      <Field id="edit-outreach" label="Correo para el enlace" hint="Se usa en el paso 3 para enviarle el enlace personal. Si lo dejas vacío, no se le escribe.">
+      <Field id="edit-outreach" label="Correo para el enlace" hint="Opcional. Se guarda en la ficha para referencia al enviar el enlace por otro medio.">
         <input id="edit-outreach" name="outreachEmail" type="email" defaultValue={outreachEmail} maxLength={254} className="field-input" aria-describedby="edit-outreach-hint" />
       </Field>
       {contact && (
@@ -85,12 +88,31 @@ export function ManualEditForm({
           </Field>
         </div>
       )}
-      <Field id="edit-totp" label="Código de verificación" required hint="Abre la misma aplicación con la que entraste al panel.">
-        <input id="edit-totp" name="totp" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9 ]{6,8}" required className="field-input max-w-[12rem] tracking-[0.3em]" aria-describedby="edit-totp-hint" />
-      </Field>
+
+      <section aria-labelledby="manual-qr-title" className="rounded-xl border border-marian-line bg-marian-soft/40 p-4">
+        <div className="flex items-start gap-3">
+          <QrCode className="mt-0.5 h-6 w-6 shrink-0 text-marian" aria-hidden />
+          <div className="min-w-0 flex-1 space-y-3">
+            <h3 id="manual-qr-title" className="font-semibold">Verificación con código QR</h3>
+            <p className="text-sm text-ink-muted">
+              Abra su aplicación autenticadora, confirme que ve el acceso del portal y escriba el código de 6 dígitos. Sin este paso no se guarda el cambio.
+            </p>
+            {verificationQr ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={verificationQr} alt="Código QR de su aplicación autenticadora para confirmar el cambio manual" width={200} height={200} className="rounded-lg border border-marian-line bg-white" />
+            ) : (
+              <p className="text-sm text-ink-muted">Use la misma aplicación con la que ingresó al panel (Google Authenticator, Microsoft Authenticator, 1Password, etc.).</p>
+            )}
+            <Field id="edit-totp" label="Código de verificación" required hint="Código de 6 dígitos tras revisar su aplicación.">
+              <input id="edit-totp" name="totp" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9 ]{6,8}" required className="field-input max-w-[12rem] tracking-[0.3em]" aria-describedby="edit-totp-hint" />
+            </Field>
+          </div>
+        </div>
+      </section>
+
       <Button type="submit" loading={pending}>{pending ? "Verificando…" : "Guardar cambio manual"}</Button>
       {state.error && <Notice tone="error" live>{state.error}</Notice>}
-      {state.ok && <Notice tone="success" live>Cambio guardado. Quedó en la auditoría con tu usuario.</Notice>}
+      {state.ok && <Notice tone="success" live>Cambio guardado. Quedó en la auditoría con su usuario.</Notice>}
     </form>
   );
 }
