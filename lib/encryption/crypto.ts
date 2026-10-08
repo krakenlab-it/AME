@@ -3,7 +3,8 @@ import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes, 
 /**
  * Cifrado a nivel de aplicación (AES-256-GCM) para campos de riesgo elevado:
  * cédula, número de cuenta y cédula del titular.
- * El secreto TOTP del panel ya no se guarda aquí: vive en Supabase Auth.
+ * El secreto TOTP del panel vive en Supabase Auth.
+ * El secreto TOTP del titular (enlace general) sí se guarda con encrypt().
  *
  * Formato almacenado:  v1.<iv>.<authTag>.<ciphertext>  (base64url)
  * Para rotar la llave: mover la actual a ENCRYPTION_KEY_PREVIOUS y poner una nueva en ENCRYPTION_KEY.
@@ -58,7 +59,7 @@ export function decrypt(payload: string): string {
 }
 
 /** Hash con clave (HMAC-SHA256 + pepper) para búsquedas exactas sin guardar el valor en claro. */
-export function keyedHash(value: string, purpose: "national_id" | "ip" | "bucket"): string {
+export function keyedHash(value: string, purpose: "national_id" | "ip" | "bucket" | "fingerprint_code"): string {
   const pepper = process.env.HASH_PEPPER;
   if (!pepper || pepper.length < 32) throw new Error("HASH_PEPPER no está configurado (mínimo 32 caracteres)");
   return createHmac("sha256", pepper).update(`${purpose}:${value}`).digest("hex");

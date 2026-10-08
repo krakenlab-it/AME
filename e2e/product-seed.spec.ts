@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
-import { PRODUCT_SEED_DEMO_ADMIN, PRODUCT_SEED_TOKENS } from "../lib/seed/ci-seed";
+import { signInTestAdmin } from "./helpers/admin-login";
+import { PRODUCT_SEED_TOKENS } from "../lib/seed/ci-seed";
 import { PRODUCT_PERSONAS } from "../lib/seed/product-personas";
 
 const started = PRODUCT_PERSONAS.find((persona) => persona.key === "started");
@@ -47,23 +48,9 @@ test("un enlace ya usado abre mi cuenta en lectura, no el formulario", async ({ 
   await expect(page.getByText("••••••••4819")).toBeVisible();
 });
 
-test("en modo demostración se entra a mi cuenta sin Supabase Auth", async ({ page }) => {
-  await page.goto("/");
-  await page.getByRole("button", { name: /Entrar a mi cuenta/ }).click();
-  await expect(page).toHaveURL(/\/mi-cuenta$/);
-  await expect(page.getByRole("heading", { name: /Hola,/ })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Mi registro" })).toBeVisible();
-  await expect(page.getByText(/AIG-/)).toBeVisible();
-});
-
 test("el panel muestra las tres fichas del seed", async ({ page }) => {
   expect(review).toBeTruthy();
-  await page.goto("/admin/login");
-  await expect(page.getByRole("heading", { name: "Probar el portal" })).toBeVisible();
-  await page.locator("#email").fill(PRODUCT_SEED_DEMO_ADMIN.email);
-  await page.locator("#password").fill(PRODUCT_SEED_DEMO_ADMIN.password);
-  await page.getByRole("button", { name: "Ingresar" }).click();
-  await expect(page.getByRole("heading", { name: "Resumen" })).toBeVisible();
+  await signInTestAdmin(page);
   await expect(page.getByRole("cell", { name: started!.currentFirstNames, exact: true })).toBeVisible();
   await expect(page.getByRole("cell", { name: completed!.currentFirstNames, exact: true })).toBeVisible();
   await expect(page.getByRole("cell", { name: review!.currentFirstNames, exact: true })).toBeVisible();

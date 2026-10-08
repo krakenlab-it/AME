@@ -25,6 +25,12 @@ export const AUDIT_LABELS: Record<AuditAction, string> = {
   UNIBROKERS_EXPORT_CREATED: "Generó la carga de contacto para Unibrokers",
   NOTICE_PUBLISHED: "Publicó una versión del aviso de privacidad",
   RETENTION_APPLIED: "Se anonimizaron registros por vencimiento",
+  GENERAL_IDENTIFY_FAILED: "Falló el ingreso con cédula y código dactilar",
+  FINGERPRINT_CLAIMED: "Registró su código dactilar por primera vez",
+  FINGERPRINT_IMPORTED: "Cargó códigos dactilares desde un archivo",
+  FINGERPRINT_RESET: "Borró el código dactilar de una persona",
+  TOTP_ENROLLED: "Configuró la verificación del teléfono",
+  TOTP_RESET: "Borró la verificación del teléfono de una persona",
 };
 
 export const AUDIT_ACTIONS = Object.keys(AUDIT_LABELS) as AuditAction[];

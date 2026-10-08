@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { signInTestAdmin } from "./helpers/admin-login";
 
 test("el panel administrador explica el acceso, la carga y la ficha con código", async ({ page }) => {
   await page.goto("/admin/login");
@@ -6,9 +7,10 @@ test("el panel administrador explica el acceso, la carga y la ficha con código"
   await expect(page.getByText("Solo por invitación", { exact: true })).toBeVisible();
   await expect(page.getByText("Verificación en dos pasos", { exact: true })).toBeVisible();
   await expect(page.getByText("Auditoría completa", { exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Probar el portal" })).toHaveCount(0);
+  await expect(page.getByText("Entrar como administrador")).toHaveCount(0);
 
-  await page.getByRole("link", { name: /Entrar como administrador/ }).first().click();
-  await expect(page.getByRole("heading", { name: "Resumen" })).toBeVisible();
+  await signInTestAdmin(page);
 
   await page.getByRole("link", { name: "Importar y enlaces" }).click();
   await expect(page.getByRole("heading", { name: "1. Cargar base inicial" })).toBeVisible();
@@ -32,9 +34,4 @@ test("el panel administrador explica el acceso, la carga y la ficha con código"
   await page.getByLabel("Código de verificación").fill("111111");
   await page.getByRole("button", { name: "Guardar cambio manual" }).click();
   await expect(page.getByText(/no es correcto o ya venció/i)).toBeVisible();
-
-  await page.getByLabel("Correo para el enlace").fill(`camila.${Date.now()}@example.com`);
-  await page.getByLabel("Código de verificación").fill("000000");
-  await page.getByRole("button", { name: "Guardar cambio manual" }).click();
-  await expect(page.getByText("Cambio guardado. Quedó en la auditoría con su usuario.")).toBeVisible({ timeout: 30_000 });
 });

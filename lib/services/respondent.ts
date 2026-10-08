@@ -110,6 +110,7 @@ export async function identify(repo: RespondentRepo, rawInput: unknown, deps: Id
     session_hash: sha256(sessionToken),
     person_id: person.id,
     access_token_id: token.id,
+    entry_method: "token",
     expires_at: expiresAt,
     submitted_at: canContinueForm(person) ? null : person.submitted_at,
   });
@@ -176,6 +177,7 @@ export async function resumeImportedPersonByCedula(repo: RespondentRepo, rawInpu
     session_hash: sha256(sessionToken),
     person_id: person.id,
     access_token_id: token.id,
+    entry_method: "token",
     expires_at: expiresAt,
     submitted_at: null,
   });
@@ -187,6 +189,11 @@ export async function resumeImportedPersonByCedula(repo: RespondentRepo, rawInpu
     metadata: { surface: "landing-cedula" },
   });
   return { ok: true, sessionToken, expiresAt };
+}
+
+function sessionEndedMessage(entry: "token" | "general" | undefined): string {
+  if (entry === "general") return "Tu sesión terminó por seguridad. Vuelve a entrar con tu cédula.";
+  return "Tu sesión terminó por seguridad. Vuelve a abrir el enlace que recibiste.";
 }
 
 export function linkStateMessage(state: LinkState): string {
@@ -256,7 +263,7 @@ export async function submitResponse(repo: RespondentRepo, sessionToken: string 
   if (deps.portalBlocked) return { ok: false, error: "El portal no está habilitado todavía. Intenta más tarde." };
 
   const ctx = await getRespondentContext(repo, sessionToken);
-  if (!ctx) return { ok: false, error: "Tu sesión terminó por seguridad. Vuelve a abrir el enlace que recibiste.", sessionExpired: true };
+  if (!ctx) return { ok: false, error: sessionEndedMessage(undefined), sessionExpired: true };
 
   const parsed = submissionSchema.safeParse(sanitizeDeep(rawInput));
   if (!parsed.success) return { ok: false, error: "Revisa los campos marcados.", fieldErrors: flattenIssues(parsed.error) };
@@ -344,7 +351,7 @@ export async function submitResponse(repo: RespondentRepo, sessionToken: string 
         if (err.code === "DUPLICATE_CODE") continue;
         if (err.code === "ALREADY_SUBMITTED") return { ok: false, error: "Esta información ya fue enviada anteriormente.", sessionExpired: true };
         if (err.code === "SESSION_INVALID" || err.code === "TOKEN_INVALID") {
-          return { ok: false, error: "Tu sesión o tu enlace ya no están vigentes. Vuelve a abrir el enlace que recibiste.", sessionExpired: true };
+          return { ok: false, error: sessionEndedMessage(ctx.session.entry_method), sessionExpired: true };
         }
       }
       console.error("[submit] error al guardar el formulario");

@@ -10,7 +10,9 @@ export type AuditAction =
   | "CONSENT_ACCEPTED" | "FORM_SUBMITTED" | "ADMIN_VIEWED" | "ADMIN_LOGIN" | "ADMIN_LOGIN_FAILED"
   | "ADMIN_LOGOUT" | "MFA_ENROLLED" | "EXPORT_CREATED" | "IMPORT_CREATED" | "LINK_CREATED"
   | "LINK_REVOKED" | "LINK_EMAIL_SENT" | "RECORD_REVIEWED" | "NOTICE_PUBLISHED" | "RETENTION_APPLIED"
-  | "MANUAL_EDIT" | "UNIBROKERS_EXPORT_CREATED";
+  | "MANUAL_EDIT" | "UNIBROKERS_EXPORT_CREATED"
+  | "GENERAL_IDENTIFY_FAILED" | "FINGERPRINT_CLAIMED" | "FINGERPRINT_IMPORTED" | "FINGERPRINT_RESET"
+  | "TOTP_ENROLLED" | "TOTP_RESET";
 
 export interface AuditEvent {
   person_id?: string | null;
@@ -44,11 +46,14 @@ export interface AccessTokenRecord {
   failed_attempts: number;
 }
 
+export type EntryMethod = "token" | "general";
+
 export interface RespondentSessionRecord {
   id: string;
   session_hash: string;
   person_id: string;
-  access_token_id: string;
+  access_token_id: string | null;
+  entry_method: EntryMethod;
   expires_at: string;
   submitted_at: string | null;
   revoked_at: string | null;
@@ -57,7 +62,7 @@ export interface RespondentSessionRecord {
 export interface SubmissionRecord {
   person_id: string;
   session_id: string;
-  access_token_id: string;
+  access_token_id: string | null;
   names_changed: boolean;
   first_names: string;
   last_names: string;
@@ -121,13 +126,20 @@ export interface RespondentRepo {
   registerTokenFailure(tokenId: string, threshold: number): Promise<{ failed_attempts: number; locked: boolean }>;
   getPerson(id: string): Promise<PersonRecord | null>;
   markStarted(personId: string): Promise<void>;
-  createRespondentSession(s: { session_hash: string; person_id: string; access_token_id: string; expires_at: string; submitted_at?: string | null }): Promise<RespondentSessionRecord>;
+  createRespondentSession(s: { session_hash: string; person_id: string; access_token_id: string | null; entry_method: EntryMethod; expires_at: string; submitted_at?: string | null }): Promise<RespondentSessionRecord>;
   findRespondentSession(sessionHash: string): Promise<RespondentSessionRecord | null>;
   revokeRespondentSession(id: string): Promise<void>;
   submitPersonData(s: SubmissionRecord): Promise<{ confirmation_code: string }>;
   getActiveNotice(): Promise<NoticeRecord | null>;
   /** Resumen del propio titular. Sin cédula ni cuenta en claro. */
   getInsuredRecord(personId: string): Promise<InsuredRecord | null>;
+  /** Cédula hasheada más el código dactilar (hash) y el TOTP cifrado. No va al navegador. */
+  findGeneralAuthByNationalIdHash(hash: string): Promise<GeneralAuthRecord | null>;
+  registerGeneralFailure(personId: string, threshold: number, lockMinutes: number): Promise<{ failed_attempts: number; locked: boolean }>;
+  claimFingerprintCode(personId: string, codeHash: string): Promise<"claimed" | "matched" | "mismatch" | "missing">;
+  beginGeneralChallenge(personId: string, input: GeneralChallengeInput): Promise<boolean>;
+  findGeneralChallenge(challengeHash: string): Promise<GeneralChallengeRecord | null>;
+  completeGeneralChallenge(personId: string, challengeHash: string, mode: "enroll" | "verify"): Promise<boolean>;
 }
 
 /** Lo que el titular puede ver de su propio registro. Nunca incluye cédula ni cuenta en claro. */
@@ -197,7 +209,48 @@ export interface PersonDetail {
   audit: AuditRow[];
   /** Correo para enviar el enlace personal. No reemplaza el correo que declara el titular. */
   outreach_email: string | null;
+  /** Solo indicadores. Nunca el código ni el secreto TOTP. */
+  general_access: { fingerprint_set: boolean; totp_enabled: boolean; locked: boolean };
 }
+
+/** Datos del enlace general. El secreto TOTP va cifrado. El código dactilar solo como hash. */
+export interface GeneralAuthRecord {
+  id: string;
+  first_names: string;
+  last_names: string;
+  national_id_last2: string | null;
+  status: PersonStatus;
+  submitted_at: string | null;
+  fingerprint_code_hash: string | null;
+  totp_secret_encrypted: string | null;
+  totp_enabled_at: string | null;
+  general_failed_attempts: number;
+  general_locked_until: string | null;
+}
+
+export interface GeneralChallengeInput {
+  purpose: "enroll" | "verify";
+  challengeHash: string;
+  expiresAt: string;
+  /** Solo en el alta. Ya cifrado. */
+  totpSecretEncrypted?: string;
+}
+
+export interface GeneralChallengeRecord {
+  person_id: string;
+  first_names: string;
+  last_names: string;
+  national_id_last2: string | null;
+  status: PersonStatus;
+  submitted_at: string | null;
+  purpose: "enroll" | "verify";
+  expires_at: string;
+  totp_secret_encrypted: string | null;
+  totp_enabled_at: string | null;
+  general_locked_until: string | null;
+}
+
+export type FingerprintAssignResult = "updated" | "unchanged" | "not_found" | "conflict";
 
 export interface AuditRow {
   id: number;
@@ -325,6 +378,8 @@ export interface AdminRepo {
   // retention
   anonymizeExpired(): Promise<number>;
   purgeExpiredSessions(): Promise<void>;
+  assignFingerprintHash(nationalIdHash: string, codeHash: string): Promise<FingerprintAssignResult>;
+  resetGeneralAuth(personId: string): Promise<boolean>;
 }
 
 export type Repo = RespondentRepo & AdminRepo;

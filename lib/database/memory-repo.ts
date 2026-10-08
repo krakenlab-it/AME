@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { encrypt, keyedHash } from "@/lib/encryption/crypto";
+import { encrypt, keyedHash, safeEqual } from "@/lib/encryption/crypto";
 import {
   RepoError,
   type AccessTokenRecord,
@@ -11,6 +11,11 @@ import {
   type NoticeRecord,
   type LinkMailTarget,
   type ManualPersonPatch,
+  type EntryMethod,
+  type FingerprintAssignResult,
+  type GeneralAuthRecord,
+  type GeneralChallengeInput,
+  type GeneralChallengeRecord,
   type PersonDetail,
   type PersonRecord,
   type UnibrokersSourceRow,
@@ -42,6 +47,8 @@ export class MemoryRepo implements Repo {
   profiles = new Map<string, Pick<InsuredRecord, "contact" | "bank" | "notice_version">>();
   outreachEmails = new Map<string, string>();
   nameChanges = new Map<string, PersonDetail["nameChanges"]>();
+  /** Código dactilar solo hasheado y TOTP solo cifrado. No se mezcla con la ficha visible. */
+  generalAuth = new Map<string, GeneralAuthState>();
 
   // ── helpers de prueba ──
   addPerson(firstNames: string, lastNames: string, cedula: string, status: PersonStatus = "PENDING") {
@@ -94,13 +101,14 @@ export class MemoryRepo implements Repo {
   }
   async getPerson(id: string) { return this.people.get(id) ?? null; }
   async markStarted(id: string) { const p = this.people.get(id); if (p?.status === "PENDING") p.status = "STARTED"; }
-  async createRespondentSession(s: { session_hash: string; person_id: string; access_token_id: string; expires_at: string; submitted_at?: string | null }) {
+  async createRespondentSession(s: { session_hash: string; person_id: string; access_token_id: string | null; entry_method: EntryMethod; expires_at: string; submitted_at?: string | null }) {
     const rec: RespondentSessionRecord = {
       id: randomUUID(),
       revoked_at: null,
       session_hash: s.session_hash,
       person_id: s.person_id,
       access_token_id: s.access_token_id,
+      entry_method: s.entry_method,
       expires_at: s.expires_at,
       submitted_at: s.submitted_at ?? null,
     };
@@ -116,15 +124,29 @@ export class MemoryRepo implements Repo {
     if (p.submitted_at) throw new RepoError("ALREADY_SUBMITTED");
     const sess = this.sessions.get(s.session_id);
     if (!sess || sess.person_id !== s.person_id || sess.revoked_at || sess.submitted_at || new Date(sess.expires_at) < new Date()) throw new RepoError("SESSION_INVALID");
-    const tok = this.tokens.get(s.access_token_id);
-    if (!tok || tok.person_id !== s.person_id || tok.revoked_at || tok.used_at || new Date(tok.expires_at) < new Date()) throw new RepoError("TOKEN_INVALID");
+    switch (sess.entry_method) {
+      case "token": {
+        if (!s.access_token_id || sess.access_token_id !== s.access_token_id) throw new RepoError("SESSION_INVALID");
+        const tok = this.tokens.get(s.access_token_id);
+        if (!tok || tok.person_id !== s.person_id || tok.revoked_at || tok.used_at || new Date(tok.expires_at) < new Date()) throw new RepoError("TOKEN_INVALID");
+        tok.used_at = new Date().toISOString();
+        break;
+      }
+      case "general": {
+        if (s.access_token_id || sess.access_token_id) throw new RepoError("SESSION_INVALID");
+        break;
+      }
+      default: {
+        const unexpected: never = sess.entry_method;
+        throw new RepoError("SESSION_INVALID", unexpected);
+      }
+    }
     if (s.names_changed) { p.first_names = s.first_names; p.last_names = s.last_names; }
     p.status = s.review_reasons.length ? "NEEDS_REVIEW" : "COMPLETED";
     p.review_reasons = s.review_reasons;
     p.confirmation_code = s.confirmation_code;
     p.submitted_at = new Date().toISOString();
     p.retention_until = s.retention_until;
-    tok.used_at = new Date().toISOString();
     sess.submitted_at = new Date().toISOString();
     this.submissions.set(s.person_id, s);
     this.profiles.set(s.person_id, {
@@ -220,6 +242,7 @@ export class MemoryRepo implements Repo {
       tokens: [...this.tokens.values()].filter((t) => t.person_id === id).map((t) => ({ id: t.id, expires_at: t.expires_at, used_at: t.used_at, revoked_at: t.revoked_at, revoked_reason: null, failed_attempts: t.failed_attempts, created_at: now })),
       audit: this.auditLog.filter((a) => a.person_id === id).map((a, i) => this.toAuditRow(a, i)).reverse(),
       outreach_email: this.outreachEmails.get(id) ?? null,
+      general_access: this.generalAccessView(id),
     };
   }
   private toAuditRow(a: AuditEvent & { created_at?: string }, i: number): AuditRow {
@@ -376,6 +399,181 @@ export class MemoryRepo implements Repo {
   }
   async anonymizeExpired() { return 0; }
   async purgeExpiredSessions() {}
+
+  private ensureGeneral(personId: string): GeneralAuthState {
+    const current = this.generalAuth.get(personId);
+    if (current) return current;
+    const created: GeneralAuthState = {
+      fingerprint_code_hash: null,
+      fingerprint_claimed_at: null,
+      totp_secret_encrypted: null,
+      totp_enabled_at: null,
+      failed_attempts: 0,
+      locked_until: null,
+      challenge_hash: null,
+      challenge_expires_at: null,
+      challenge_purpose: null,
+    };
+    this.generalAuth.set(personId, created);
+    return created;
+  }
+
+  private generalAccessView(personId: string): PersonDetail["general_access"] {
+    const auth = this.generalAuth.get(personId);
+    const locked = Boolean(auth?.locked_until && new Date(auth.locked_until).getTime() > Date.now());
+    return {
+      fingerprint_set: Boolean(auth?.fingerprint_code_hash),
+      totp_enabled: Boolean(auth?.totp_enabled_at),
+      locked,
+    };
+  }
+
+  private toGeneral(person: PersonRecord, auth: GeneralAuthState): GeneralAuthRecord {
+    return {
+      id: person.id,
+      first_names: person.first_names,
+      last_names: person.last_names,
+      national_id_last2: person.national_id_last2,
+      status: person.status,
+      submitted_at: person.submitted_at,
+      fingerprint_code_hash: auth.fingerprint_code_hash,
+      totp_secret_encrypted: auth.totp_secret_encrypted,
+      totp_enabled_at: auth.totp_enabled_at,
+      general_failed_attempts: auth.failed_attempts,
+      general_locked_until: auth.locked_until,
+    };
+  }
+
+  async findGeneralAuthByNationalIdHash(hash: string): Promise<GeneralAuthRecord | null> {
+    const person = [...this.people.values()].find((item) => item.national_id_hash === hash);
+    if (!person) return null;
+    return this.toGeneral(person, this.ensureGeneral(person.id));
+  }
+
+  async registerGeneralFailure(personId: string, threshold: number, lockMinutes: number) {
+    if (!this.people.has(personId)) return { failed_attempts: 0, locked: false };
+    const auth = this.ensureGeneral(personId);
+    const now = Date.now();
+    if (auth.locked_until && new Date(auth.locked_until).getTime() > now) {
+      return { failed_attempts: auth.failed_attempts, locked: true };
+    }
+    if (auth.locked_until && new Date(auth.locked_until).getTime() <= now) {
+      auth.failed_attempts = 0;
+      auth.locked_until = null;
+    }
+    auth.failed_attempts += 1;
+    const locked = auth.failed_attempts >= threshold;
+    if (locked) auth.locked_until = new Date(now + lockMinutes * 60_000).toISOString();
+    return { failed_attempts: auth.failed_attempts, locked };
+  }
+
+  async claimFingerprintCode(personId: string, codeHash: string): Promise<"claimed" | "matched" | "mismatch" | "missing"> {
+    if (!this.people.has(personId)) return "missing";
+    const auth = this.ensureGeneral(personId);
+    if (!auth.fingerprint_code_hash) {
+      auth.fingerprint_code_hash = codeHash;
+      auth.fingerprint_claimed_at = new Date().toISOString();
+      return "claimed";
+    }
+    return safeEqual(auth.fingerprint_code_hash, codeHash) ? "matched" : "mismatch";
+  }
+
+  async beginGeneralChallenge(personId: string, input: GeneralChallengeInput): Promise<boolean> {
+    const person = this.people.get(personId);
+    if (!person) return false;
+    const auth = this.ensureGeneral(personId);
+    if (input.purpose === "enroll") {
+      if (auth.totp_enabled_at || !input.totpSecretEncrypted) return false;
+      auth.totp_secret_encrypted = input.totpSecretEncrypted;
+      auth.totp_enabled_at = null;
+    } else if (!auth.totp_enabled_at || !auth.totp_secret_encrypted) {
+      return false;
+    }
+    auth.challenge_hash = input.challengeHash;
+    auth.challenge_expires_at = input.expiresAt;
+    auth.challenge_purpose = input.purpose;
+    return true;
+  }
+
+  async findGeneralChallenge(challengeHash: string): Promise<GeneralChallengeRecord | null> {
+    for (const [personId, auth] of this.generalAuth) {
+      if (!auth.challenge_hash || !safeEqual(auth.challenge_hash, challengeHash) || !auth.challenge_purpose || !auth.challenge_expires_at) continue;
+      const person = this.people.get(personId);
+      if (!person) return null;
+      return {
+        person_id: person.id,
+        first_names: person.first_names,
+        last_names: person.last_names,
+        national_id_last2: person.national_id_last2,
+        status: person.status,
+        submitted_at: person.submitted_at,
+        purpose: auth.challenge_purpose,
+        expires_at: auth.challenge_expires_at,
+        totp_secret_encrypted: auth.totp_secret_encrypted,
+        totp_enabled_at: auth.totp_enabled_at,
+        general_locked_until: auth.locked_until,
+      };
+    }
+    return null;
+  }
+
+  async completeGeneralChallenge(personId: string, challengeHash: string, mode: "enroll" | "verify"): Promise<boolean> {
+    const auth = this.generalAuth.get(personId);
+    if (!auth?.challenge_hash || !safeEqual(auth.challenge_hash, challengeHash) || auth.challenge_purpose !== mode) return false;
+    if (mode === "enroll") {
+      if (!auth.totp_secret_encrypted) return false;
+      auth.totp_enabled_at = new Date().toISOString();
+    }
+    auth.challenge_hash = null;
+    auth.challenge_expires_at = null;
+    auth.challenge_purpose = null;
+    auth.failed_attempts = 0;
+    auth.locked_until = null;
+    return true;
+  }
+
+  async assignFingerprintHash(nationalIdHash: string, codeHash: string): Promise<FingerprintAssignResult> {
+    const person = [...this.people.values()].find((item) => item.national_id_hash === nationalIdHash);
+    if (!person) return "not_found";
+    const auth = this.ensureGeneral(person.id);
+    if (!auth.fingerprint_code_hash) {
+      auth.fingerprint_code_hash = codeHash;
+      return "updated";
+    }
+    return safeEqual(auth.fingerprint_code_hash, codeHash) ? "unchanged" : "conflict";
+  }
+
+  async resetGeneralAuth(personId: string): Promise<boolean> {
+    if (!this.people.has(personId)) return false;
+    this.generalAuth.set(personId, {
+      fingerprint_code_hash: null,
+      fingerprint_claimed_at: null,
+      totp_secret_encrypted: null,
+      totp_enabled_at: null,
+      failed_attempts: 0,
+      locked_until: null,
+      challenge_hash: null,
+      challenge_expires_at: null,
+      challenge_purpose: null,
+    });
+    const now = new Date().toISOString();
+    for (const session of this.sessions.values()) {
+      if (session.person_id === personId && !session.revoked_at) session.revoked_at = now;
+    }
+    return true;
+  }
+}
+
+interface GeneralAuthState {
+  fingerprint_code_hash: string | null;
+  fingerprint_claimed_at: string | null;
+  totp_secret_encrypted: string | null;
+  totp_enabled_at: string | null;
+  failed_attempts: number;
+  locked_until: string | null;
+  challenge_hash: string | null;
+  challenge_expires_at: string | null;
+  challenge_purpose: "enroll" | "verify" | null;
 }
 
 export function isMemoryRepo(repo: Repo): repo is MemoryRepo {

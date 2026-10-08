@@ -11,17 +11,10 @@ const securityHeaders = [
   { key: "X-Robots-Tag", value: "noindex, nofollow" },
 ];
 
-/** Build de un Preview en Vercel (hostname con -git-). Queda fijado en el bundle del despliegue. */
-const portalPreviewSandboxBuild =
-  (process.env.VERCEL_URL ?? "").includes("-git-") && (process.env.VERCEL_URL ?? "").includes(".vercel.app");
-
 const nextConfig: NextConfig = {
   poweredByHeader: false,
   reactStrictMode: true,
   productionBrowserSourceMaps: false,
-  env: {
-    PORTAL_PREVIEW_SANDBOX_BUILD: portalPreviewSandboxBuild ? "true" : "false",
-  },
   experimental: {
     serverActions: { bodySizeLimit: "6mb" },
   },

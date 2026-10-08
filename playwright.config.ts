@@ -26,6 +26,7 @@ export default defineConfig({
       // GitHub sets CI=true. Next must not inherit it: the manual-edit server action then stalls.
       CI: "",
       DEMO_MODE: "true",
+      PORTAL_E2E: "true",
       SEED_PRODUCT_USERS: "true",
       APP_STAGE: "development",
       VERCEL_ENV: "",

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ManualEditForm } from "@/components/admin/manual-edit-form";
 import { PersonActions } from "@/components/admin/person-actions";
+import { ResetGeneralAuth } from "@/components/admin/reset-general-auth";
 import { StatusBadge } from "@/components/admin/status-badge";
 import { actorLabel, auditLabel, CONSENT_LABELS, REVIEW_REASON_LABELS } from "@/lib/admin/labels";
 import { Notice } from "@/components/ui/notice";
@@ -44,6 +45,14 @@ export default async function PersonPage({ params }: { params: Promise<{ id: str
       )}
 
       <PersonActions personId={person.id} canLinks={can(admin.role, "links:manage")} canReview={can(admin.role, "people:review")} needsReview={person.status === "NEEDS_REVIEW"} />
+
+      <Card title="Ingreso general">
+        <Item k="Código dactilar" v={detail.general_access.fingerprint_set ? "Registrado" : "Sin registrar"} />
+        <Item k="Verificación del teléfono" v={detail.general_access.totp_enabled ? "Activa" : "Sin configurar"} />
+        <Item k="Bloqueo temporal" v={detail.general_access.locked ? "Sí" : "No"} />
+      </Card>
+
+      {can(admin.role, "people:reset-factors") && <ResetGeneralAuth personId={person.id} />}
 
       {can(admin.role, "people:edit") && (
         <ManualEditForm

@@ -16,7 +16,7 @@ export default async function ImportPage() {
       <h1 className="text-3xl">Importar y generar enlaces</h1>
       <p className="max-w-3xl text-ink-muted">
         Cada registro válido recibe un identificador interno y un enlace individual con token aleatorio de 256 bits. El token no contiene
-        la cédula ni el nombre, vence en el plazo configurado y en la base solo se guarda su hash.
+        la cédula ni el nombre, vence en el plazo configurado y en la base solo se guarda su hash. El ingreso general (/ingresar) es aparte y no reemplaza esos enlaces.
       </p>
       <ImportPanel outreachSimulation={previewOutreachAnchorEnabled()} />
     </div>
