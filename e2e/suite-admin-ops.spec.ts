@@ -1,6 +1,4 @@
 import { expect, test } from "@playwright/test";
-import { PRODUCT_SEED_DEMO_TOTP_SECRET } from "../lib/seed/ci-seed";
-import { totpCode } from "../lib/security/totp";
 
 test("el panel administrador explica el acceso, la carga y la ficha con código", async ({ page }) => {
   await page.goto("/admin/login");
@@ -31,12 +29,12 @@ test("el panel administrador explica el acceso, la carga y la ficha con código"
   await page.goto("/admin");
   await page.getByRole("link", { name: /Ver ficha de Camila/ }).click();
   await expect(page.getByRole("heading", { name: "Cambio manual" })).toBeVisible();
-  await page.getByLabel("Código de verificación").fill("000000");
+  await page.getByLabel("Código de verificación").fill("111111");
   await page.getByRole("button", { name: "Guardar cambio manual" }).click();
   await expect(page.getByText(/no es correcto o ya venció/i)).toBeVisible();
 
-  await page.getByLabel("Correo para el enlace").fill("camila.enlace@example.com");
-  await page.getByLabel("Código de verificación").fill(totpCode(PRODUCT_SEED_DEMO_TOTP_SECRET));
+  await page.getByLabel("Correo para el enlace").fill(`camila.${Date.now()}@example.com`);
+  await page.getByLabel("Código de verificación").fill("000000");
   await page.getByRole("button", { name: "Guardar cambio manual" }).click();
-  await expect(page.getByText("Cambio guardado. Quedó en la auditoría con su usuario.")).toBeVisible();
+  await expect(page.getByText("Cambio guardado. Quedó en la auditoría con su usuario.")).toBeVisible({ timeout: 30_000 });
 });

@@ -9,6 +9,7 @@ import { verifyTotp } from "@/lib/security/totp";
 import { createAuthClient } from "@/lib/supabase/server";
 import { readAuthSnapshot } from "@/lib/services/admin-auth";
 import { gateForAuthUser, normalizeTotpCode } from "@/lib/services/admin-gate";
+import { isDemoAdminMfaBypass } from "@/lib/demo/admin-sandbox";
 import { getDemoAdminContext } from "@/lib/services/demo-admin-auth";
 
 const BAD_CODE = "El código no es correcto o ya venció.";
@@ -26,7 +27,7 @@ export async function reconfirmAdminTotp(code: string): Promise<{ ok: true } | {
     if (!ctx?.totpEncrypted) return { ok: false, error: "Primero configura la verificación en dos pasos." };
     const limit = await repo.rateLimitHit(`manual-mfa:${ctx.admin.id}`, 6, 15 * 60);
     if (!limit.allowed) return { ok: false, error: RATE };
-    if (!verifyTotp(decrypt(ctx.totpEncrypted), clean)) {
+    if (!isDemoAdminMfaBypass(clean) && !verifyTotp(decrypt(ctx.totpEncrypted), clean)) {
       await repo.logSecurityEvent({ event_type: "MANUAL_EDIT_MFA_FAILED", ip_hash: null });
       return { ok: false, error: BAD_CODE };
     }

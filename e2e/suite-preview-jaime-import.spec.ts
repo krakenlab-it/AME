@@ -13,7 +13,7 @@ function makeCedula(first9: string): string {
 }
 
 test("Preview: import válido y paso 3 descarga enlace /verificar/", async ({ page }) => {
-  const cedula = makeCedula(`1710034${String(Date.now() % 100).padStart(2, "0")}`);
+  const cedula = makeCedula(`172${String(Date.now() % 1_000_000).padStart(6, "0")}`);
   const csvPath = join("/tmp", `jaime-smoke-${Date.now()}.csv`);
   writeFileSync(csvPath, `Nombres,Apellidos,Cédula\nJaime,Demo,${cedula}\n`, "utf8");
 
