@@ -161,6 +161,7 @@ function IdentifyStep({
           <input
             id="cedula"
             name="cedula"
+            defaultValue={state.values?.cedula}
             className="field-input text-xl tracking-[0.12em]"
             inputMode="numeric"
             autoComplete="off"
@@ -177,6 +178,7 @@ function IdentifyStep({
               id="email"
               name="email"
               type="email"
+              defaultValue={state.values?.email}
               className="field-input"
               inputMode="email"
               autoComplete="email"

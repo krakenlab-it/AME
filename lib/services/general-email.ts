@@ -13,6 +13,10 @@ import { settings } from "./settings";
 export const EMAIL_CODE_MISMATCH = "El código no es correcto o ya venció. Revisa el último correo que te enviamos.";
 export const EMAIL_SEND_FAILED = "No pudimos enviar el código en este momento. Intenta nuevamente en unos minutos.";
 export const EMAIL_SEND_LIMIT = "Ya enviamos varios códigos a este correo. Espera unos minutos antes de pedir otro.";
+/** La cédula ya tiene un correo verificado: el código solo se envía a ese correo. */
+export function emailBoundError(maskedBound: string): string {
+  return `Esta cédula ya ingresó con otro correo (${maskedBound}). Escribe ese mismo correo. Si ya no tienes acceso a él, pide al administrador que restablezca tu ingreso.`;
+}
 
 export interface GeneralEmailDeps extends GeneralDeps {
   otp: EmailOtpProvider;
@@ -62,6 +66,15 @@ export async function startGeneralEmailAccess(repo: RespondentRepo, rawInput: un
   if (!resolved.ok) return resolved;
   const { person } = resolved;
   const email = parsed.data.email;
+
+  // Quien ya verificó un correo solo puede volver a entrar con ese correo: la cédula sola no basta
+  // para cambiar el correo de ingreso (si no, cualquiera que conozca la cédula entra con su propio correo).
+  const bound = person.login_email?.trim().toLowerCase();
+  if (bound && bound !== email) {
+    await repo.audit({ person_id: person.id, actor_type: "respondent", action: "GENERAL_IDENTIFY_FAILED", metadata: { outcome: "email_mismatch" } });
+    await repo.logSecurityEvent({ event_type: "GENERAL_EMAIL_MISMATCH", ip_hash: deps.ipHash, detail: {} });
+    return { ok: false, error: emailBoundError(maskEmail(bound)), fieldErrors: { email: "Usa el correo con el que ingresaste antes." } };
+  }
 
   if (!(await personSendAllowed(repo, person.id, deps))) return { ok: false, error: EMAIL_SEND_LIMIT };
 

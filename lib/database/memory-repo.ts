@@ -534,6 +534,8 @@ export class MemoryRepo implements Repo {
     if (!auth?.challenge_hash || !safeEqual(auth.challenge_hash, challengeHash) || auth.challenge_purpose !== mode) return false;
     if (mode === "email") {
       if (!link?.email) return false;
+      const bound = this.people.get(personId)?.login_email;
+      if (bound && bound !== link.email) return false;
       if (link.authUserId) {
         for (const [otherId, other] of this.generalAuth) {
           if (otherId !== personId && other.auth_user_id === link.authUserId) return false;
@@ -581,8 +583,10 @@ export class MemoryRepo implements Repo {
       challenge_purpose: null,
       challenge_email: null,
       challenge_sent_at: null,
-      auth_user_id: this.generalAuth.get(personId)?.auth_user_id ?? null,
+      auth_user_id: null,
     });
+    const reset = this.people.get(personId);
+    if (reset) reset.login_email = null;
     const now = new Date().toISOString();
     for (const session of this.sessions.values()) {
       if (session.person_id === personId && !session.revoked_at) session.revoked_at = now;

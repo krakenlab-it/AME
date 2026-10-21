@@ -230,3 +230,39 @@ describe("método de ingreso", () => {
     expect(settings.generalAuthMethod()).toBe("totp");
   });
 });
+
+describe("correo de ingreso ya verificado", () => {
+  it("no deja entrar con otro correo a una cédula que ya verificó uno", async () => {
+    const repo = new MemoryRepo();
+    const personId = repo.addPerson("Juan Carlos", "Pérez López", JUAN);
+    const otp = fakeOtp();
+    const first = await startGeneralEmailAccess(repo, { cedula: JUAN, email: EMAIL }, deps(otp));
+    if (!first.ok) throw new Error("start");
+    expect(await confirmGeneralEmailCode(repo, first.challengeToken, { code: DEMO_EMAIL_OTP_CODE }, deps(otp))).toMatchObject({ ok: true });
+
+    vi.mocked(otp.send).mockClear();
+    const other = await startGeneralEmailAccess(repo, { cedula: JUAN, email: "otra.persona@example.com" }, deps(otp, "ip-3"));
+    expect(other).toMatchObject({ ok: false, fieldErrors: { email: expect.any(String) } });
+    if (!other.ok) expect(other.error).toContain("j*********@example.com");
+    expect(otp.send).not.toHaveBeenCalled();
+    expect((await repo.getPerson(personId))?.login_email).toBe(EMAIL);
+
+    const same = await startGeneralEmailAccess(repo, { cedula: JUAN, email: "JUAN.PEREZ@example.com" }, deps(otp, "ip-4"));
+    expect(same).toMatchObject({ ok: true });
+  });
+
+  it("el reinicio del administrador libera el correo para vincular uno nuevo", async () => {
+    const repo = new MemoryRepo();
+    const personId = repo.addPerson("Juan Carlos", "Pérez López", JUAN);
+    const otp = fakeOtp();
+    const first = await startGeneralEmailAccess(repo, { cedula: JUAN, email: EMAIL }, deps(otp));
+    if (!first.ok) throw new Error("start");
+    await confirmGeneralEmailCode(repo, first.challengeToken, { code: DEMO_EMAIL_OTP_CODE }, deps(otp));
+    expect(await repo.resetGeneralAuth(personId)).toBe(true);
+
+    const next = await startGeneralEmailAccess(repo, { cedula: JUAN, email: "nuevo@example.com" }, deps(otp, "ip-5"));
+    if (!next.ok) throw new Error(next.error);
+    expect(await confirmGeneralEmailCode(repo, next.challengeToken, { code: DEMO_EMAIL_OTP_CODE }, deps(otp, "ip-5"))).toMatchObject({ ok: true });
+    expect((await repo.getPerson(personId))?.login_email).toBe("nuevo@example.com");
+  });
+});

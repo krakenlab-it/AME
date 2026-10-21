@@ -748,13 +748,15 @@ export class SupabaseRepo implements Repo {
       patch.general_challenge_sent_at = null;
       if (link.authUserId) patch.auth_user_id = link.authUserId;
     }
-    const res = await this.db
+    let query = this.db
       .from("people")
       .update(patch)
       .eq("id", personId)
       .eq("general_challenge_hash", challengeHash)
-      .eq("general_challenge_purpose", mode)
-      .select("id");
+      .eq("general_challenge_purpose", mode);
+    // Un correo ya verificado no se reemplaza desde /ingresar (solo un reinicio del administrador lo libera).
+    if (mode === "email" && link?.email) query = query.or(`login_email.is.null,login_email.eq."${link.email.replace(/["\\]/g, "")}"`);
+    const res = await query.select("id");
     // 23505: ese usuario de Supabase Auth ya está vinculado a otra cédula (people_auth_user_id_idx).
     if (res.error?.code === "23505") return false;
     const data = check(res, "completeGeneralChallenge") as { id: string }[] | null;
@@ -798,6 +800,10 @@ export class SupabaseRepo implements Repo {
           general_challenge_purpose: null,
           general_challenge_email: null,
           general_challenge_sent_at: null,
+          // Libera el correo de ingreso para que la persona pueda vincular uno nuevo.
+          login_email: null,
+          login_email_verified_at: null,
+          auth_user_id: null,
         })
         .eq("id", personId)
         .is("anonymized_at", null)
