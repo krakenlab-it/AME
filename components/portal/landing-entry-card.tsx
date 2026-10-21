@@ -1,4 +1,5 @@
-import { Lock } from "lucide-react";
+import Link from "next/link";
+import { Lock, Settings } from "lucide-react";
 import type { ReactNode } from "react";
 
 const centeredCopy = "w-full text-center text-pretty leading-relaxed";
@@ -34,5 +35,20 @@ export function LandingStaffFooter({ children }: { children: ReactNode }) {
       </p>
       <div className="flex justify-center">{children}</div>
     </footer>
+  );
+}
+
+/** Acceso rápido al panel. /admin sigue protegido por su propia barrera (sesión + MFA). */
+export function LandingAdminLink() {
+  return (
+    <p className="w-full text-center text-sm">
+      <Link
+        href="/admin"
+        className="inline-flex items-center gap-1.5 text-ink-muted underline-offset-4 hover:text-marian hover:underline"
+      >
+        <Settings className="h-4 w-4" aria-hidden />
+        Panel de administración
+      </Link>
+    </p>
   );
 }

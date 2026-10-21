@@ -61,14 +61,6 @@ export const identifySchema = z
   })
   .strict();
 
-/** Retomar desde el inicio público con cédula o pasaporte (solo personas ya importadas). */
-export const cedulaResumeSchema = z
-  .object({
-    cedula: identityDocumentField,
-    captchaToken: z.string().max(4096).optional(),
-  })
-  .strict();
-
 const FINGERPRINT_FORMAT = "El código dactilar tiene una letra, 4 números, una letra y 4 números.";
 
 export const fingerprintCodeField = z

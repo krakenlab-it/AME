@@ -76,18 +76,6 @@
   .landing-protected-panel p {
     text-align: center;
   }
-  .landing-cedula-field .landing-cedula-label,
-  .landing-cedula-field .landing-cedula-hint,
-  .landing-cedula-field #landing-cedula-error {
-    text-align: center !important;
-  }
-  .landing-cedula-input {
-    text-align: center !important;
-  }
-  .landing-cedula-input::placeholder {
-    text-align: center;
-    letter-spacing: normal;
-  }
 
   .wizard-bank-step label.block,
   .wizard-bank-step [id$="-hint"],

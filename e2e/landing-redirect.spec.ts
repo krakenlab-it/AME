@@ -3,22 +3,45 @@ import { signInTestAdmin } from "./helpers/admin-login";
 import { PRODUCT_SEED_TOKENS } from "../lib/seed/ci-seed";
 import { PRODUCT_PERSONAS } from "../lib/seed/product-personas";
 
-const started = PRODUCT_PERSONAS.find((persona) => persona.key === "started");
-
-test("la portada retoma el formulario con la cédula importada", async ({ page }) => {
-  expect(started).toBeTruthy();
+test("la portada lleva al ingreso con correo, sin pedir la cédula", async ({ page }) => {
   await page.goto("/");
-  await expect(page.getByText(/enlace seguro enviado para la protección de sus datos personales/i)).toBeVisible();
-  await page.getByLabel(/Digita su número de cédula para empezar/i).fill(started!.cedula);
-  await page.getByRole("button", { name: "Continuar" }).click();
-  await expect(page).toHaveURL(/\/verificar\/formulario$/);
-  await expect(page.getByText(started!.currentFirstNames, { exact: true })).toBeVisible();
+  await expect(page.getByText(/Ingrese con su correo para actualizar sus datos/i)).toBeVisible();
+  await expect(page.getByLabel(/Digita su número de cédula para empezar/i)).toHaveCount(0);
+  await expect(page.getByText(/Confirme su cédula/i)).toHaveCount(0);
+  await expect(page.getByText(/Si forma parte del equipo/i)).toBeVisible();
+  const enter = page.getByRole("link", { name: "Ingresar", exact: true });
+  await expect(enter).toHaveAttribute("href", "/ingresar");
+  await enter.click();
+  await expect(page).toHaveURL(/\/ingresar$/);
+  await expect(page.getByLabel(/Correo electrónico/i)).toBeVisible();
+});
+
+test("/ingreso redirige a /ingresar", async ({ page }) => {
+  await page.goto("/ingreso");
+  await expect(page).toHaveURL(/\/ingresar$/);
+});
+
+test("la portada y /ingresar ofrecen el panel de administración protegido", async ({ page }) => {
+  await page.goto("/");
+  const adminLink = page.getByRole("link", { name: "Panel de administración" });
+  await expect(adminLink).toHaveAttribute("href", "/admin");
+  await page.goto("/ingresar");
+  await expect(page.getByRole("link", { name: "Panel de administración" })).toHaveAttribute("href", "/admin");
+  await page.getByRole("link", { name: "Panel de administración" }).click();
+  // Sin sesión, la barrera del panel manda al login.
+  await expect(page).toHaveURL(/\/admin\/login$/);
+});
+
+test("una sesión de administración en /ingresar va al panel", async ({ page }) => {
+  await signInTestAdmin(page);
+  await page.goto("/ingresar");
+  await expect(page).toHaveURL(/\/admin$/);
 });
 
 test("quien no tiene sesión se queda en la portada", async ({ page }) => {
   await page.goto("/");
   await expect(page).toHaveURL(/\/$/);
-  await expect(page.getByText(/enlace seguro enviado/i)).toBeVisible();
+  await expect(page.getByText(/Ingrese con su correo para actualizar sus datos/i)).toBeVisible();
   await expect(page.getByRole("heading", { name: "Para comenzar, abre tu enlace personal" })).toHaveCount(0);
   const staffLogin = page.getByRole("link", { name: "Iniciar sesión con correo" });
   await expect(staffLogin).toBeVisible();
@@ -63,6 +86,6 @@ test("el enlace /empezar reinicia en la portada aunque haya sesión de mi cuenta
 
   await page.goto("/empezar");
   await expect(page).toHaveURL(/\/$/);
-  await expect(page.getByText(/enlace seguro enviado para la protección de sus datos personales/i)).toBeVisible();
-  await expect(page.getByLabel(/Digita su número de cédula para empezar/i)).toBeVisible();
+  await expect(page.getByText(/Ingrese con su correo para actualizar sus datos/i)).toBeVisible();
+  await expect(page.getByRole("link", { name: "Ingresar", exact: true })).toHaveAttribute("href", "/ingresar");
 });

@@ -124,8 +124,6 @@ export interface RespondentRepo {
   findAccessToken(tokenHash: string): Promise<AccessTokenRecord | null>;
   /** Persona importada con cédula exacta (HMAC). No crea registros. */
   findPersonByNationalIdHash(hash: string): Promise<PersonRecord | null>;
-  /** Enlace activo para retomar el formulario (sin usar, no revocado, vigente). */
-  findResumableAccessToken(personId: string): Promise<AccessTokenRecord | null>;
   registerTokenFailure(tokenId: string, threshold: number): Promise<{ failed_attempts: number; locked: boolean }>;
   getPerson(id: string): Promise<PersonRecord | null>;
   markStarted(personId: string): Promise<void>;
