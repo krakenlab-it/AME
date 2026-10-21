@@ -19,6 +19,9 @@ const nextConfig: NextConfig = {
     serverActions: { bodySizeLimit: "6mb" },
   },
   serverExternalPackages: ["exceljs"],
+  async redirects() {
+    return [{ source: "/ingreso", destination: "/ingresar", permanent: false }];
+  },
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];
   },

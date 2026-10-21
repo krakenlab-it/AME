@@ -16,6 +16,8 @@ import {
   type GeneralAuthRecord,
   type GeneralChallengeInput,
   type GeneralChallengeRecord,
+  type GeneralChallengePurpose,
+  type GeneralEmailLink,
   type PersonDetail,
   type PersonRecord,
   type UnibrokersSourceRow,
@@ -84,14 +86,6 @@ export class MemoryRepo implements Repo {
   async findAccessToken(hash: string) { return [...this.tokens.values()].find((t) => t.token_hash === hash) ?? null; }
   async findPersonByNationalIdHash(hash: string) {
     return [...this.people.values()].find((p) => p.national_id_hash === hash) ?? null;
-  }
-  async findResumableAccessToken(personId: string) {
-    const now = Date.now();
-    return (
-      [...this.tokens.values()].find(
-        (t) => t.person_id === personId && !t.revoked_at && !t.used_at && new Date(t.expires_at).getTime() > now,
-      ) ?? null
-    );
   }
   async registerTokenFailure(id: string, threshold: number) {
     const t = this.tokens.get(id)!;
@@ -413,6 +407,9 @@ export class MemoryRepo implements Repo {
       challenge_hash: null,
       challenge_expires_at: null,
       challenge_purpose: null,
+      challenge_email: null,
+      challenge_sent_at: null,
+      auth_user_id: null,
     };
     this.generalAuth.set(personId, created);
     return created;
@@ -425,6 +422,7 @@ export class MemoryRepo implements Repo {
       fingerprint_set: Boolean(auth?.fingerprint_code_hash),
       totp_enabled: Boolean(auth?.totp_enabled_at),
       locked,
+      email_verified: Boolean(this.people.get(personId)?.login_email),
     };
   }
 
@@ -441,6 +439,7 @@ export class MemoryRepo implements Repo {
       totp_enabled_at: auth.totp_enabled_at,
       general_failed_attempts: auth.failed_attempts,
       general_locked_until: auth.locked_until,
+      login_email: person.login_email ?? null,
     };
   }
 
@@ -482,7 +481,11 @@ export class MemoryRepo implements Repo {
     const person = this.people.get(personId);
     if (!person) return false;
     const auth = this.ensureGeneral(personId);
-    if (input.purpose === "enroll") {
+    if (input.purpose === "email") {
+      if (!input.email) return false;
+      auth.challenge_email = input.email;
+      auth.challenge_sent_at = input.sentAt ?? new Date().toISOString();
+    } else if (input.purpose === "enroll") {
       if (auth.totp_enabled_at || !input.totpSecretEncrypted) return false;
       auth.totp_secret_encrypted = input.totpSecretEncrypted;
       auth.totp_enabled_at = null;
@@ -512,15 +515,36 @@ export class MemoryRepo implements Repo {
         totp_secret_encrypted: auth.totp_secret_encrypted,
         totp_enabled_at: auth.totp_enabled_at,
         general_locked_until: auth.locked_until,
+        pending_email: auth.challenge_email ?? null,
+        sent_at: auth.challenge_sent_at ?? null,
       };
     }
     return null;
   }
 
-  async completeGeneralChallenge(personId: string, challengeHash: string, mode: "enroll" | "verify"): Promise<boolean> {
+  async touchGeneralChallengeSent(personId: string, challengeHash: string, sentAt: string): Promise<boolean> {
+    const auth = this.generalAuth.get(personId);
+    if (!auth?.challenge_hash || !safeEqual(auth.challenge_hash, challengeHash) || auth.challenge_purpose !== "email") return false;
+    auth.challenge_sent_at = sentAt;
+    return true;
+  }
+
+  async completeGeneralChallenge(personId: string, challengeHash: string, mode: GeneralChallengePurpose, link?: GeneralEmailLink): Promise<boolean> {
     const auth = this.generalAuth.get(personId);
     if (!auth?.challenge_hash || !safeEqual(auth.challenge_hash, challengeHash) || auth.challenge_purpose !== mode) return false;
-    if (mode === "enroll") {
+    if (mode === "email") {
+      if (!link?.email) return false;
+      if (link.authUserId) {
+        for (const [otherId, other] of this.generalAuth) {
+          if (otherId !== personId && other.auth_user_id === link.authUserId) return false;
+        }
+        auth.auth_user_id = link.authUserId;
+      }
+      const person = this.people.get(personId);
+      if (person) person.login_email = link.email;
+      auth.challenge_email = null;
+      auth.challenge_sent_at = null;
+    } else if (mode === "enroll") {
       if (!auth.totp_secret_encrypted) return false;
       auth.totp_enabled_at = new Date().toISOString();
     }
@@ -555,6 +579,9 @@ export class MemoryRepo implements Repo {
       challenge_hash: null,
       challenge_expires_at: null,
       challenge_purpose: null,
+      challenge_email: null,
+      challenge_sent_at: null,
+      auth_user_id: this.generalAuth.get(personId)?.auth_user_id ?? null,
     });
     const now = new Date().toISOString();
     for (const session of this.sessions.values()) {
@@ -573,7 +600,10 @@ interface GeneralAuthState {
   locked_until: string | null;
   challenge_hash: string | null;
   challenge_expires_at: string | null;
-  challenge_purpose: "enroll" | "verify" | null;
+  challenge_purpose: GeneralChallengePurpose | null;
+  challenge_email?: string | null;
+  challenge_sent_at?: string | null;
+  auth_user_id?: string | null;
 }
 
 export function isMemoryRepo(repo: Repo): repo is MemoryRepo {

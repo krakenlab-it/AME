@@ -23,7 +23,7 @@ const safeText = (max: number) =>
 
 const requiredSafeText = (max: number) => safeText(max).min(2, REQUIRED);
 
-const emailField = z
+export const emailField = z
   .string()
   .trim()
   .toLowerCase()
@@ -56,14 +56,6 @@ const mustAccept = (message: string) => z.boolean().refine((v) => v === true, { 
 export const identifySchema = z
   .object({
     token: z.string().refine((t) => isAccessLinkToken(t), "Enlace no válido."),
-    cedula: identityDocumentField,
-    captchaToken: z.string().max(4096).optional(),
-  })
-  .strict();
-
-/** Retomar desde el inicio público con cédula o pasaporte (solo personas ya importadas). */
-export const cedulaResumeSchema = z
-  .object({
     cedula: identityDocumentField,
     captchaToken: z.string().max(4096).optional(),
   })
@@ -106,6 +98,22 @@ export const generalIdentifySchema = z
     cedula: generalCedulaField,
     codigoDactilar: optionalFingerprintField,
     captchaToken: z.string().max(4096).optional(),
+  })
+  .strict();
+
+/** /ingresar con código por correo: cédula, correo y código dactilar opcional. */
+export const generalEmailIdentifySchema = z
+  .object({
+    cedula: generalCedulaField,
+    codigoDactilar: optionalFingerprintField,
+    email: emailField,
+    captchaToken: z.string().max(4096).optional(),
+  })
+  .strict();
+
+export const generalEmailCodeSchema = z
+  .object({
+    code: z.string().trim().regex(/^\d{6}$/, "El código tiene 6 números."),
   })
   .strict();
 

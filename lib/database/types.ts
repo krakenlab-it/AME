@@ -12,7 +12,8 @@ export type AuditAction =
   | "LINK_REVOKED" | "LINK_EMAIL_SENT" | "RECORD_REVIEWED" | "NOTICE_PUBLISHED" | "RETENTION_APPLIED"
   | "MANUAL_EDIT" | "UNIBROKERS_EXPORT_CREATED"
   | "GENERAL_IDENTIFY_FAILED" | "FINGERPRINT_CLAIMED" | "FINGERPRINT_IMPORTED" | "FINGERPRINT_RESET"
-  | "TOTP_ENROLLED" | "TOTP_RESET";
+  | "TOTP_ENROLLED" | "TOTP_RESET"
+  | "EMAIL_CODE_SENT" | "EMAIL_VERIFIED";
 
 export interface AuditEvent {
   person_id?: string | null;
@@ -34,6 +35,8 @@ export interface PersonRecord {
   status: PersonStatus;
   confirmation_code: string | null;
   submitted_at: string | null;
+  /** Correo verificado con el código de /ingresar. Rellena el correo del formulario. */
+  login_email?: string | null;
 }
 
 export interface AccessTokenRecord {
@@ -121,8 +124,6 @@ export interface RespondentRepo {
   findAccessToken(tokenHash: string): Promise<AccessTokenRecord | null>;
   /** Persona importada con cédula exacta (HMAC). No crea registros. */
   findPersonByNationalIdHash(hash: string): Promise<PersonRecord | null>;
-  /** Enlace activo para retomar el formulario (sin usar, no revocado, vigente). */
-  findResumableAccessToken(personId: string): Promise<AccessTokenRecord | null>;
   registerTokenFailure(tokenId: string, threshold: number): Promise<{ failed_attempts: number; locked: boolean }>;
   getPerson(id: string): Promise<PersonRecord | null>;
   markStarted(personId: string): Promise<void>;
@@ -139,7 +140,20 @@ export interface RespondentRepo {
   claimFingerprintCode(personId: string, codeHash: string): Promise<"claimed" | "matched" | "mismatch" | "missing">;
   beginGeneralChallenge(personId: string, input: GeneralChallengeInput): Promise<boolean>;
   findGeneralChallenge(challengeHash: string): Promise<GeneralChallengeRecord | null>;
-  completeGeneralChallenge(personId: string, challengeHash: string, mode: "enroll" | "verify"): Promise<boolean>;
+  /**
+   * Cierra el reto. En modo "email" guarda el correo verificado (login_email) y el usuario de Supabase Auth.
+   * Devuelve false si el reto ya no coincide o si ese usuario de Auth ya está vinculado a otra cédula.
+   */
+  completeGeneralChallenge(personId: string, challengeHash: string, mode: GeneralChallengePurpose, link?: GeneralEmailLink): Promise<boolean>;
+  /** Marca un reenvío del código por correo (enfriamiento). */
+  touchGeneralChallengeSent(personId: string, challengeHash: string, sentAt: string): Promise<boolean>;
+}
+
+export type GeneralChallengePurpose = "enroll" | "verify" | "email";
+
+export interface GeneralEmailLink {
+  email: string;
+  authUserId: string | null;
 }
 
 /** Lo que el titular puede ver de su propio registro. Nunca incluye cédula ni cuenta en claro. */
@@ -210,7 +224,7 @@ export interface PersonDetail {
   /** Correo para enviar el enlace personal. No reemplaza el correo que declara el titular. */
   outreach_email: string | null;
   /** Solo indicadores. Nunca el código ni el secreto TOTP. */
-  general_access: { fingerprint_set: boolean; totp_enabled: boolean; locked: boolean };
+  general_access: { fingerprint_set: boolean; totp_enabled: boolean; locked: boolean; email_verified?: boolean };
 }
 
 /** Datos del enlace general. El secreto TOTP va cifrado. El código dactilar solo como hash. */
@@ -226,14 +240,19 @@ export interface GeneralAuthRecord {
   totp_enabled_at: string | null;
   general_failed_attempts: number;
   general_locked_until: string | null;
+  /** Último correo verificado en /ingresar. Solo para rellenar el campo. */
+  login_email?: string | null;
 }
 
 export interface GeneralChallengeInput {
-  purpose: "enroll" | "verify";
+  purpose: GeneralChallengePurpose;
   challengeHash: string;
   expiresAt: string;
   /** Solo en el alta. Ya cifrado. */
   totpSecretEncrypted?: string;
+  /** Solo con purpose "email": correo al que se envió el código, y cuándo. */
+  email?: string;
+  sentAt?: string;
 }
 
 export interface GeneralChallengeRecord {
@@ -243,11 +262,14 @@ export interface GeneralChallengeRecord {
   national_id_last2: string | null;
   status: PersonStatus;
   submitted_at: string | null;
-  purpose: "enroll" | "verify";
+  purpose: GeneralChallengePurpose;
   expires_at: string;
   totp_secret_encrypted: string | null;
   totp_enabled_at: string | null;
   general_locked_until: string | null;
+  /** Solo con purpose "email". */
+  pending_email?: string | null;
+  sent_at?: string | null;
 }
 
 export type FingerprintAssignResult = "updated" | "unchanged" | "not_found" | "conflict";

@@ -1,7 +1,8 @@
 import { redirect } from "next/navigation";
-import { CedulaCta } from "@/components/forms/cedula-cta";
+import { LogIn } from "lucide-react";
 import { PortalHero } from "@/components/portal/hero";
 import {
+  LandingAdminLink,
   LandingIntro,
   LandingProtectedPanel,
   LandingRightEntry,
@@ -46,20 +47,25 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
                     Iniciar sesión con correo
                   </ButtonLink>
                 </LandingStaffFooter>
+                <LandingAdminLink />
               </LandingRightEntry>
             ) : (
               <LandingRightEntry>
                 <LandingIntro>
-                  Usted ha ingresado desde un enlace seguro enviado para la protección de sus datos personales. Confirme su cédula a continuación para continuar con la actualización.
+                  Ingrese con su correo para actualizar sus datos. Le enviaremos un código de verificación para proteger su información personal.
                 </LandingIntro>
                 <LandingProtectedPanel>
-                  <CedulaCta turnstileSiteKey={process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY ?? null} />
+                  <ButtonLink href="/ingresar" variant="primary" block className="w-full">
+                    <LogIn className="h-5 w-5" aria-hidden />
+                    Ingresar
+                  </ButtonLink>
                 </LandingProtectedPanel>
                 <LandingStaffFooter>
                   <ButtonLink href="/admin/login" variant="ghost" size="sm">
                     Iniciar sesión con correo
                   </ButtonLink>
                 </LandingStaffFooter>
+                <LandingAdminLink />
               </LandingRightEntry>
             )}
           </div>
