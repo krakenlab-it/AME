@@ -1,15 +1,48 @@
 "use client";
 
 import { useActionState, useEffect, useState } from "react";
-import { KeyRound, ShieldCheck } from "lucide-react";
-import { confirmGeneralAction, startGeneralAction, type GeneralAccessState } from "@/app/ingresar/actions";
+import { KeyRound, Mail, RotateCcw, ShieldCheck } from "lucide-react";
+import { confirmGeneralAction, resendGeneralAction, startGeneralAction, type GeneralAccessState } from "@/app/ingresar/actions";
 import { FingerprintHelp } from "@/components/forms/fingerprint-help";
 import { ProtectedNote } from "@/components/portal/hero";
 import { Button } from "@/components/ui/button";
 import { describedBy, Field } from "@/components/ui/field";
 import { Notice } from "@/components/ui/notice";
 
-export function GeneralAccessPanel({ turnstileSiteKey, requireFingerprint }: { turnstileSiteKey: string | null; requireFingerprint: boolean }) {
+type AuthMethod = "email" | "totp";
+
+interface PanelProps {
+  turnstileSiteKey: string | null;
+  requireFingerprint: boolean;
+  /** "email" (por defecto): código por correo. "totp": aplicación autenticadora (AME_GENERAL_AUTH_METHOD=totp). */
+  method?: AuthMethod;
+}
+
+/** «Usar otro correo» vuelve a montar el panel para empezar de cero. */
+export function GeneralAccessPanel(props: PanelProps) {
+  const [round, setRound] = useState(0);
+  const [notice, setNotice] = useState<string | undefined>(undefined);
+  return (
+    <AccessFlow
+      key={round}
+      {...props}
+      restartNotice={notice}
+      onRestart={(message) => {
+        setNotice(message);
+        setRound((n) => n + 1);
+      }}
+    />
+  );
+}
+
+function AccessFlow({
+  turnstileSiteKey,
+  requireFingerprint,
+  method = "email",
+  onRestart,
+  restartNotice,
+}: PanelProps & { onRestart: (message?: string) => void; restartNotice?: string }) {
+  const [resent, resendAction, resendPending] = useActionState<GeneralAccessState, FormData>(resendGeneralAction, {});
   const [started, startAction, startPending] = useActionState<GeneralAccessState, FormData>(startGeneralAction, {});
   const [confirmed, confirmAction, confirmPending] = useActionState<GeneralAccessState, FormData>(confirmGeneralAction, {});
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
@@ -17,6 +50,13 @@ export function GeneralAccessPanel({ turnstileSiteKey, requireFingerprint }: { t
   const [otpauthUrl, setOtpauthUrl] = useState<string | null>(null);
 
   const phase = confirmed.phase ?? started.phase ?? "identify";
+
+  // Código por correo: si el reto venció, se empieza de nuevo con el aviso.
+  useEffect(() => {
+    if (method !== "email") return;
+    if (resent.phase === "identify") onRestart(resent.error);
+    else if (confirmed.phase === "identify") onRestart(confirmed.error);
+  }, [method, resent.phase, resent.error, confirmed.phase, confirmed.error, onRestart]);
   const active = phase === "identify" ? started : { ...started, ...confirmed, qrDataUrl: confirmed.qrDataUrl ?? qrDataUrl ?? started.qrDataUrl };
   const needsCaptcha = Boolean(active.requireCaptcha && turnstileSiteKey && phase === "identify");
 
@@ -46,7 +86,26 @@ export function GeneralAccessPanel({ turnstileSiteKey, requireFingerprint }: { t
   return (
     <div className="sheet space-y-6 p-6 md:p-8">
       {phase === "identify" ? (
-        <IdentifyStep state={active} pending={startPending} action={startAction} needsCaptcha={needsCaptcha} siteKey={turnstileSiteKey} requireFingerprint={requireFingerprint} />
+        <IdentifyStep
+          state={!active.error && restartNotice && !started.phase ? { ...active, error: restartNotice } : active}
+          pending={startPending}
+          action={startAction}
+          needsCaptcha={needsCaptcha}
+          siteKey={turnstileSiteKey}
+          requireFingerprint={requireFingerprint}
+          method={method}
+        />
+      ) : phase === "email" ? (
+        <EmailCodeStep
+          started={started}
+          confirmed={confirmed}
+          resent={resent}
+          pending={confirmPending}
+          action={confirmAction}
+          resendPending={resendPending}
+          resendAction={resendAction}
+          onRestart={() => onRestart()}
+        />
       ) : (
         <TotpStep
           phase={phase}
@@ -70,6 +129,7 @@ function IdentifyStep({
   needsCaptcha,
   siteKey,
   requireFingerprint,
+  method,
 }: {
   state: GeneralAccessState;
   pending: boolean;
@@ -77,7 +137,10 @@ function IdentifyStep({
   needsCaptcha: boolean;
   siteKey: string | null;
   requireFingerprint: boolean;
+  method: AuthMethod;
 }) {
+  const emailError = state.fieldErrors?.email;
+  const next = method === "email" ? "Después te enviamos un código a tu correo." : "Después configuras la verificación del teléfono.";
   const cedulaError = state.fieldErrors?.cedula;
   const codeError = state.fieldErrors?.codigoDactilar;
   const banner = state.error && state.error !== "Revisa los campos marcados." ? state.error : undefined;
@@ -88,8 +151,8 @@ function IdentifyStep({
         <h2 className="text-2xl">Entra con tu cédula</h2>
         <p className="text-ink-muted">
           {requireFingerprint
-            ? "Escribe tu número de cédula y el código dactilar que aparece en ella. Después configuras la verificación del teléfono."
-            : "Escribe tu número de cédula. El código dactilar es opcional: si lo escribes y todavía no teníamos uno, lo guardamos para las próximas veces. Después configuras la verificación del teléfono."}
+            ? `Escribe tu número de cédula y el código dactilar que aparece en ella. ${next}`
+            : `Escribe tu número de cédula. El código dactilar es opcional: si lo escribes y todavía no teníamos uno, lo guardamos para las próximas veces. ${next}`}
         </p>
       </div>
       {banner && <Notice tone="error" live>{banner}</Notice>}
@@ -108,6 +171,24 @@ function IdentifyStep({
             aria-describedby={describedBy("cedula", { hint: "x", error: cedulaError })}
           />
         </Field>
+        {method === "email" && (
+          <Field id="email" label="Correo electrónico" required hint="Te enviaremos un código de 6 números. Lo usaremos también como tu correo de contacto." error={emailError}>
+            <input
+              id="email"
+              name="email"
+              type="email"
+              className="field-input"
+              inputMode="email"
+              autoComplete="email"
+              autoCapitalize="none"
+              spellCheck={false}
+              maxLength={254}
+              required
+              aria-invalid={Boolean(emailError)}
+              aria-describedby={describedBy("email", { hint: "x", error: emailError })}
+            />
+          </Field>
+        )}
         <Field
           id="codigo-dactilar"
           label="Código dactilar"
@@ -227,6 +308,105 @@ function TotpStep({
           {pending ? "Verificando…" : "Confirmar y continuar"}
         </Button>
       </form>
+    </>
+  );
+}
+
+/** Cuenta regresiva para «Reenviar código». Se reinicia con cada envío (sentStamp). */
+function useCountdown(seconds: number | undefined, stamp: number | undefined): number {
+  const [left, setLeft] = useState(seconds ?? 0);
+  useEffect(() => {
+    setLeft(seconds ?? 0);
+    if (!seconds) return;
+    const timer = window.setInterval(() => {
+      setLeft((value) => {
+        if (value <= 1) {
+          window.clearInterval(timer);
+          return 0;
+        }
+        return value - 1;
+      });
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [seconds, stamp]);
+  return left;
+}
+
+function EmailCodeStep({
+  started,
+  confirmed,
+  resent,
+  pending,
+  action,
+  resendPending,
+  resendAction,
+  onRestart,
+}: {
+  started: GeneralAccessState;
+  confirmed: GeneralAccessState;
+  resent: GeneralAccessState;
+  pending: boolean;
+  action: (payload: FormData) => void;
+  resendPending: boolean;
+  resendAction: (payload: FormData) => void;
+  onRestart: () => void;
+}) {
+  // El aviso más reciente gana: reenvío o confirmación.
+  const latestResend = (resent.sentStamp ?? 0) >= (started.sentStamp ?? 0) && (resent.error || resent.info) ? resent : null;
+  const maskedEmail = resent.maskedEmail ?? started.maskedEmail;
+  const cooldown = latestResend?.resendAfterSeconds !== undefined ? latestResend : started;
+  const left = useCountdown(cooldown.resendAfterSeconds, cooldown.sentStamp);
+  const codeError = confirmed.fieldErrors?.code;
+  const confirmBanner = confirmed.error && confirmed.error !== "Revisa los campos marcados." ? confirmed.error : undefined;
+
+  return (
+    <>
+      <div className="space-y-2">
+        <h2 className="text-2xl">Revisa tu correo</h2>
+        <p className="text-ink-muted">
+          Te enviamos un código de 6 números{maskedEmail ? <> a <strong className="text-ink">{maskedEmail}</strong></> : null}. Escríbelo aquí para continuar. Vence en 10 minutos.
+        </p>
+        <p className="text-sm text-ink-muted">Si no lo ves, revisa la carpeta de correo no deseado o spam.</p>
+      </div>
+      {confirmBanner && <Notice tone="error" live>{confirmBanner}</Notice>}
+      {latestResend?.error && <Notice tone="error" live>{latestResend.error}</Notice>}
+      {latestResend?.info && !latestResend.error && <Notice tone="info" live>{latestResend.info}</Notice>}
+      <form action={action} className="space-y-5" noValidate>
+        <input type="hidden" name="phase" value="email" />
+        <Field id="email-code" label="Código de 6 números" required error={codeError}>
+          <input
+            id="email-code"
+            name="code"
+            className="field-input max-w-[12rem] tracking-[0.3em]"
+            inputMode="numeric"
+            autoComplete="one-time-code"
+            pattern="[0-9]{6}"
+            maxLength={6}
+            required
+            aria-invalid={Boolean(codeError)}
+            aria-describedby={describedBy("email-code", { error: codeError })}
+          />
+        </Field>
+        <Button type="submit" block loading={pending}>
+          <Mail className="h-5 w-5" aria-hidden />
+          {pending ? "Verificando…" : "Confirmar y continuar"}
+        </Button>
+      </form>
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <form action={resendAction}>
+          <button
+            type="submit"
+            disabled={left > 0 || resendPending}
+            className="inline-flex min-h-11 items-center gap-2 font-semibold text-marian underline-offset-4 hover:underline disabled:cursor-not-allowed disabled:text-ink-muted disabled:no-underline"
+          >
+            <RotateCcw className="h-4 w-4" aria-hidden />
+            {resendPending ? "Enviando…" : left > 0 ? `Reenviar código en ${left} s` : "Reenviar código"}
+          </button>
+        </form>
+        <button type="button" onClick={onRestart} className="inline-flex min-h-11 items-center font-semibold text-marian underline-offset-4 hover:underline">
+          Usar otro correo
+        </button>
+      </div>
     </>
   );
 }

@@ -14,6 +14,8 @@ import {
   type GeneralAuthRecord,
   type GeneralChallengeInput,
   type GeneralChallengeRecord,
+  type GeneralChallengePurpose,
+  type GeneralEmailLink,
   type InsuredRecord,
   type LinkMailTarget,
   type ManualPersonPatch,
@@ -144,7 +146,7 @@ export class SupabaseRepo implements Repo {
     const data = check(
       await this.db
         .from("people")
-        .select("id, first_names, last_names, national_id_encrypted, national_id_hash, national_id_last2, status, confirmation_code, submitted_at")
+        .select("id, first_names, last_names, national_id_encrypted, national_id_hash, national_id_last2, status, confirmation_code, submitted_at, login_email")
         .eq("id", id)
         .is("anonymized_at", null)
         .maybeSingle(),
@@ -301,17 +303,18 @@ export class SupabaseRepo implements Repo {
     const personRow = check(
       await this.db
         .from("people")
-        .select("id, first_names, last_names, national_id_encrypted, national_id_hash, national_id_last2, status, confirmation_code, submitted_at, created_at, updated_at, review_reasons, reviewed_at, anonymized_at, retention_until, outreach_email, fingerprint_code_hash, totp_enabled_at, general_locked_until")
+        .select("id, first_names, last_names, national_id_encrypted, national_id_hash, national_id_last2, status, confirmation_code, submitted_at, created_at, updated_at, review_reasons, reviewed_at, anonymized_at, retention_until, outreach_email, fingerprint_code_hash, totp_enabled_at, general_locked_until, login_email_verified_at")
         .eq("id", id)
         .maybeSingle(),
       "getPersonDetail.person",
-    ) as (PersonDetail["person"] & { outreach_email: string | null; fingerprint_code_hash: string | null; totp_enabled_at: string | null; general_locked_until: string | null }) | null;
+    ) as (PersonDetail["person"] & { outreach_email: string | null; fingerprint_code_hash: string | null; totp_enabled_at: string | null; general_locked_until: string | null; login_email_verified_at: string | null }) | null;
     if (!personRow) return null;
-    const { outreach_email: outreachEmail, fingerprint_code_hash: fingerprintHash, totp_enabled_at: totpEnabledAt, general_locked_until: lockedUntil, ...person } = personRow;
+    const { outreach_email: outreachEmail, fingerprint_code_hash: fingerprintHash, totp_enabled_at: totpEnabledAt, general_locked_until: lockedUntil, login_email_verified_at: emailVerifiedAt, ...person } = personRow;
     const generalAccess: PersonDetail["general_access"] = {
       fingerprint_set: Boolean(fingerprintHash),
       totp_enabled: Boolean(totpEnabledAt),
       locked: Boolean(lockedUntil && new Date(lockedUntil).getTime() > Date.now()),
+      email_verified: Boolean(emailVerifiedAt),
     };
 
     const [contact, bank, consents, nameChanges, tokens, audit] = await Promise.all([
@@ -625,7 +628,7 @@ export class SupabaseRepo implements Repo {
     const data = check(
       await this.db
         .from("people")
-        .select("id, first_names, last_names, national_id_last2, status, submitted_at, fingerprint_code_hash, totp_secret_encrypted, totp_enabled_at, general_failed_attempts, general_locked_until")
+        .select("id, first_names, last_names, national_id_last2, status, submitted_at, fingerprint_code_hash, totp_secret_encrypted, totp_enabled_at, general_failed_attempts, general_locked_until, login_email")
         .eq("national_id_hash", hash)
         .is("anonymized_at", null)
         .maybeSingle(),
@@ -670,7 +673,12 @@ export class SupabaseRepo implements Repo {
       general_challenge_purpose: input.purpose,
     };
     let query = this.db.from("people").update(patch).eq("id", personId).is("anonymized_at", null);
-    if (input.purpose === "enroll") {
+    if (input.purpose === "email") {
+      if (!input.email) return false;
+      patch.general_challenge_email = input.email;
+      patch.general_challenge_sent_at = input.sentAt ?? new Date().toISOString();
+      query = this.db.from("people").update(patch).eq("id", personId).is("anonymized_at", null);
+    } else if (input.purpose === "enroll") {
       if (!input.totpSecretEncrypted) return false;
       patch.totp_secret_encrypted = input.totpSecretEncrypted;
       patch.totp_enabled_at = null;
@@ -686,7 +694,7 @@ export class SupabaseRepo implements Repo {
     const data = check(
       await this.db
         .from("people")
-        .select("id, first_names, last_names, national_id_last2, status, submitted_at, general_challenge_purpose, general_challenge_expires_at, totp_secret_encrypted, totp_enabled_at, general_locked_until")
+        .select("id, first_names, last_names, national_id_last2, status, submitted_at, general_challenge_purpose, general_challenge_expires_at, totp_secret_encrypted, totp_enabled_at, general_locked_until, general_challenge_email, general_challenge_sent_at")
         .eq("general_challenge_hash", challengeHash)
         .is("anonymized_at", null)
         .maybeSingle(),
@@ -703,8 +711,11 @@ export class SupabaseRepo implements Repo {
       totp_secret_encrypted: string | null;
       totp_enabled_at: string | null;
       general_locked_until: string | null;
+      general_challenge_email: string | null;
+      general_challenge_sent_at: string | null;
     } | null;
-    if (!data?.general_challenge_expires_at || (data.general_challenge_purpose !== "enroll" && data.general_challenge_purpose !== "verify")) return null;
+    const purpose = data?.general_challenge_purpose;
+    if (!data?.general_challenge_expires_at || (purpose !== "enroll" && purpose !== "verify" && purpose !== "email")) return null;
     return {
       person_id: data.id,
       first_names: data.first_names,
@@ -712,15 +723,32 @@ export class SupabaseRepo implements Repo {
       national_id_last2: data.national_id_last2,
       status: data.status,
       submitted_at: data.submitted_at,
-      purpose: data.general_challenge_purpose,
+      purpose,
       expires_at: data.general_challenge_expires_at,
       totp_secret_encrypted: data.totp_secret_encrypted,
       totp_enabled_at: data.totp_enabled_at,
       general_locked_until: data.general_locked_until,
+      pending_email: data.general_challenge_email,
+      sent_at: data.general_challenge_sent_at,
     };
   }
 
-  async completeGeneralChallenge(personId: string, challengeHash: string, mode: "enroll" | "verify"): Promise<boolean> {
+  async touchGeneralChallengeSent(personId: string, challengeHash: string, sentAt: string): Promise<boolean> {
+    const data = check(
+      await this.db
+        .from("people")
+        .update({ general_challenge_sent_at: sentAt })
+        .eq("id", personId)
+        .eq("general_challenge_hash", challengeHash)
+        .eq("general_challenge_purpose", "email")
+        .select("id"),
+      "touchGeneralChallengeSent",
+    ) as { id: string }[] | null;
+    return Boolean(data && data.length > 0);
+  }
+
+  async completeGeneralChallenge(personId: string, challengeHash: string, mode: GeneralChallengePurpose, link?: GeneralEmailLink): Promise<boolean> {
+    const now = new Date().toISOString();
     const patch: Record<string, string | null | number> = {
       general_challenge_hash: null,
       general_challenge_expires_at: null,
@@ -728,17 +756,25 @@ export class SupabaseRepo implements Repo {
       general_failed_attempts: 0,
       general_locked_until: null,
     };
-    if (mode === "enroll") patch.totp_enabled_at = new Date().toISOString();
-    const data = check(
-      await this.db
-        .from("people")
-        .update(patch)
-        .eq("id", personId)
-        .eq("general_challenge_hash", challengeHash)
-        .eq("general_challenge_purpose", mode)
-        .select("id"),
-      "completeGeneralChallenge",
-    ) as { id: string }[] | null;
+    if (mode === "enroll") patch.totp_enabled_at = now;
+    if (mode === "email") {
+      if (!link?.email) return false;
+      patch.login_email = link.email;
+      patch.login_email_verified_at = now;
+      patch.general_challenge_email = null;
+      patch.general_challenge_sent_at = null;
+      if (link.authUserId) patch.auth_user_id = link.authUserId;
+    }
+    const res = await this.db
+      .from("people")
+      .update(patch)
+      .eq("id", personId)
+      .eq("general_challenge_hash", challengeHash)
+      .eq("general_challenge_purpose", mode)
+      .select("id");
+    // 23505: ese usuario de Supabase Auth ya está vinculado a otra cédula (people_auth_user_id_idx).
+    if (res.error?.code === "23505") return false;
+    const data = check(res, "completeGeneralChallenge") as { id: string }[] | null;
     return Boolean(data && data.length > 0);
   }
 
@@ -777,6 +813,8 @@ export class SupabaseRepo implements Repo {
           general_challenge_hash: null,
           general_challenge_expires_at: null,
           general_challenge_purpose: null,
+          general_challenge_email: null,
+          general_challenge_sent_at: null,
         })
         .eq("id", personId)
         .is("anonymized_at", null)

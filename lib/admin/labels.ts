@@ -31,6 +31,8 @@ export const AUDIT_LABELS: Record<AuditAction, string> = {
   FINGERPRINT_RESET: "Borró el código dactilar de una persona",
   TOTP_ENROLLED: "Configuró la verificación del teléfono",
   TOTP_RESET: "Borró la verificación del teléfono de una persona",
+  EMAIL_CODE_SENT: "Se envió un código de ingreso a su correo",
+  EMAIL_VERIFIED: "Confirmó su correo con el código de ingreso",
 };
 
 export const AUDIT_ACTIONS = Object.keys(AUDIT_LABELS) as AuditAction[];

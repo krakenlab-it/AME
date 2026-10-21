@@ -49,6 +49,7 @@ export default async function PersonPage({ params }: { params: Promise<{ id: str
       <Card title="Ingreso general">
         <Item k="Código dactilar" v={detail.general_access.fingerprint_set ? "Registrado" : "Sin registrar"} />
         <Item k="Verificación del teléfono" v={detail.general_access.totp_enabled ? "Activa" : "Sin configurar"} />
+        <Item k="Correo de ingreso" v={detail.general_access.email_verified ? "Confirmado con código" : "Sin confirmar"} />
         <Item k="Bloqueo temporal" v={detail.general_access.locked ? "Sí" : "No"} />
       </Card>
 

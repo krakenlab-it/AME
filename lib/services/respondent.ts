@@ -239,7 +239,14 @@ export function registeredView(person: PersonRecord) {
       /* se mantiene la versión más enmascarada */
     }
   }
-  return { firstNames: person.first_names, lastNames: person.last_names, cedulaMasked: masked, cedulaLast2: person.national_id_last2 ?? "**" };
+  return {
+    firstNames: person.first_names,
+    lastNames: person.last_names,
+    cedulaMasked: masked,
+    cedulaLast2: person.national_id_last2 ?? "**",
+    /** Correo confirmado con el código de /ingresar. Solo rellena el campo; la persona puede cambiarlo. */
+    email: person.login_email ?? "",
+  };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

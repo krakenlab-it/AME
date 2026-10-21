@@ -13,6 +13,16 @@ export const settings = {
   generalIdentifyLimitPerCedula: 8,
   generalIdentifyWindowSeconds: 15 * 60,
   generalChallengeMinutes: 10,
+  /**
+   * Cómo se confirma la identidad en /ingresar después de la cédula.
+   * "email" (por defecto): código de 6 números por correo (Supabase Auth). "totp": aplicación autenticadora (flujo anterior).
+   */
+  generalAuthMethod: (): "email" | "totp" => (process.env.AME_GENERAL_AUTH_METHOD === "totp" ? "totp" : "email"),
+  /** Espera mínima entre dos envíos del código. Supabase exige 60 s por usuario. */
+  emailOtpCooldownSeconds: 60,
+  /** Envíos de código por persona por hora (además del límite de Supabase). */
+  emailOtpLimitPerPerson: 5,
+  emailOtpWindowSeconds: 60 * 60,
   /** Solo "true" exige el código dactilar en /ingresar. Cualquier otro valor lo deja opcional. */
   requireFingerprintCode: () => process.env.AME_REQUIRE_FINGERPRINT_CODE === "true",
   adminLoginLimitPerIp: 10,

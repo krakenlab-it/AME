@@ -10,9 +10,9 @@ import { generateTotpSecret, otpauthUrl, verifyTotp } from "@/lib/security/totp"
 import { canContinueForm } from "./insured-home";
 import { settings } from "./settings";
 
-const RATE_LIMIT_ERROR = "Hiciste demasiados intentos. Espera 15 minutos y vuelve a intentarlo.";
+export const RATE_LIMIT_ERROR = "Hiciste demasiados intentos. Espera 15 minutos y vuelve a intentarlo.";
 const TOTP_MISMATCH = "El código de verificación no es correcto. Inténtalo otra vez.";
-const CHALLENGE_EXPIRED = "Esta verificación venció. Vuelve a escribir tu cédula.";
+export const CHALLENGE_EXPIRED = "Esta verificación venció. Vuelve a escribir tu cédula.";
 const FINGERPRINT_REQUIRED = "Escribe el código dactilar de tu cédula.";
 const ISSUER = "AME Portal";
 
@@ -31,11 +31,11 @@ export type GeneralConfirmResult =
   | { ok: true; sessionToken: string; expiresAt: string; destination: "form" | "home" }
   | { ok: false; error: string; fieldErrors?: Record<string, string>; requireCaptcha?: boolean; challengeExpired?: boolean };
 
-function needsCaptcha(deps: GeneralDeps, hits: number): boolean {
+export function needsCaptcha(deps: GeneralDeps, hits: number): boolean {
   return deps.captchaEnabled && hits > settings.captchaAfterAttempts;
 }
 
-function isLocked(until: string | null): boolean {
+export function isLocked(until: string | null): boolean {
   return Boolean(until && new Date(until).getTime() > Date.now());
 }
 
@@ -46,7 +46,7 @@ export function totpAccountLabel(person: Pick<GeneralAuthRecord, "first_names" |
   return `${name} · ${maskCedulaTail(person.national_id_last2)}`;
 }
 
-async function limitIp(repo: RespondentRepo, deps: GeneralDeps): Promise<{ allowed: boolean; hits: number }> {
+export async function limitIp(repo: RespondentRepo, deps: GeneralDeps): Promise<{ allowed: boolean; hits: number }> {
   const limit = await repo.rateLimitHit(`general-ip:${deps.ipHash}`, settings.generalIdentifyLimitPerIp, settings.generalIdentifyWindowSeconds);
   if (!limit.allowed) {
     await repo.logSecurityEvent({ event_type: "GENERAL_RATE_LIMITED", ip_hash: deps.ipHash, detail: { scope: "ip", hits: limit.hits } });
@@ -66,18 +66,34 @@ export async function startGeneralAccess(repo: RespondentRepo, rawInput: unknown
   if (!parsed.success) {
     return { ok: false, error: "Revisa los campos marcados.", fieldErrors: flattenIssues(parsed.error), requireCaptcha: needsCaptcha(deps, ipLimit.hits) };
   }
+  const resolved = await resolveGeneralPerson(repo, parsed.data, deps, ipLimit.hits);
+  if (!resolved.ok) return resolved;
+  return openTotpStep(repo, resolved.person);
+}
 
-  const code = parsed.data.codigoDactilar;
+export type GeneralFailure = { ok: false; error: string; fieldErrors?: Record<string, string>; requireCaptcha?: boolean };
+
+/**
+ * Cédula + código dactilar opcional: límites, CAPTCHA, bloqueo y el mismo error genérico para todo.
+ * Lo usan el ingreso con TOTP y el ingreso con código por correo.
+ */
+export async function resolveGeneralPerson(
+  repo: RespondentRepo,
+  data: { cedula: string; codigoDactilar: string; captchaToken?: string },
+  deps: GeneralDeps,
+  ipHits: number,
+): Promise<{ ok: true; person: GeneralAuthRecord } | GeneralFailure> {
+  const code = data.codigoDactilar;
   if (settings.requireFingerprintCode() && !code) {
-    return { ok: false, error: "Revisa los campos marcados.", fieldErrors: { codigoDactilar: FINGERPRINT_REQUIRED }, requireCaptcha: needsCaptcha(deps, ipLimit.hits) };
+    return { ok: false, error: "Revisa los campos marcados.", fieldErrors: { codigoDactilar: FINGERPRINT_REQUIRED }, requireCaptcha: needsCaptcha(deps, ipHits) };
   }
 
-  if (needsCaptcha(deps, ipLimit.hits)) {
-    const human = await deps.verifyCaptcha(parsed.data.captchaToken);
+  if (needsCaptcha(deps, ipHits)) {
+    const human = await deps.verifyCaptcha(data.captchaToken);
     if (!human) return { ok: false, error: "Confirma que no eres un robot para continuar.", requireCaptcha: true };
   }
 
-  const cedulaHash = keyedHash(parsed.data.cedula, "national_id");
+  const cedulaHash = keyedHash(data.cedula, "national_id");
   const cedulaLimit = await repo.rateLimitHit(`general-cedula:${cedulaHash}`, settings.generalIdentifyLimitPerCedula, settings.generalIdentifyWindowSeconds);
   if (!cedulaLimit.allowed) {
     await repo.logSecurityEvent({ event_type: "GENERAL_RATE_LIMITED", ip_hash: deps.ipHash, detail: { scope: "cedula", hits: cedulaLimit.hits } });
@@ -88,7 +104,7 @@ export async function startGeneralAccess(repo: RespondentRepo, rawInput: unknown
   const person = await repo.findGeneralAuthByNationalIdHash(cedulaHash);
   const comparable = person?.fingerprint_code_hash ?? keyedHash("unregistered-person", "fingerprint_code");
   const equal = safeEqual(providedHash, comparable);
-  const requireCaptcha = needsCaptcha(deps, ipLimit.hits);
+  const requireCaptcha = needsCaptcha(deps, ipHits);
 
   if (!person) {
     await repo.audit({ actor_type: "respondent", action: "GENERAL_IDENTIFY_FAILED", metadata: { outcome: "unknown" } });
@@ -113,10 +129,10 @@ export async function startGeneralAccess(repo: RespondentRepo, rawInput: unknown
     }
   }
 
-  return openTotpStep(repo, person);
+  return { ok: true, person };
 }
 
-async function failFingerprint(repo: RespondentRepo, personId: string, deps: GeneralDeps, requireCaptcha: boolean): Promise<GeneralStartResult> {
+async function failFingerprint(repo: RespondentRepo, personId: string, deps: GeneralDeps, requireCaptcha: boolean): Promise<GeneralFailure> {
   const failure = await repo.registerGeneralFailure(personId, settings.generalLockThreshold, settings.generalLockMinutes);
   await repo.audit({
     person_id: personId,
