@@ -36,11 +36,11 @@ test("envía un código al correo, lo confirma y rellena el correo del formulari
   await expect(page.getByRole("button", { name: "Usar otro correo" })).toBeVisible();
   await expect(page.getByText(started!.cedula)).toHaveCount(0);
 
-  await page.getByLabel("Código de 6 números").fill("000000");
+  await page.getByLabel("Código de acceso").fill("000000");
   await page.getByRole("button", { name: "Confirmar y continuar" }).click();
   await expect(page.getByText("El código no es correcto o ya venció. Revisa el último correo que te enviamos.")).toBeVisible();
 
-  await page.getByLabel("Código de 6 números").fill(DEMO_EMAIL_OTP_CODE);
+  await page.getByLabel("Código de acceso").fill(DEMO_EMAIL_OTP_CODE);
   await page.getByRole("button", { name: "Confirmar y continuar" }).click();
   await expect(page).toHaveURL(/\/verificar\/formulario$/);
   await expect(page.getByText(started!.currentFirstNames, { exact: true })).toBeVisible();

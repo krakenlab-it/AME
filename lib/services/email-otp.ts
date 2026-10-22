@@ -9,7 +9,7 @@ export type EmailOtpVerifyResult =
   | { ok: false; reason: "invalid" | "rate_limited" | "unavailable" };
 
 export interface EmailOtpProvider {
-  /** Envía un código de 6 números al correo. Crea el usuario de Auth si no existe. */
+  /** Envía un código de acceso (6 a 10 dígitos, según Supabase) al correo. Crea el usuario de Auth si no existe. */
   send(email: string): Promise<EmailOtpSendResult>;
   /** Comprueba el código. No deja una sesión de Supabase abierta en el navegador. */
   verify(email: string, code: string): Promise<EmailOtpVerifyResult>;

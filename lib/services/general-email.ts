@@ -52,7 +52,7 @@ async function personSendAllowed(repo: RespondentRepo, personId: string, deps: G
 
 /**
  * Paso 1: cédula + correo (+ código dactilar opcional). Si la cédula está en la base,
- * guarda el reto con el correo y envía el código de 6 números. El correo no se registra en la auditoría.
+ * guarda el reto con el correo y envía el código de acceso (6 a 10 dígitos). El correo no se registra en la auditoría.
  */
 export async function startGeneralEmailAccess(repo: RespondentRepo, rawInput: unknown, deps: GeneralEmailDeps): Promise<GeneralEmailStartResult> {
   const ipLimit = await limitIp(repo, deps);

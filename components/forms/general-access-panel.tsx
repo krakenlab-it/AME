@@ -9,6 +9,9 @@ import { Button } from "@/components/ui/button";
 import { describedBy, Field } from "@/components/ui/field";
 import { Notice } from "@/components/ui/notice";
 
+/** Hasta 10 dígitos (máximo de Supabase) más espacios o guiones al pegar. */
+const EMAIL_OTP_INPUT_MAX = 24;
+
 type AuthMethod = "email" | "totp";
 
 interface PanelProps {
@@ -173,7 +176,7 @@ function IdentifyStep({
           />
         </Field>
         {method === "email" && (
-          <Field id="email" label="Correo electrónico" required hint="Te enviaremos un código de 6 números. Lo usaremos también como tu correo de contacto." error={emailError}>
+          <Field id="email" label="Correo electrónico" required hint="Te enviaremos un código de acceso. Lo usaremos también como tu correo de contacto." error={emailError}>
             <input
               id="email"
               name="email"
@@ -366,7 +369,7 @@ function EmailCodeStep({
       <div className="space-y-2">
         <h2 className="text-2xl">Revisa tu correo</h2>
         <p className="text-ink-muted">
-          Te enviamos un código de 6 números{maskedEmail ? <> a <strong className="text-ink">{maskedEmail}</strong></> : null}. Escríbelo aquí para continuar. Vence en 10 minutos.
+          Te enviamos un código de acceso{maskedEmail ? <> a <strong className="text-ink">{maskedEmail}</strong></> : null}. Escríbelo aquí para continuar. Vence en 10 minutos.
         </p>
         <p className="text-sm text-ink-muted">Si no lo ves, revisa la carpeta de correo no deseado o spam.</p>
       </div>
@@ -375,15 +378,16 @@ function EmailCodeStep({
       {latestResend?.info && !latestResend.error && <Notice tone="info" live>{latestResend.info}</Notice>}
       <form action={action} className="space-y-5" noValidate>
         <input type="hidden" name="phase" value="email" />
-        <Field id="email-code" label="Código de 6 números" required error={codeError}>
+        <Field id="email-code" label="Código de acceso" required error={codeError}>
           <input
             id="email-code"
             name="code"
-            className="field-input max-w-[12rem] tracking-[0.3em]"
+            className="field-input max-w-[16rem] tracking-[0.3em]"
             inputMode="numeric"
             autoComplete="one-time-code"
-            pattern="[0-9]{6}"
-            maxLength={6}
+            spellCheck={false}
+            pattern="[0-9 \-]*"
+            maxLength={EMAIL_OTP_INPUT_MAX}
             required
             aria-invalid={Boolean(codeError)}
             aria-describedby={describedBy("email-code", { error: codeError })}
