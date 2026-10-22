@@ -17,6 +17,8 @@ export interface GeneralAccessState {
   fieldErrors?: Record<string, string>;
   requireCaptcha?: boolean;
   phase?: "identify" | "enroll" | "totp" | "email";
+  /** Lo que la persona escribió, para no borrar el formulario cuando hay un error (React 19 lo reinicia). */
+  values?: { cedula?: string; email?: string };
   /** Correo enmascarado al que se envió el código (j***@dominio.com). */
   maskedEmail?: string;
   /** Segundos que faltan para poder pedir otro código. */
@@ -62,7 +64,14 @@ export async function startGeneralAction(_prev: GeneralAccessState, formData: Fo
         },
         d,
       );
-      if (!result.ok) return { error: result.error, fieldErrors: result.fieldErrors, requireCaptcha: result.requireCaptcha };
+      if (!result.ok) {
+        return {
+          error: result.error,
+          fieldErrors: result.fieldErrors,
+          requireCaptcha: result.requireCaptcha,
+          values: { cedula: String(formData.get("cedula") ?? "").slice(0, 16), email: String(formData.get("email") ?? "").slice(0, 254) },
+        };
+      }
       (await cookies()).set(GENERAL_CHALLENGE_COOKIE(), result.challengeToken, cookieOptions(settings.generalChallengeMinutes * 60));
       return { phase: "email", maskedEmail: result.maskedEmail, resendAfterSeconds: result.resendAfterSeconds, sentStamp: Date.now() };
     }
