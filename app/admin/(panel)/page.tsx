@@ -1,5 +1,6 @@
 import { CheckCircle2, Clock, Hourglass, Play, Users, ClipboardCheck, Search, X, type LucideIcon } from "lucide-react";
 import Link from "next/link";
+import { LinkAccount } from "@/components/admin/link-account";
 import { StatusBadge } from "@/components/admin/status-badge";
 import { AnimatedNumber, Meter, Stagger, StaggerItem } from "@/components/motion/primitives";
 import { Button } from "@/components/ui/button";
@@ -8,7 +9,7 @@ import { getRepo } from "@/lib/database";
 import { keyedHash } from "@/lib/encryption/crypto";
 import { assessNationalId } from "@/lib/validation/document";
 import { PERSON_STATUSES, STATUS_LABELS, type PersonStatus } from "@/lib/validation/constants";
-import { maskCedulaTail } from "@/lib/security/masking";
+import { maskCedulaTail, maskEmail } from "@/lib/security/masking";
 import { can } from "@/lib/security/rbac";
 import { requireAdmin } from "@/lib/server/admin-guard";
 import { formatDateTime } from "@/lib/utils";
@@ -53,6 +54,8 @@ export default async function AdminDashboard({ searchParams }: { searchParams: P
   };
 
   const needsReview = counts.NEEDS_REVIEW;
+  const canLink = can(admin.role, "people:reset-factors");
+  const unlinked = canLink ? await repo.listUnlinkedAccounts(50) : [];
 
   return (
     <div className="space-y-8">
@@ -182,6 +185,39 @@ export default async function AdminDashboard({ searchParams }: { searchParams: P
               {page * PAGE_SIZE < list.total && <Link className="inline-flex min-h-[44px] items-center rounded-lg px-4 font-semibold text-marian hover:bg-marian-soft" href={qs({ p: page + 1 })}>Siguiente →</Link>}
             </div>
           </nav>
+        </section>
+      )}
+
+      {canLink && unlinked.length > 0 && (
+        <section className="space-y-4" aria-labelledby="sin-vincular">
+          <div className="space-y-1">
+            <h2 id="sin-vincular" className="text-2xl">Cuentas sin vincular</h2>
+            <p className="text-ink-muted">
+              Personas que entraron con un correo que no estaba en la importación. No abren el formulario hasta que las vincules con su ficha. Revisa la identidad antes de vincular.
+            </p>
+          </div>
+          <div className="sheet overflow-x-auto">
+            <table className="w-full text-left text-sm">
+              <thead>
+                <tr>
+                  <th scope="col" className="px-4 py-3">Correo</th>
+                  <th scope="col" className="px-4 py-3">Desde</th>
+                  <th scope="col" className="px-4 py-3">Cédula pedida</th>
+                  <th scope="col" className="px-4 py-3">Vincular</th>
+                </tr>
+              </thead>
+              <tbody>
+                {unlinked.map((row) => (
+                  <tr key={row.id} className="border-t border-marian-line align-top">
+                    <td className="px-4 py-3">{maskEmail(row.login_email)}</td>
+                    <td className="px-4 py-3 whitespace-nowrap">{formatDateTime(row.created_at)}</td>
+                    <td className="px-4 py-3">{row.link_request_national_id_last2 ? maskCedulaTail(row.link_request_national_id_last2) : "—"}</td>
+                    <td className="px-4 py-3"><LinkAccount accountId={row.id} requestedLast2={row.link_request_national_id_last2} /></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </section>
       )}
     </div>

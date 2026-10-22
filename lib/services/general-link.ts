@@ -132,7 +132,7 @@ export async function resolveGeneralPerson(
   return { ok: true, person };
 }
 
-async function failFingerprint(repo: RespondentRepo, personId: string, deps: GeneralDeps, requireCaptcha: boolean): Promise<GeneralFailure> {
+export async function failFingerprint(repo: RespondentRepo, personId: string, deps: GeneralDeps, requireCaptcha: boolean): Promise<GeneralFailure> {
   const failure = await repo.registerGeneralFailure(personId, settings.generalLockThreshold, settings.generalLockMinutes);
   await repo.audit({
     person_id: personId,

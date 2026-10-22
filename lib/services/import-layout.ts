@@ -1,4 +1,6 @@
+import { isValidCedula } from "@/lib/validation/cedula";
 import { isForeignDocument, normalizeDocument } from "@/lib/validation/document";
+import { normalizePhone } from "@/lib/validation/phone";
 import { cleanText } from "@/lib/validation/sanitize";
 
 /**
@@ -87,13 +89,38 @@ const EMAIL_HEADERS = new Set([
   "correo para el enlace",
 ]);
 
+/** Títulos de teléfono. Una columna de teléfono nunca se usa como cédula. */
+const PHONE_HEADERS = new Set([
+  "telefono",
+  "telefonos",
+  "telefono celular",
+  "telefono movil",
+  "numero de telefono",
+  "nro de telefono",
+  "celular",
+  "celulares",
+  "movil",
+  "whatsapp",
+  "phone",
+  "phone number",
+  "mobile",
+  "mobile phone",
+  "cell",
+  "tel",
+]);
+
 const EMAIL_RE = /^[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+$/;
 
-export type HeaderRole = "full" | "first" | "last" | "id" | "email" | "other";
+export type HeaderRole = "full" | "first" | "last" | "id" | "email" | "phone" | "other";
 
 export interface ImportCell {
   header: string;
   value: string;
+  /**
+   * Rol de la columna ya decidido mirando toda la columna (ver classifyImportColumns).
+   * Si falta, se usa solo el título.
+   */
+  role?: HeaderRole;
 }
 
 export interface InterpretedImport {
@@ -101,6 +128,8 @@ export interface InterpretedImport {
   last_names: string;
   national_id: string;
   outreach_email: string;
+  /** Teléfono en E.164 si el archivo trae una columna de teléfono. */
+  outreach_phone?: string;
 }
 
 export function repairImportedText(value: string): string {
@@ -120,6 +149,12 @@ export function headerRole(header: string): HeaderRole {
   if (FIRST_HEADERS.has(normalized)) return "first";
   if (LAST_HEADERS.has(normalized)) return "last";
   if (EMAIL_HEADERS.has(normalized) || normalized.includes("correo") || normalized === "email") return "email";
+  if (
+    PHONE_HEADERS.has(normalized) ||
+    /\b(telefono|telefonos|celular|movil|whatsapp|phone)\b/.test(normalized)
+  ) {
+    return "phone";
+  }
   if (ID_HEADERS.has(normalized) || normalized.includes("cedula") || normalized.includes("pasaporte") || normalized.includes("passport")) return "id";
   return "other";
 }
@@ -137,6 +172,124 @@ export function tenDigitId(value: string): string | null {
 /** Pasaporte encontrado por contenido. El valor ya va normalizado (mayúsculas, sin espacios). */
 export function passportId(value: string): string | null {
   return isForeignDocument(value) ? normalizeDocument(value) : null;
+}
+
+/**
+ * Celular ecuatoriano por contenido: 09XXXXXXXX, +593 9XXXXXXXX, 5939XXXXXXXX
+ * o 9XXXXXXXX (Excel quitó el cero). Devuelve E.164 o null.
+ * Ojo: 09 también es el código de provincia de Guayas, así que una celda sola no basta
+ * para decidir. Ver classifyImportColumns.
+ */
+export function ecuadorMobile(value: string): string | null {
+  const compact = value.trim().replace(/[\s().-]/g, "");
+  if (!/^\+?\d{9,13}$/.test(compact)) return null;
+  const digits = compact.replace(/^\+/, "");
+  const national = digits.startsWith("593") ? digits.slice(3) : digits;
+  if (!/^0?9\d{8}$/.test(national)) return null;
+  const check = normalizePhone("+593", national);
+  return check.ok && check.e164 ? check.e164 : null;
+}
+
+export interface ColumnProfile {
+  /** Celdas con algo escrito. */
+  filled: number;
+  /** Parecen celular ecuatoriano (09…, +593…). */
+  mobileLike: number;
+  /** Diez dígitos que no pasan el verificador de cédula. */
+  cedulaFailures: number;
+  /** Cédulas válidas (provincia, tercer dígito y módulo 10). */
+  validCedulas: number;
+  /** Escrito con +593: nunca es una cédula. */
+  internationalPrefix: number;
+}
+
+export function profileColumn(values: string[]): ColumnProfile {
+  const profile: ColumnProfile = { filled: 0, mobileLike: 0, cedulaFailures: 0, validCedulas: 0, internationalPrefix: 0 };
+  for (const raw of values) {
+    const text = cleanText(raw);
+    if (!text) continue;
+    profile.filled += 1;
+    if (ecuadorMobile(text)) profile.mobileLike += 1;
+    if (/^\+\s*593/.test(text)) profile.internationalPrefix += 1;
+    // Nueve dígitos: Excel quitó el cero inicial (una cédula de Guayas 09… o un celular 09…).
+    const nine = /^\d{9}$/.test(text.replace(/[\s-]/g, "")) ? `0${text.replace(/[\s-]/g, "")}` : null;
+    const ten = tenDigitId(text) ?? nine;
+    if (ten) {
+      if (isValidCedula(ten)) profile.validCedulas += 1;
+      else profile.cedulaFailures += 1;
+    }
+  }
+  return profile;
+}
+
+/**
+ * Una columna es de teléfonos si casi todo parece celular (09…/+593…) y muchas de esas
+ * celdas no pasan el verificador de cédula. Una columna de cédulas de Guayas también
+ * empieza en 09, pero sus valores sí pasan el verificador; por eso se decide por columna.
+ */
+export function looksLikePhoneColumn(profile: ColumnProfile): boolean {
+  if (profile.filled < 1) return false;
+  const mobileShare = profile.mobileLike / profile.filled;
+  if (mobileShare < 0.6) return false;
+  if (profile.internationalPrefix / profile.filled >= 0.5) return true;
+  const tenDigits = profile.cedulaFailures + profile.validCedulas;
+  if (tenDigits === 0) return mobileShare >= 0.8;
+  return profile.cedulaFailures / tenDigits >= 0.5;
+}
+
+/**
+ * Rol de cada columna mirando el título y el contenido completo.
+ * Columnas sin título también se clasifican (por ejemplo, teléfonos sueltos).
+ */
+export function classifyImportColumns(headers: string[], columns: string[][]): HeaderRole[] {
+  return headers.map((header, index) => {
+    const byHeader = headerRole(header);
+    if (byHeader === "phone" || byHeader === "email") return byHeader;
+    const profile = profileColumn(columns[index] ?? []);
+    if (byHeader === "id") return "id";
+    if (looksLikePhoneColumn(profile)) return "phone";
+    return byHeader;
+  });
+}
+
+/** Cuántos títulos conocidos tiene una fila. Sirve para encontrar la fila de títulos. */
+export function headerRowScore(cells: string[]): number {
+  let score = 0;
+  const seen = new Set<HeaderRole>();
+  for (const cell of cells) {
+    const text = cleanText(cell);
+    if (!text || text.length > 60) continue;
+    const role = headerRole(text);
+    if (role === "other" || seen.has(role)) continue;
+    seen.add(role);
+    score += role === "id" ? 2 : 1;
+  }
+  return score;
+}
+
+/** Busca la fila de títulos entre las primeras filas. Si ninguna tiene títulos conocidos, la primera con datos. */
+export const HEADER_SCAN_ROWS = 10;
+export function pickHeaderRow(rows: string[][]): number {
+  let best = -1;
+  let bestScore = 0;
+  const limit = Math.min(rows.length, HEADER_SCAN_ROWS);
+  for (let i = 0; i < limit; i += 1) {
+    const score = headerRowScore(rows[i] ?? []);
+    if (score > bestScore) {
+      best = i;
+      bestScore = score;
+    }
+  }
+  if (best >= 0) return best;
+  const firstFilled = rows.findIndex((row) => row.some((cell) => cleanText(cell)));
+  return firstFilled >= 0 ? firstFilled : 0;
+}
+
+/** Un nombre no lleva números. Dos o más dígitos es basura numérica (teléfono, cédula, código). */
+export function isNumericJunk(value: string): boolean {
+  const digits = value.replace(/\D/g, "").length;
+  if (digits >= 2) return true;
+  return digits > 0 && !/\p{L}{2,}/u.test(value);
 }
 
 function isAllDigits(value: string): boolean {
@@ -160,6 +313,7 @@ function rankIdColumn(role: HeaderRole): number {
       return 1;
     case "last":
     case "email":
+    case "phone":
       return 0;
     default: {
       const exhaustive: never = role;
@@ -228,8 +382,13 @@ interface PreparedCell {
 export function interpretImportCells(cells: ImportCell[]): InterpretedImport {
   const prepared: PreparedCell[] = cells.map((cell, index) => {
     const text = repairImportedText(cleanText(cell.value));
-    return { index, role: headerRole(cell.header), text, cedula: tenDigitId(text), passport: passportId(text) };
+    const role = cell.role ?? headerRole(cell.header);
+    // Un teléfono nunca es candidato a cédula ni a pasaporte.
+    if (role === "phone") return { index, role, text, cedula: null, passport: null };
+    return { index, role, text, cedula: tenDigitId(text), passport: passportId(text) };
   });
+  const phoneCell = prepared.find((cell) => cell.role === "phone" && ecuadorMobile(cell.text));
+  const outreachPhone = phoneCell ? ecuadorMobile(phoneCell.text) ?? "" : "";
 
   const idCandidates = prepared.filter((cell) => cell.cedula);
   const idPick = [...idCandidates].sort((a, b) => rankIdColumn(b.role) - rankIdColumn(a.role) || a.index - b.index)[0];
@@ -257,24 +416,28 @@ export function interpretImportCells(cells: ImportCell[]): InterpretedImport {
   }
 
   const emailPick = prepared
-    .filter((cell) => !usedAsId.has(cell.index) && cell.text && (cell.role === "email" || looksLikeEmail(cell.text)))
+    .filter((cell) => !usedAsId.has(cell.index) && cell.role !== "phone" && cell.text && (cell.role === "email" || looksLikeEmail(cell.text)))
     .sort((a, b) => Number(b.role === "email") - Number(a.role === "email") || a.index - b.index)[0];
   const outreachEmail = emailPick && looksLikeEmail(emailPick.text) ? emailPick.text.trim().toLowerCase() : "";
 
   const nameCells = prepared.filter((cell) => {
     if (usedAsId.has(cell.index)) return false;
     if (emailPick && cell.index === emailPick.index) return false;
-    if (cell.role === "email") return false;
+    if (cell.role === "email" || cell.role === "phone") return false;
     if (!cell.text) return false;
     if (looksLikeEmail(cell.text)) return false;
     // Un apellido que es la cédula (solo dígitos, o el mismo valor que la columna de identidad) no es un apellido.
     if (isAllDigits(cell.text)) return false;
     if (nationalId && normalizeDocument(cell.text) === nationalId) return false;
+    // Basura numérica (un teléfono con espacios, «Juan 0991…», un código) no es un nombre.
+    if (isNumericJunk(cell.text)) return false;
     return /\p{L}/u.test(cell.text);
   });
 
   const names = mapNameCells(nameCells);
-  return { first_names: names.first_names, last_names: names.last_names, national_id: nationalId, outreach_email: outreachEmail };
+  const out: InterpretedImport = { first_names: names.first_names, last_names: names.last_names, national_id: nationalId, outreach_email: outreachEmail };
+  if (outreachPhone) out.outreach_phone = outreachPhone;
+  return out;
 }
 
 function mapNameCells(nameCells: PreparedCell[]): { first_names: string; last_names: string } {

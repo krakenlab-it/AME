@@ -22,6 +22,8 @@ interface PreviewSandboxSnapshot {
   people: PersonSnap[];
   tokens: AccessTokenRecord[];
   outreach: [string, string][];
+  /** Celulares importados. Opcional: las cookies anteriores no lo traen. */
+  phones?: [string, string][];
 }
 
 export function previewSandboxPersistenceEnabled(): boolean {
@@ -51,6 +53,7 @@ export function serializePreviewSandboxSnapshot(repo: MemoryRepo): PreviewSandbo
     people: [...repo.people.values()],
     tokens: [...repo.tokens.values()],
     outreach: [...repo.outreachEmails.entries()],
+    phones: [...repo.outreachPhones.entries()],
   };
 }
 
@@ -58,9 +61,11 @@ export function applyPreviewSandboxSnapshot(repo: MemoryRepo, snap: PreviewSandb
   repo.people.clear();
   repo.tokens.clear();
   repo.outreachEmails.clear();
+  repo.outreachPhones.clear();
   for (const person of snap.people) repo.people.set(person.id, person);
   for (const token of snap.tokens) repo.tokens.set(token.id, token);
   for (const [id, email] of snap.outreach) repo.outreachEmails.set(id, email);
+  for (const [id, phone] of snap.phones ?? []) repo.outreachPhones.set(id, phone);
 }
 
 function encodeSnapshot(snap: PreviewSandboxSnapshot): string {

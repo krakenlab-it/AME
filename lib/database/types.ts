@@ -13,7 +13,8 @@ export type AuditAction =
   | "MANUAL_EDIT" | "UNIBROKERS_EXPORT_CREATED"
   | "GENERAL_IDENTIFY_FAILED" | "FINGERPRINT_CLAIMED" | "FINGERPRINT_IMPORTED" | "FINGERPRINT_RESET"
   | "TOTP_ENROLLED" | "TOTP_RESET"
-  | "EMAIL_CODE_SENT" | "EMAIL_VERIFIED";
+  | "EMAIL_CODE_SENT" | "EMAIL_VERIFIED"
+  | "ACCOUNT_CREATED" | "ACCOUNT_LINKED" | "ACCOUNT_LINK_REQUESTED";
 
 export interface AuditEvent {
   person_id?: string | null;
@@ -37,6 +38,8 @@ export interface PersonRecord {
   submitted_at: string | null;
   /** Correo verificado con el código de /ingresar. Rellena el correo del formulario. */
   login_email?: string | null;
+  /** Cuenta creada solo con correo, todavía sin cédula. La vincula un administrador. */
+  self_registered_at?: string | null;
 }
 
 export interface AccessTokenRecord {
@@ -147,7 +150,41 @@ export interface RespondentRepo {
   completeGeneralChallenge(personId: string, challengeHash: string, mode: GeneralChallengePurpose, link?: GeneralEmailLink): Promise<boolean>;
   /** Marca un reenvío del código por correo (enfriamiento). */
   touchGeneralChallengeSent(personId: string, challengeHash: string, sentAt: string): Promise<boolean>;
+  /** Persona (importada o cuenta propia) cuyo correo de ingreso ya verificado es este. */
+  findGeneralAuthByLoginEmail(email: string): Promise<GeneralAuthRecord | null>;
+  /** Personas importadas, sin correo de ingreso, cuyo correo cargado (outreach_email) es este. */
+  findUnboundByOutreachEmail(email: string): Promise<GeneralAuthRecord[]>;
+  /**
+   * Cuenta propia todavía sin confirmar para este correo. Si no hay, la crea (sin cédula).
+   * Una sola por correo: los intentos repetidos reutilizan la misma fila.
+   */
+  ensurePendingSelfAccount(email: string): Promise<GeneralAuthRecord | null>;
+  /** Guarda la cédula que escribió la persona como solicitud de vínculo (no la asigna). null la borra. */
+  setLinkRequest(personId: string, request: LinkRequest | null): Promise<void>;
+  /**
+   * Antes de vincular un correo a una persona importada, borra la cuenta propia de ese correo
+   * (si existe y no tiene cédula). Nunca toca una persona con cédula.
+   */
+  releaseSelfAccount(email: string, authUserId: string | null, keepPersonId: string): Promise<void>;
 }
+
+export interface LinkRequest {
+  national_id_hash: string;
+  national_id_encrypted: string;
+  national_id_last2: string;
+}
+
+/** Cuenta propia (solo correo) para el panel. Correo y cédula solicitada van enmascarados por la vista. */
+export interface UnlinkedAccountRow {
+  id: string;
+  login_email: string;
+  login_email_verified_at: string | null;
+  created_at: string;
+  link_request_national_id_hash: string | null;
+  link_request_national_id_last2: string | null;
+}
+
+export type LinkAccountResult = "linked" | "account_missing" | "person_missing" | "person_bound";
 
 export type GeneralChallengePurpose = "enroll" | "verify" | "email";
 
@@ -242,6 +279,10 @@ export interface GeneralAuthRecord {
   general_locked_until: string | null;
   /** Último correo verificado en /ingresar. Solo para rellenar el campo. */
   login_email?: string | null;
+  /** Correo cargado en la importación (para el vínculo automático). */
+  outreach_email?: string | null;
+  /** Cuenta propia sin cédula. */
+  self_registered_at?: string | null;
 }
 
 export interface GeneralChallengeInput {
@@ -292,6 +333,8 @@ export interface NewPersonRow {
   national_id_hash: string;
   national_id_last2: string;
   outreach_email?: string | null;
+  /** Celular importado, E.164. */
+  outreach_phone?: string | null;
 }
 
 /** Corrección hecha por un administrador, después de confirmar el código TOTP. */
@@ -402,6 +445,10 @@ export interface AdminRepo {
   purgeExpiredSessions(): Promise<void>;
   assignFingerprintHash(nationalIdHash: string, codeHash: string): Promise<FingerprintAssignResult>;
   resetGeneralAuth(personId: string): Promise<boolean>;
+  // cuentas propias (solo correo)
+  listUnlinkedAccounts(limit: number): Promise<UnlinkedAccountRow[]>;
+  /** Vincula la cuenta propia con la persona importada, en una sola transacción. */
+  linkSelfAccount(accountId: string, personId: string, adminId: string): Promise<LinkAccountResult>;
 }
 
 export type Repo = RespondentRepo & AdminRepo;

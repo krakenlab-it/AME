@@ -101,10 +101,13 @@ export const generalIdentifySchema = z
   })
   .strict();
 
-/** /ingresar con código por correo: cédula, correo y código dactilar opcional. */
+/**
+ * /ingresar con código por correo: el correo es lo único obligatorio. La cédula y el código dactilar
+ * son opcionales (sirven para vincular la cuenta con la persona importada).
+ */
 export const generalEmailIdentifySchema = z
   .object({
-    cedula: generalCedulaField,
+    cedula: z.preprocess((value) => (typeof value === "string" && value.trim() === "" ? undefined : value), generalCedulaField.optional()),
     codigoDactilar: optionalFingerprintField,
     email: emailField,
     captchaToken: z.string().max(4096).optional(),
