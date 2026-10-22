@@ -22,13 +22,17 @@ export interface InsuredHomeView {
   confirmationCode: string | null;
   submittedAt: string | null;
   editable: boolean;
+  /** Cuenta propia (solo correo): todavía no está vinculada a una persona de la base. */
+  pendingLink: boolean;
   contact: { email: string; altEmail: string; phone: string; place: string } | null;
   bank: { institution: string; accountType: string; accountMasked: string; ownership: string } | null;
   notifications: InsuredNotification[];
 }
 
 /** El formulario sigue abierto solo antes del envío. Completado y en revisión son de lectura. */
-export function canContinueForm(person: { status: PersonStatus; submitted_at: string | null }): boolean {
+export function canContinueForm(person: { status: PersonStatus; submitted_at: string | null; self_registered_at?: string | null }): boolean {
+  // Una cuenta propia (sin cédula) no tiene formulario hasta que la vinculen.
+  if (person.self_registered_at) return false;
   if (person.submitted_at) return false;
   switch (person.status) {
     case "PENDING":
@@ -84,13 +88,21 @@ function statusNotification(status: PersonStatus, reviewReasons: string[]): Insu
   }
 }
 
+export const PENDING_LINK_NOTICE: InsuredNotification = {
+  id: "pending-link",
+  tone: "warning",
+  title: "Tu cuenta todavía no está vinculada",
+  body: "Entraste con tu correo, pero no lo encontramos en la base de asegurados. Si te escribieron desde otro correo, entra con ese. Si no, el equipo revisará tu cuenta y la vinculará con tu registro; no hace falta crear otra.",
+};
+
 export function buildInsuredNotifications(input: {
   status: PersonStatus;
   reviewReasons: string[];
   activeNotice: Pick<NoticeRecord, "version"> | null;
   acceptedNoticeVersion: string | null;
+  pendingLink?: boolean;
 }): InsuredNotification[] {
-  const items: InsuredNotification[] = [statusNotification(input.status, input.reviewReasons)];
+  const items: InsuredNotification[] = [input.pendingLink ? PENDING_LINK_NOTICE : statusNotification(input.status, input.reviewReasons)];
   if (input.activeNotice) {
     items.push({
       id: `notice-${input.activeNotice.version}`,
@@ -144,6 +156,7 @@ export function composeInsuredHome(record: InsuredRecord, activeNotice: Pick<Not
     confirmationCode: person.confirmation_code,
     submittedAt: person.submitted_at,
     editable: canContinueForm(person),
+    pendingLink: Boolean(person.self_registered_at),
     contact: contact
       ? {
           email: maskEmail(contact.primary_email),
@@ -165,6 +178,7 @@ export function composeInsuredHome(record: InsuredRecord, activeNotice: Pick<Not
       reviewReasons: person.review_reasons,
       activeNotice,
       acceptedNoticeVersion: record.notice_version,
+      pendingLink: Boolean(person.self_registered_at),
     }),
   };
 }

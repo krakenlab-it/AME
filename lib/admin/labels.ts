@@ -33,6 +33,9 @@ export const AUDIT_LABELS: Record<AuditAction, string> = {
   TOTP_RESET: "Borró la verificación del teléfono de una persona",
   EMAIL_CODE_SENT: "Se envió un código de ingreso a su correo",
   EMAIL_VERIFIED: "Confirmó su correo con el código de ingreso",
+  ACCOUNT_CREATED: "Creó una cuenta solo con su correo",
+  ACCOUNT_LINKED: "Un administrador vinculó su cuenta con la ficha importada",
+  ACCOUNT_LINK_REQUESTED: "Pidió vincular su cuenta con una cédula",
 };
 
 export const AUDIT_ACTIONS = Object.keys(AUDIT_LABELS) as AuditAction[];

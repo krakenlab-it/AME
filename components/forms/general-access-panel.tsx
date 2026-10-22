@@ -143,10 +143,82 @@ function IdentifyStep({
   method: AuthMethod;
 }) {
   const emailError = state.fieldErrors?.email;
-  const next = method === "email" ? "Después te enviamos un código a tu correo." : "Después configuras la verificación del teléfono.";
+  const next = "Después configuras la verificación del teléfono.";
   const cedulaError = state.fieldErrors?.cedula;
   const codeError = state.fieldErrors?.codigoDactilar;
   const banner = state.error && state.error !== "Revisa los campos marcados." ? state.error : undefined;
+
+  if (method === "email") {
+    return (
+      <>
+        <div className="space-y-2">
+          <h2 className="text-2xl">Entra con tu correo</h2>
+          <p className="text-ink-muted">
+            Escribe tu correo y te enviamos un código de acceso. Si es el correo al que te escribimos, tu registro se abre solo.
+          </p>
+        </div>
+        {banner && <Notice tone="error" live>{banner}</Notice>}
+        <form action={action} className="space-y-5" noValidate>
+          <Field id="email" label="Correo electrónico" required hint="Te enviaremos un código de acceso. Lo usaremos también como tu correo de contacto." error={emailError}>
+            <input
+              id="email"
+              name="email"
+              type="email"
+              defaultValue={state.values?.email}
+              className="field-input"
+              inputMode="email"
+              autoComplete="email"
+              autoCapitalize="none"
+              spellCheck={false}
+              maxLength={254}
+              required
+              aria-invalid={Boolean(emailError)}
+              aria-describedby={describedBy("email", { hint: "x", error: emailError })}
+            />
+          </Field>
+          <fieldset className="space-y-4 rounded-xl border border-marian-line p-4">
+            <legend className="px-1 text-sm font-semibold">Tu cédula (opcional)</legend>
+            <p className="text-sm text-ink-muted">
+              Si te escribimos a otro correo, escribe tu cédula. Con el código dactilar tu registro se abre de inmediato; sin él, el equipo lo revisa y lo vincula.
+            </p>
+            <Field id="cedula" label="Número de cédula" hint="10 números, como en tu cédula." error={cedulaError}>
+              <input
+                id="cedula"
+                name="cedula"
+                defaultValue={state.values?.cedula}
+                className="field-input text-xl tracking-[0.12em]"
+                inputMode="numeric"
+                autoComplete="off"
+                spellCheck={false}
+                maxLength={16}
+                aria-invalid={Boolean(cedulaError)}
+                aria-describedby={describedBy("cedula", { hint: "x", error: cedulaError })}
+              />
+            </Field>
+            <Field id="codigo-dactilar" label="Código dactilar" hint="Opcional. Una letra, 4 números, una letra y 4 números. Ejemplo: V1234V1234." error={codeError}>
+              <input
+                id="codigo-dactilar"
+                name="codigoDactilar"
+                className="field-input text-xl uppercase tracking-[0.14em]"
+                autoComplete="off"
+                autoCapitalize="characters"
+                spellCheck={false}
+                maxLength={20}
+                aria-invalid={Boolean(codeError)}
+                aria-describedby={describedBy("codigo-dactilar", { hint: "x", error: codeError })}
+              />
+            </Field>
+            <FingerprintHelp />
+          </fieldset>
+          {needsCaptcha && siteKey && <div className="cf-turnstile" data-sitekey={siteKey} data-language="es" />}
+          <Button type="submit" block loading={pending}>
+            <ShieldCheck className="h-5 w-5" aria-hidden />
+            {pending ? "Enviando…" : "Enviarme el código"}
+          </Button>
+        </form>
+      </>
+    );
+  }
 
   return (
     <>
@@ -175,25 +247,6 @@ function IdentifyStep({
             aria-describedby={describedBy("cedula", { hint: "x", error: cedulaError })}
           />
         </Field>
-        {method === "email" && (
-          <Field id="email" label="Correo electrónico" required hint="Te enviaremos un código de acceso. Lo usaremos también como tu correo de contacto." error={emailError}>
-            <input
-              id="email"
-              name="email"
-              type="email"
-              defaultValue={state.values?.email}
-              className="field-input"
-              inputMode="email"
-              autoComplete="email"
-              autoCapitalize="none"
-              spellCheck={false}
-              maxLength={254}
-              required
-              aria-invalid={Boolean(emailError)}
-              aria-describedby={describedBy("email", { hint: "x", error: emailError })}
-            />
-          </Field>
-        )}
         <Field
           id="codigo-dactilar"
           label="Código dactilar"

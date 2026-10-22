@@ -8,6 +8,7 @@ import { hasPlaceholder } from "@/lib/privacy/placeholders";
 import { ImportFileError, importPeople, parseImportFile, type ImportError, type ImportNote } from "@/lib/services/import";
 import { FingerprintImportError, importFingerprintCodes, type FingerprintImportReport } from "@/lib/services/fingerprint-import";
 import { resetPersonGeneralAuth } from "@/lib/services/general-link";
+import { linkUnlinkedAccount } from "@/lib/services/account-link";
 import { issueLinks, linksToCsv, regenerateLink, revokeLinks } from "@/lib/services/links";
 import { isMemoryRepo } from "@/lib/database/memory-repo";
 import {
@@ -227,6 +228,20 @@ export async function importFingerprintAction(_prev: FingerprintImportState, for
     console.error("[fingerprint-import] error inesperado");
     return { error: "No se pudo procesar el archivo." };
   }
+}
+
+/** Vincula una cuenta que entró solo con correo con la persona importada. Mismo permiso y reconfirmación que restablecer el ingreso. */
+export async function linkAccountAction(_prev: ManualEditState, formData: FormData): Promise<ManualEditState> {
+  const ctx = await adminForAction("people:reset-factors");
+  if (!ctx) return { error: DENIED };
+  const accountId = String(formData.get("accountId") ?? "");
+  if (!/^[0-9a-f-]{36}$/i.test(accountId)) return { error: "Cuenta no válida." };
+  const totp = await reconfirmAdminTotp(String(formData.get("totp") ?? ""));
+  if (!totp.ok) return { error: totp.error };
+  const result = await linkUnlinkedAccount(getRepo(), { accountId, cedula: String(formData.get("cedula") ?? "").slice(0, 16), adminId: ctx.admin.id });
+  if (!result.ok) return { error: result.error };
+  revalidatePath("/admin");
+  return { ok: true };
 }
 
 export async function resetGeneralAuthAction(_prev: ManualEditState, formData: FormData): Promise<ManualEditState> {

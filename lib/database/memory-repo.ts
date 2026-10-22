@@ -18,12 +18,15 @@ import {
   type GeneralChallengeRecord,
   type GeneralChallengePurpose,
   type GeneralEmailLink,
+  type LinkAccountResult,
+  type LinkRequest,
   type PersonDetail,
   type PersonRecord,
   type UnibrokersSourceRow,
   type Repo,
   type RespondentSessionRecord,
   type SubmissionRecord,
+  type UnlinkedAccountRow,
 } from "@/lib/database/types";
 import type { PersonStatus } from "@/lib/validation/constants";
 
@@ -48,6 +51,10 @@ export class MemoryRepo implements Repo {
   /** Contacto y banco ya enmascarables, por persona. Lo llena el envío y el seed. */
   profiles = new Map<string, Pick<InsuredRecord, "contact" | "bank" | "notice_version">>();
   outreachEmails = new Map<string, string>();
+  /** Celular importado (E.164), por persona. */
+  outreachPhones = new Map<string, string>();
+  /** Cédula escrita por una cuenta propia, pendiente de que un admin la apruebe. */
+  linkRequests = new Map<string, LinkRequest & { requested_at: string }>();
   nameChanges = new Map<string, PersonDetail["nameChanges"]>();
   /** Código dactilar solo hasheado y TOTP solo cifrado. No se mezcla con la ficha visible. */
   generalAuth = new Map<string, GeneralAuthState>();
@@ -208,12 +215,13 @@ export class MemoryRepo implements Repo {
   }
   async statusCounts() {
     const c: Record<PersonStatus, number> = { PENDING: 0, STARTED: 0, COMPLETED: 0, NEEDS_REVIEW: 0 };
-    for (const p of this.people.values()) c[p.status]++;
+    for (const p of this.people.values()) if (!p.self_registered_at) c[p.status]++;
     return c;
   }
   async listPeople(q: { status?: PersonStatus; search?: string; nationalIdHash?: string; page: number; pageSize: number }) {
     const term = q.search?.toLowerCase();
     const all = [...this.people.values()].filter((p) =>
+      !p.self_registered_at &&
       (!q.status || p.status === q.status) &&
       (!q.nationalIdHash || p.national_id_hash === q.nationalIdHash) &&
       (!term || `${p.first_names} ${p.last_names} ${p.confirmation_code ?? ""}`.toLowerCase().includes(term)));
@@ -249,12 +257,13 @@ export class MemoryRepo implements Repo {
     return new Set(hashes.filter((h) => all.has(h)));
   }
   async createImportBatch() { return randomUUID(); }
-  async insertPeople(rows: { first_names: string; last_names: string; national_id_encrypted: string; national_id_hash: string; national_id_last2: string; outreach_email?: string | null }[]) {
+  async insertPeople(rows: { first_names: string; last_names: string; national_id_encrypted: string; national_id_hash: string; national_id_last2: string; outreach_email?: string | null; outreach_phone?: string | null }[]) {
     return rows.map((r) => {
       const id = randomUUID();
-      const { outreach_email: outreach, ...person } = r;
+      const { outreach_email: outreach, outreach_phone: phone, ...person } = r;
       this.people.set(id, { id, ...person, status: "PENDING", confirmation_code: null, submitted_at: null, review_reasons: [], retention_until: null });
       if (outreach) this.outreachEmails.set(id, outreach);
+      if (phone) this.outreachPhones.set(id, phone);
       return { id, national_id_hash: r.national_id_hash };
     });
   }
@@ -323,7 +332,7 @@ export class MemoryRepo implements Repo {
   async listLinkMailTargets(): Promise<LinkMailTarget[]> {
     const now = Date.now();
     return [...this.people.values()]
-      .filter((person) => person.status === "PENDING" || person.status === "STARTED")
+      .filter((person) => !person.self_registered_at && (person.status === "PENDING" || person.status === "STARTED"))
       .map((person) => {
         const submission = this.submissions.get(person.id);
         const email = this.outreachEmails.get(person.id) || submission?.contact.primary_email || null;
@@ -343,7 +352,7 @@ export class MemoryRepo implements Repo {
   }
 
   async getUnibrokersRows(): Promise<UnibrokersSourceRow[]> {
-    return [...this.people.values()].map((person) => {
+    return [...this.people.values()].filter((person) => !person.self_registered_at).map((person) => {
       const submission = this.submissions.get(person.id);
       const profile = this.profiles.get(person.id);
       return {
@@ -373,7 +382,7 @@ export class MemoryRepo implements Repo {
   async listPersonIdsWithoutActiveToken() {
     const now = Date.now();
     return [...this.people.values()]
-      .filter((p) => (p.status === "PENDING" || p.status === "STARTED") && ![...this.tokens.values()].some((t) => t.person_id === p.id && !t.used_at && !t.revoked_at && new Date(t.expires_at).getTime() > now))
+      .filter((p) => !p.self_registered_at && (p.status === "PENDING" || p.status === "STARTED") && ![...this.tokens.values()].some((t) => t.person_id === p.id && !t.used_at && !t.revoked_at && new Date(t.expires_at).getTime() > now))
       .map((p) => p.id);
   }
   async getExportRows() { return this.exportRows; }
@@ -441,7 +450,101 @@ export class MemoryRepo implements Repo {
       general_failed_attempts: auth.failed_attempts,
       general_locked_until: auth.locked_until,
       login_email: person.login_email ?? null,
+      outreach_email: this.outreachEmails.get(person.id) ?? null,
+      self_registered_at: person.self_registered_at ?? null,
     };
+  }
+
+  async findGeneralAuthByLoginEmail(email: string): Promise<GeneralAuthRecord | null> {
+    const matches = [...this.people.values()].filter((item) => item.login_email === email);
+    const person = matches.find((item) => !item.self_registered_at) ?? matches[0];
+    return person ? this.toGeneral(person, this.ensureGeneral(person.id)) : null;
+  }
+
+  async findUnboundByOutreachEmail(email: string): Promise<GeneralAuthRecord[]> {
+    const wanted = email.toLowerCase();
+    return [...this.people.values()]
+      .filter((item) => !item.self_registered_at && item.national_id_hash && !item.login_email && this.outreachEmails.get(item.id)?.toLowerCase() === wanted)
+      .slice(0, 3)
+      .map((item) => this.toGeneral(item, this.ensureGeneral(item.id)));
+  }
+
+  async ensurePendingSelfAccount(email: string): Promise<GeneralAuthRecord | null> {
+    for (const item of this.people.values()) {
+      if (item.self_registered_at && !item.login_email && this.generalAuth.get(item.id)?.challenge_email === email) {
+        return this.toGeneral(item, this.ensureGeneral(item.id));
+      }
+    }
+    const id = randomUUID();
+    const person = {
+      id, first_names: "Sin nombre", last_names: "Registrado", national_id_encrypted: null, national_id_hash: null, national_id_last2: null,
+      status: "PENDING" as const, confirmation_code: null, submitted_at: null, review_reasons: [], retention_until: null,
+      login_email: null, self_registered_at: new Date().toISOString(),
+    };
+    this.people.set(id, person);
+    this.ensureGeneral(id).challenge_email = email;
+    return this.toGeneral(person, this.ensureGeneral(id));
+  }
+
+  async setLinkRequest(personId: string, request: LinkRequest | null) {
+    if (!this.people.get(personId)?.self_registered_at) return;
+    if (!request) {
+      this.linkRequests.delete(personId);
+      return;
+    }
+    this.linkRequests.set(personId, { ...request, requested_at: new Date().toISOString() });
+  }
+
+  async releaseSelfAccount(email: string, authUserId: string | null, keepPersonId: string) {
+    for (const item of [...this.people.values()]) {
+      if (item.id === keepPersonId || !item.self_registered_at || item.national_id_hash) continue;
+      const auth = this.generalAuth.get(item.id);
+      if (item.login_email === email || (authUserId && auth?.auth_user_id === authUserId)) this.deletePerson(item.id);
+    }
+  }
+
+  private deletePerson(id: string) {
+    this.people.delete(id);
+    this.generalAuth.delete(id);
+    this.linkRequests.delete(id);
+    for (const [sessionId, session] of this.sessions) if (session.person_id === id) this.sessions.delete(sessionId);
+  }
+
+  async listUnlinkedAccounts(limit: number): Promise<UnlinkedAccountRow[]> {
+    return [...this.people.values()]
+      .filter((item) => item.self_registered_at && item.login_email)
+      .sort((a, b) => (b.self_registered_at ?? "").localeCompare(a.self_registered_at ?? ""))
+      .slice(0, limit)
+      .map((item) => {
+        const request = this.linkRequests.get(item.id);
+        return {
+          id: item.id,
+          login_email: item.login_email!,
+          login_email_verified_at: item.self_registered_at ?? null,
+          created_at: item.self_registered_at!,
+          link_request_national_id_hash: request?.national_id_hash ?? null,
+          link_request_national_id_last2: request?.national_id_last2 ?? null,
+        };
+      });
+  }
+
+  async linkSelfAccount(accountId: string, personId: string, adminId: string): Promise<LinkAccountResult> {
+    const account = this.people.get(accountId);
+    if (!account?.self_registered_at || account.national_id_hash || !account.login_email) return "account_missing";
+    const person = this.people.get(personId);
+    if (!person || person.self_registered_at || !person.national_id_hash) return "person_missing";
+    if (person.login_email && person.login_email !== account.login_email) return "person_bound";
+    const authUserId = this.generalAuth.get(accountId)?.auth_user_id ?? null;
+    for (const entry of this.auditLog) if (entry.person_id === accountId) entry.person_id = personId;
+    const email = account.login_email;
+    this.deletePerson(accountId);
+    person.login_email = email;
+    const auth = this.ensureGeneral(personId);
+    if (authUserId) auth.auth_user_id = authUserId;
+    auth.failed_attempts = 0;
+    auth.locked_until = null;
+    await this.audit({ person_id: personId, actor_type: "admin", actor_id: adminId, action: "ACCOUNT_LINKED", changed_fields: ["login_email", "auth_user_id"], metadata: { entry: "admin" } });
+    return "linked";
   }
 
   async findGeneralAuthByNationalIdHash(hash: string): Promise<GeneralAuthRecord | null> {

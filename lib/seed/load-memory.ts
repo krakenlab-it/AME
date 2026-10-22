@@ -34,6 +34,7 @@ export function loadProductSeed(repo: MemoryRepo): SeedPlan["links"] {
       review_reasons: [...person.review_reasons],
       retention_until: person.retention_until,
     });
+    if (person.outreach_email) repo.outreachEmails.set(person.id, person.outreach_email);
   }
 
   for (const contact of plan.contacts) {

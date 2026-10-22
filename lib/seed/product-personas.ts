@@ -46,6 +46,8 @@ export interface ProductPersonaFixture {
   currentFirstNames: string;
   currentLastNames: string;
   confirmationCode: string | null;
+  /** Correo cargado en la importación: con él, el ingreso por correo vincula la ficha sola. */
+  outreachEmail?: string | null;
   contact: {
     primary_email: string;
     secondary_email: string | null;
@@ -157,6 +159,7 @@ export const PRODUCT_PERSONAS: readonly ProductPersonaFixture[] = [
     currentFirstNames: "Lucía Isabel",
     currentLastNames: "Romero Calle",
     confirmationCode: null,
+    outreachEmail: "lucia.romero@example.invalid",
     contact: null,
     bank: null,
     reviewReasons: [],
@@ -183,6 +186,7 @@ export interface SeedPersonRow {
   submitted_at: string | null;
   review_reasons: string[];
   retention_until: string | null;
+  outreach_email: string | null;
   import_batch_id: string;
   created_at: string;
 }
@@ -241,6 +245,7 @@ export function planProductSeed(opts: {
       submitted_at: persona.submittedAt,
       review_reasons: persona.reviewReasons,
       retention_until: submitted ? addMonths(persona.submittedAt!, 60) : null,
+      outreach_email: persona.outreachEmail ?? null,
       import_batch_id: SEED_BATCH_ID,
       created_at: persona.importedAt,
     });

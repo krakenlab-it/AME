@@ -17,7 +17,9 @@ import {
   type GeneralChallengePurpose,
   type GeneralEmailLink,
   type InsuredRecord,
+  type LinkAccountResult,
   type LinkMailTarget,
+  type LinkRequest,
   type ManualPersonPatch,
   type NoticeRecord,
   type PersonDetail,
@@ -26,6 +28,7 @@ import {
   type PersonRecord,
   type Repo,
   type RespondentSessionRecord,
+  type UnlinkedAccountRow,
 } from "./types";
 
 type Row = Record<string, unknown>;
@@ -48,6 +51,14 @@ function check<T>(res: { data: T; error: { message: string; code?: string } | nu
 function safeSearch(term: string): string {
   return term.replace(/[^\p{L}\p{N} -]/gu, "").trim().slice(0, 60);
 }
+
+/** Coincidencia exacta sin distinguir mayúsculas en ilike: escapa los comodines. */
+function likeExact(value: string): string {
+  return value.replace(/[\\%_]/g, (char) => `\\${char}`);
+}
+
+const GENERAL_AUTH_COLUMNS =
+  "id, first_names, last_names, national_id_last2, status, submitted_at, fingerprint_code_hash, totp_secret_encrypted, totp_enabled_at, general_failed_attempts, general_locked_until, login_email, outreach_email, self_registered_at";
 
 export class SupabaseRepo implements Repo {
   constructor(private db: SupabaseClient) {}
@@ -129,7 +140,7 @@ export class SupabaseRepo implements Repo {
     const data = check(
       await this.db
         .from("people")
-        .select("id, first_names, last_names, national_id_encrypted, national_id_hash, national_id_last2, status, confirmation_code, submitted_at, login_email")
+        .select("id, first_names, last_names, national_id_encrypted, national_id_hash, national_id_last2, status, confirmation_code, submitted_at, login_email, self_registered_at")
         .eq("id", id)
         .is("anonymized_at", null)
         .maybeSingle(),
@@ -191,7 +202,7 @@ export class SupabaseRepo implements Repo {
     const person = check(
       await this.db
         .from("people")
-        .select("id, first_names, last_names, national_id_encrypted, national_id_hash, national_id_last2, status, confirmation_code, submitted_at, review_reasons")
+        .select("id, first_names, last_names, national_id_encrypted, national_id_hash, national_id_last2, status, confirmation_code, submitted_at, review_reasons, self_registered_at")
         .eq("id", personId)
         .is("anonymized_at", null)
         .maybeSingle(),
@@ -268,7 +279,9 @@ export class SupabaseRepo implements Repo {
     let query = this.db
       .from("people")
       .select("id, first_names, last_names, national_id_last2, status, confirmation_code, submitted_at, updated_at", { count: "exact" })
-      .is("anonymized_at", null);
+      .is("anonymized_at", null)
+      // Las cuentas propias (solo correo, sin cédula) se listan aparte.
+      .is("self_registered_at", null);
     if (q.status) query = query.eq("status", q.status);
     if (q.nationalIdHash) query = query.eq("national_id_hash", q.nationalIdHash);
     if (q.search) {
@@ -380,7 +393,7 @@ export class SupabaseRepo implements Repo {
   }
 
   async listPersonIdsWithoutActiveToken(personIds?: string[]) {
-    let query = this.db.from("people").select("id, status, access_tokens(expires_at, used_at, revoked_at)").is("anonymized_at", null).in("status", ["PENDING", "STARTED"]);
+    let query = this.db.from("people").select("id, status, access_tokens(expires_at, used_at, revoked_at)").is("anonymized_at", null).is("self_registered_at", null).in("status", ["PENDING", "STARTED"]);
     if (personIds?.length) query = query.in("id", personIds);
     const data = check(await query, "listWithoutToken") as Row[] | null;
     const now = Date.now();
@@ -461,6 +474,7 @@ export class SupabaseRepo implements Repo {
         .from("people")
         .select("id, first_names, last_names, status, outreach_email, national_id_last2, access_tokens(expires_at, used_at, revoked_at), contact_information(primary_email)")
         .is("anonymized_at", null)
+        .is("self_registered_at", null)
         .in("status", ["PENDING", "STARTED"]),
       "listLinkMailTargets",
     ) as Row[] | null;
@@ -490,6 +504,7 @@ export class SupabaseRepo implements Repo {
             "contact_information(primary_email, mobile_phone, city, province)",
         )
         .is("anonymized_at", null)
+        .is("self_registered_at", null)
         .order("last_names"),
       "getUnibrokersRows",
     ) as Row[] | null;
@@ -607,11 +622,121 @@ export class SupabaseRepo implements Repo {
     check(await this.db.rpc("purge_expired_sessions"), "purge_expired_sessions");
   }
 
+  async findGeneralAuthByLoginEmail(email: string): Promise<GeneralAuthRecord | null> {
+    const data = check(
+      await this.db.from("people").select(GENERAL_AUTH_COLUMNS).eq("login_email", email).is("anonymized_at", null).limit(2),
+      "findGeneralAuthByLoginEmail",
+    ) as GeneralAuthRecord[] | null;
+    // Si por datos viejos hubiera dos, gana la persona con cédula (nunca la cuenta propia).
+    const rows = data ?? [];
+    return rows.find((row) => !row.self_registered_at) ?? rows[0] ?? null;
+  }
+
+  async findUnboundByOutreachEmail(email: string): Promise<GeneralAuthRecord[]> {
+    const data = check(
+      await this.db
+        .from("people")
+        .select(GENERAL_AUTH_COLUMNS)
+        .ilike("outreach_email", likeExact(email))
+        .is("login_email", null)
+        .is("self_registered_at", null)
+        .not("national_id_hash", "is", null)
+        .is("anonymized_at", null)
+        .limit(3),
+      "findUnboundByOutreachEmail",
+    ) as GeneralAuthRecord[] | null;
+    return data ?? [];
+  }
+
+  async ensurePendingSelfAccount(email: string): Promise<GeneralAuthRecord | null> {
+    const existing = check(
+      await this.db
+        .from("people")
+        .select(GENERAL_AUTH_COLUMNS)
+        .eq("general_challenge_email", email)
+        .not("self_registered_at", "is", null)
+        .is("login_email", null)
+        .is("anonymized_at", null)
+        .limit(1),
+      "ensurePendingSelfAccount.read",
+    ) as GeneralAuthRecord[] | null;
+    if (existing?.[0]) return existing[0];
+    const created = check(
+      await this.db
+        .from("people")
+        .insert({
+          first_names: "Sin nombre",
+          last_names: "Registrado",
+          self_registered_at: new Date().toISOString(),
+          // Marca el correo desde el inicio para reutilizar la fila en el próximo intento.
+          general_challenge_email: email,
+        })
+        .select(GENERAL_AUTH_COLUMNS)
+        .single(),
+      "ensurePendingSelfAccount.insert",
+    ) as GeneralAuthRecord | null;
+    return created;
+  }
+
+  async setLinkRequest(personId: string, request: LinkRequest | null) {
+    check(
+      await this.db
+        .from("people")
+        .update({
+          link_request_national_id_hash: request?.national_id_hash ?? null,
+          link_request_national_id_encrypted: request?.national_id_encrypted ?? null,
+          link_request_national_id_last2: request?.national_id_last2 ?? null,
+          link_requested_at: request ? new Date().toISOString() : null,
+        })
+        .eq("id", personId)
+        .not("self_registered_at", "is", null),
+      "setLinkRequest",
+    );
+  }
+
+  async releaseSelfAccount(email: string, authUserId: string | null, keepPersonId: string) {
+    check(
+      await this.db.from("people").delete().eq("login_email", email).not("self_registered_at", "is", null).is("national_id_hash", null).neq("id", keepPersonId),
+      "releaseSelfAccount.email",
+    );
+    if (authUserId) {
+      check(
+        await this.db.from("people").delete().eq("auth_user_id", authUserId).not("self_registered_at", "is", null).is("national_id_hash", null).neq("id", keepPersonId),
+        "releaseSelfAccount.authUser",
+      );
+    }
+  }
+
+  async listUnlinkedAccounts(limit: number): Promise<UnlinkedAccountRow[]> {
+    const data = check(
+      await this.db
+        .from("people")
+        .select("id, login_email, login_email_verified_at, created_at, link_request_national_id_hash, link_request_national_id_last2")
+        .not("self_registered_at", "is", null)
+        .not("login_email", "is", null)
+        .is("anonymized_at", null)
+        .order("created_at", { ascending: false })
+        .limit(limit),
+      "listUnlinkedAccounts",
+    ) as UnlinkedAccountRow[] | null;
+    return data ?? [];
+  }
+
+  async linkSelfAccount(accountId: string, personId: string, adminId: string): Promise<LinkAccountResult> {
+    const data = check(
+      await this.db.rpc("link_respondent_account", { p_account_id: accountId, p_person_id: personId, p_admin_id: adminId }),
+      "link_respondent_account",
+    );
+    const result = String(data ?? "");
+    if (result === "linked" || result === "account_missing" || result === "person_missing" || result === "person_bound") return result;
+    throw new Error("link_respondent_account: respuesta inesperada");
+  }
+
   async findGeneralAuthByNationalIdHash(hash: string): Promise<GeneralAuthRecord | null> {
     const data = check(
       await this.db
         .from("people")
-        .select("id, first_names, last_names, national_id_last2, status, submitted_at, fingerprint_code_hash, totp_secret_encrypted, totp_enabled_at, general_failed_attempts, general_locked_until, login_email")
+        .select(GENERAL_AUTH_COLUMNS)
         .eq("national_id_hash", hash)
         .is("anonymized_at", null)
         .maybeSingle(),

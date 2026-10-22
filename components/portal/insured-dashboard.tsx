@@ -57,6 +57,10 @@ export function InsuredDashboard({ home, supportContact }: { home: InsuredHomeVi
             Continuar la actualización
           </Link>
         </div>
+      ) : home.pendingLink ? (
+        <Notice tone="warning" title="Cuenta pendiente de vínculo">
+          Todavía no hay un registro de asegurado asociado a tu correo. Cuando el equipo lo vincule, aquí verás tu formulario.
+        </Notice>
       ) : (
         <Notice tone="info" title="Registro en consulta">
           Esta vista es de lectura. Para corregir datos después del envío hay que pedir un enlace nuevo.
