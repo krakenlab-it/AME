@@ -23,7 +23,9 @@ export async function readAdminGate(): Promise<AdminGate> {
     if (!isMemoryRepo(repo)) return { kind: "anonymous" };
     const ctx = await getDemoAdminContext(repo, await readDemoToken(), { requireMfa: false });
     if (!ctx) return { kind: "anonymous" };
-    if (ctx.session.mfaVerified) return { kind: "panel", admin: ctx.admin };
+    if (ctx.session.mfaVerified) {
+      return ctx.admin.must_change_password === true ? { kind: "password_change", admin: ctx.admin } : { kind: "panel", admin: ctx.admin };
+    }
     if (!ctx.admin.mfa_enabled) return { kind: "mfa_enroll", admin: ctx.admin };
     return { kind: "mfa_verify", admin: ctx.admin };
   }
@@ -50,6 +52,8 @@ export async function requireAdmin(permission?: Permission): Promise<{ admin: Ad
     case "mfa_enroll":
     case "mfa_verify":
       redirect("/admin/mfa");
+    case "password_change":
+      redirect("/admin/restablecer");
     case "unlinked":
       await endSession();
       redirect("/admin/login");

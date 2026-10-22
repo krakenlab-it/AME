@@ -11,7 +11,7 @@ import { ensureMfaSecret, getDemoAdminContext } from "@/lib/services/demo-admin-
 import { readAdminGate, signOutAndClear } from "./admin-guard";
 
 export type MfaScreen =
-  | { redirectTo: "/admin" | "/admin/login" }
+  | { redirectTo: "/admin" | "/admin/login" | "/admin/restablecer" }
   | { mode: "verify" }
   | { mode: "enroll"; qr: string; secret: string; factorId: string }
   | { mode: "error"; message: string };
@@ -26,6 +26,8 @@ export async function getMfaScreen(): Promise<MfaScreen> {
       return { redirectTo: "/admin/login" };
     case "panel":
       return { redirectTo: "/admin" };
+    case "password_change":
+      return { redirectTo: "/admin/restablecer" };
     case "mfa_verify":
       return { mode: "verify" };
     case "mfa_enroll":

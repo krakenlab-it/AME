@@ -191,6 +191,8 @@ export interface AdminUserRecord {
   mfa_enabled: boolean;
   active: boolean;
   last_login_at: string | null;
+  /** Obliga a elegir una contraseña nueva (después del TOTP) antes de abrir el panel. */
+  must_change_password?: boolean;
 }
 
 export interface PersonListRow {
@@ -372,8 +374,8 @@ export interface AdminRepo {
   findAdminByEmail(email: string): Promise<AdminUserRecord | null>;
   findAdminByAuthUserId(authUserId: string): Promise<AdminUserRecord | null>;
   getAdmin(id: string): Promise<AdminUserRecord | null>;
-  createAdmin(a: { email: string; full_name: string; role: AdminRole; auth_user_id: string | null }): Promise<AdminUserRecord>;
-  updateAdmin(id: string, patch: Partial<Pick<AdminUserRecord, "mfa_enabled" | "active" | "auth_user_id" | "full_name" | "role">> & { last_login_at?: string | null }): Promise<void>;
+  createAdmin(a: { email: string; full_name: string; role: AdminRole; auth_user_id: string | null; must_change_password?: boolean }): Promise<AdminUserRecord>;
+  updateAdmin(id: string, patch: Partial<Pick<AdminUserRecord, "mfa_enabled" | "active" | "auth_user_id" | "full_name" | "role" | "must_change_password">> & { last_login_at?: string | null }): Promise<void>;
   // people
   statusCounts(): Promise<Record<PersonStatus, number>>;
   listPeople(q: { status?: PersonStatus; search?: string; nationalIdHash?: string; page: number; pageSize: number }): Promise<{ rows: PersonListRow[]; total: number }>;

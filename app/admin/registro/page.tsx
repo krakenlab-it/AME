@@ -15,6 +15,8 @@ export default async function InviteSignupPage() {
       redirect("/admin/login");
     case "panel":
       redirect("/admin");
+    case "password_change":
+      redirect("/admin/restablecer");
     case "mfa_enroll":
     case "mfa_verify":
       break;

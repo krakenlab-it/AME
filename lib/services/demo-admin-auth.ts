@@ -102,6 +102,7 @@ export async function changeDemoPassword(repo: MemoryRepo, adminId: string, pass
   const cred = state(repo).credentials.get(adminId);
   if (!cred) return;
   cred.passwordHash = await hashPassword(password);
+  await repo.updateAdmin(adminId, { must_change_password: false });
 }
 
 export type DemoLoginResult = { ok: true; sessionToken: string; needsEnrollment: boolean } | { ok: false; error: string };

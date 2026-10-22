@@ -3,7 +3,7 @@ import type { AdminRepo, AdminUserRecord } from "@/lib/database/types";
 /** Nivel de autenticación de Supabase Auth. El panel exige aal2 (contraseña + TOTP). */
 export type AssuranceLevel = "aal1" | "aal2";
 
-export type AdminGateKind = "anonymous" | "unlinked" | "mfa_enroll" | "mfa_verify" | "panel";
+export type AdminGateKind = "anonymous" | "unlinked" | "mfa_enroll" | "mfa_verify" | "password_change" | "panel";
 
 export interface AuthSnapshot {
   userId: string | null;
@@ -16,18 +16,22 @@ export type AdminGate =
   | { kind: "unlinked" }
   | { kind: "mfa_enroll"; admin: AdminUserRecord }
   | { kind: "mfa_verify"; admin: AdminUserRecord }
+  | { kind: "password_change"; admin: AdminUserRecord }
   | { kind: "panel"; admin: AdminUserRecord };
 
 /**
  * Decide si la sesión puede entrar al panel.
  * El perfil tiene que estar vinculado por auth_user_id y activo.
  * aal2/aal2 es el único estado que abre el panel: sin TOTP verificado no hay acceso.
+ * Con must_change_password, aal2 no abre el panel: primero se elige una contraseña nueva.
  */
-export function decideAdminGate(input: AuthSnapshot & { admin: { active: boolean; auth_user_id: string | null } | null }): AdminGateKind {
+export function decideAdminGate(
+  input: AuthSnapshot & { admin: { active: boolean; auth_user_id: string | null; must_change_password?: boolean } | null },
+): AdminGateKind {
   const { userId, currentLevel, nextLevel, admin } = input;
   if (!userId) return "anonymous";
   if (!admin || !admin.active || !admin.auth_user_id || admin.auth_user_id !== userId) return "unlinked";
-  if (currentLevel === "aal2" && nextLevel === "aal2") return "panel";
+  if (currentLevel === "aal2" && nextLevel === "aal2") return admin.must_change_password === true ? "password_change" : "panel";
   if (nextLevel === "aal2") return "mfa_verify";
   return "mfa_enroll";
 }
@@ -49,6 +53,7 @@ export async function gateForAuthUser(repo: Pick<AdminRepo, "findAdminByAuthUser
       return { kind: "unlinked" };
     case "mfa_enroll":
     case "mfa_verify":
+    case "password_change":
     case "panel":
       if (!admin) return { kind: "unlinked" };
       return { kind, admin };
@@ -73,9 +78,17 @@ export function classifyAdminPath(pathname: string): AdminPathClass | null {
   return "panel";
 }
 
+/**
+ * El middleware solo conoce la sesión y el AAL, no must_change_password: por eso no saca
+ * de /admin/restablecer a quien tiene aal2. La página y requireAdmin lo resuelven con admin_users.
+ */
 export function redirectForAdminRoute(pathname: string, gate: AdminGateKind): string | null {
   const area = classifyAdminPath(pathname);
   if (area === null) return null;
+  if (gate === "password_change") {
+    if (matches(pathname, "/admin/restablecer") || matches(pathname, "/admin/auth")) return null;
+    return "/admin/restablecer";
+  }
   if (area === "public") {
     if (gate === "panel") return "/admin";
     if (gate === "mfa_enroll" || gate === "mfa_verify") return "/admin/mfa";
@@ -84,7 +97,7 @@ export function redirectForAdminRoute(pathname: string, gate: AdminGateKind): st
   if (gate === "anonymous" || gate === "unlinked") return "/admin/login";
   if (area === "panel" && gate !== "panel") return "/admin/mfa";
   if (matches(pathname, "/admin/mfa") && gate === "panel") return "/admin";
-  if ((matches(pathname, "/admin/registro") || matches(pathname, "/admin/restablecer")) && gate === "panel") return "/admin";
+  if (matches(pathname, "/admin/registro") && gate === "panel") return "/admin";
   return null;
 }
 

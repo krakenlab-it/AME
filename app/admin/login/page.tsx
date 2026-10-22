@@ -16,6 +16,8 @@ export default async function AdminLoginPage() {
     case "mfa_enroll":
     case "mfa_verify":
       redirect("/admin/mfa");
+    case "password_change":
+      redirect("/admin/restablecer");
     case "unlinked":
       await signOutAndClear();
       break;
