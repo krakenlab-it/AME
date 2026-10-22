@@ -15,7 +15,7 @@ export const settings = {
   generalChallengeMinutes: 10,
   /**
    * Cómo se confirma la identidad en /ingresar después de la cédula.
-   * "email" (por defecto): código de 6 números por correo (Supabase Auth). "totp": aplicación autenticadora (flujo anterior).
+   * "email" (por defecto): código de acceso por correo (6 a 10 dígitos) (Supabase Auth). "totp": aplicación autenticadora (flujo anterior).
    */
   generalAuthMethod: (): "email" | "totp" => (process.env.AME_GENERAL_AUTH_METHOD === "totp" ? "totp" : "email"),
   /** Espera mínima entre dos envíos del código. Supabase exige 60 s por usuario. */

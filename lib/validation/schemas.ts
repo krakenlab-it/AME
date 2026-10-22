@@ -111,9 +111,27 @@ export const generalEmailIdentifySchema = z
   })
   .strict();
 
+/**
+ * Largo del código por correo. Supabase Auth permite configurar entre 6 y 10 dígitos
+ * (auth.email.otp_length); el portal acepta cualquiera de ellos para no depender del ajuste.
+ */
+export const EMAIL_OTP_MIN_LENGTH = 6;
+export const EMAIL_OTP_MAX_LENGTH = 10;
+
+/** Quita espacios, guiones y puntos que llegan al pegar el código desde el correo. */
+export function normalizeOtpInput(value: string): string {
+  return value.replace(/[\s\u00a0\-\u2010-\u2015.]/g, "");
+}
+
+const EMAIL_OTP_PATTERN = new RegExp(`^\\d{${EMAIL_OTP_MIN_LENGTH},${EMAIL_OTP_MAX_LENGTH}}$`);
+
 export const generalEmailCodeSchema = z
   .object({
-    code: z.string().trim().regex(/^\d{6}$/, "El código tiene 6 números."),
+    code: z
+      .string()
+      .max(64)
+      .transform(normalizeOtpInput)
+      .pipe(z.string().regex(EMAIL_OTP_PATTERN, "Escribe el código que te enviamos, solo los números.")),
   })
   .strict();
 
