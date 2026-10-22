@@ -1,7 +1,7 @@
 import type { AdminGateKind } from "@/lib/services/admin-gate";
 
 /** Consola a la que vuelve quien ya tiene sesión. null = la portada se queda. */
-export type LandingConsolePath = "/admin" | "/admin/mfa" | "/mi-cuenta";
+export type LandingConsolePath = "/admin" | "/admin/mfa" | "/admin/restablecer" | "/mi-cuenta";
 
 /**
  * Decide el destino de `/` con la misma barrera del panel (`admin_users` + MFA)
@@ -19,6 +19,8 @@ export function landingConsolePath(input: {
     case "mfa_enroll":
     case "mfa_verify":
       return "/admin/mfa";
+    case "password_change":
+      return "/admin/restablecer";
     case "anonymous":
     case "unlinked":
       return input.hasRespondentSession ? "/mi-cuenta" : null;

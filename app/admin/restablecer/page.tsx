@@ -8,6 +8,7 @@ export const metadata = { title: "Administración | Nueva contraseña" };
 
 export default async function ResetPasswordPage() {
   const gate = await readAdminGate();
+  const forced = gate.kind === "password_change";
   switch (gate.kind) {
     case "anonymous":
     case "unlinked":
@@ -17,6 +18,7 @@ export default async function ResetPasswordPage() {
       redirect("/admin");
     case "mfa_enroll":
     case "mfa_verify":
+    case "password_change":
       break;
     default: {
       const unreachable: never = gate;
@@ -25,7 +27,14 @@ export default async function ResetPasswordPage() {
   }
 
   return (
-    <AdminAuthCard title="Nueva contraseña" subtitle="Elija una contraseña distinta a la anterior.">
+    <AdminAuthCard
+      title="Nueva contraseña"
+      subtitle={
+        forced
+          ? "Antes de entrar al panel tienes que elegir una contraseña nueva, distinta a la anterior."
+          : "Elija una contraseña distinta a la anterior."
+      }
+    >
       <SetPasswordForm action={setPasswordAction} submitLabel="Guardar contraseña" />
       <p className="text-sm">
         <AdminAuthLink href="/admin/recuperar">Pedir otro enlace</AdminAuthLink>

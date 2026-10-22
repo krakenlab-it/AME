@@ -32,8 +32,13 @@ export function previewSandboxEmptyPeople(): boolean {
   return deployStage() === "preview" || vercelPreviewHost();
 }
 
-/** URL pública del despliegue Preview (-git-) para enlaces /verificar en CSV. */
+/**
+ * URL pública del despliegue Preview (-git-) para enlaces /verificar en CSV.
+ * En producción Vercel también define VERCEL_BRANCH_URL (…-git-main…): ahí nunca se usa,
+ * los enlaces salen de APP_BASE_URL.
+ */
 export function previewSandboxPublicBaseUrl(): string | null {
+  if (process.env.VERCEL_ENV === "production") return null;
   if (!isPreviewSandboxDeployment() && !isPreviewSandboxBuild()) return null;
   const host = process.env.VERCEL_BRANCH_URL || process.env.VERCEL_URL;
   if (!host || !host.includes("-git-")) return null;
