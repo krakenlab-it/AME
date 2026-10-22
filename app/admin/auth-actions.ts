@@ -84,7 +84,7 @@ export async function setPasswordAction(_prev: AuthState, formData: FormData): P
       if (!ctx) redirect("/admin/login");
       await changeDemoPassword(repo, ctx.admin.id, password);
     } else {
-      const res = await setAdminPassword(password, confirm);
+      const res = await setAdminPassword(getRepo(), password, confirm);
       if (!res.ok) return { error: res.error };
     }
   } catch (error) {

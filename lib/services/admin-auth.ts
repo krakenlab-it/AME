@@ -102,7 +102,11 @@ export async function requestPasswordReset(
   return { ok: true, message: RESET_SENT_MESSAGE };
 }
 
-export async function setAdminPassword(password: string, confirm: string): Promise<{ ok: true } | { ok: false; error: string }> {
+export async function setAdminPassword(
+  repo: Pick<AdminRepo, "findAdminByAuthUserId" | "updateAdmin">,
+  password: string,
+  confirm: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
   const policy = passwordPolicyError(password);
   if (policy) return { ok: false, error: policy };
   if (password !== confirm) return { ok: false, error: "Las contraseñas no coinciden." };
@@ -112,6 +116,11 @@ export async function setAdminPassword(password: string, confirm: string): Promi
   if (!snapshot.userId) return { ok: false, error: "Abre el enlace de invitación o de restablecimiento que recibiste por correo." };
   const { error } = await supabase.auth.updateUser({ password });
   if (error) return { ok: false, error: "No se pudo guardar la contraseña. Pide un enlace nuevo." };
+  // Solo después de que Auth guardó la contraseña se levanta la obligación de cambiarla.
+  const admin = await repo.findAdminByAuthUserId(snapshot.userId);
+  if (admin?.must_change_password === true && admin.auth_user_id === snapshot.userId) {
+    await repo.updateAdmin(admin.id, { must_change_password: false });
+  }
   return { ok: true };
 }
 

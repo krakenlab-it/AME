@@ -190,10 +190,10 @@ export class MemoryRepo implements Repo {
   async findAdminByEmail(email: string) { return [...this.admins.values()].find((a) => a.email === email.toLowerCase()) ?? null; }
   async findAdminByAuthUserId(authUserId: string) { return [...this.admins.values()].find((a) => a.auth_user_id === authUserId) ?? null; }
   async getAdmin(id: string) { return this.admins.get(id) ?? null; }
-  async createAdmin(a: { email: string; full_name: string; role: AdminUserRecord["role"]; auth_user_id: string | null }) {
+  async createAdmin(a: { email: string; full_name: string; role: AdminUserRecord["role"]; auth_user_id: string | null; must_change_password?: boolean }) {
     return this.createAdminSync(a);
   }
-  createAdminSync(a: { email: string; full_name: string; role: AdminUserRecord["role"]; auth_user_id: string | null }) {
+  createAdminSync(a: { email: string; full_name: string; role: AdminUserRecord["role"]; auth_user_id: string | null; must_change_password?: boolean }) {
     const rec: AdminUserRecord = {
       id: randomUUID(),
       email: a.email.toLowerCase(),
@@ -203,6 +203,7 @@ export class MemoryRepo implements Repo {
       mfa_enabled: false,
       active: true,
       last_login_at: null,
+      must_change_password: a.must_change_password === true,
     };
     this.admins.set(rec.id, rec);
     return rec;
