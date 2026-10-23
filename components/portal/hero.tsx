@@ -2,6 +2,7 @@ import { CreditCard, Clock3, Lock, ShieldCheck, Smartphone } from "lucide-react"
 import type { ReactNode } from "react";
 import { MaristaLogo } from "@/components/brand/logos";
 import { Reveal } from "@/components/motion/primitives";
+import { HowItWorks } from "@/components/portal/how-it-works";
 
 export function PortalHero({ action }: { action: ReactNode }) {
   return (
@@ -25,6 +26,7 @@ export function PortalHero({ action }: { action: ReactNode }) {
             <Clock3 className="h-4 w-4 shrink-0 text-marian" aria-hidden />Toma de 3 a 5 minutos.
           </p>
         </section>
+        <HowItWorks />
       </Reveal>
       <Reveal className="md:pl-4" delay={0.12}>{action}</Reveal>
     </section>

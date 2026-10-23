@@ -6,40 +6,58 @@ import { DEMO_EMAIL_OTP_CODE } from "../lib/services/email-otp";
 const started = PRODUCT_PERSONAS.find((persona) => persona.key === "started");
 const EMAIL = "lucia.romero@example.invalid";
 
-test("el enlace general pide el correo; la cédula y el código dactilar son opcionales", async ({ page }) => {
+async function acceptTerms(page: import("@playwright/test").Page) {
+  const start = page.getByRole("button", { name: "Empezar validación" });
+  const checkbox = page.getByRole("checkbox", { name: /He leído el mecanismo de identificación/ });
+  await expect(start).toBeDisabled();
+  await expect(checkbox).toBeDisabled();
+  await page.getByRole("button", { name: "haz click aquí" }).click();
+  const dialog = page.getByRole("dialog", { name: "Mecanismo de identificación y verificación de identidad" });
+  await expect(dialog).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(dialog).toHaveCount(0);
+  await expect(checkbox).toBeEnabled();
+  await expect(start).toBeDisabled();
+  await checkbox.check();
+  await start.click();
+}
+
+test("el enlace general pide términos y correo antes de la cédula", async ({ page }) => {
   expect(started).toBeTruthy();
   await page.goto("/ingresar");
+  await expect(page.getByRole("heading", { name: "Antes de empezar" })).toBeVisible();
+  await expect(page.getByLabel("Correo electrónico")).toHaveCount(0);
+  await acceptTerms(page);
   await expect(page.getByRole("heading", { name: "Entra con tu correo" })).toBeVisible();
-  await page.getByText("¿Dónde encuentro mi código dactilar?").click();
-  await expect(page.getByRole("img", { name: /cédula anterior/i })).toBeVisible();
-  await expect(page.getByRole("img", { name: /cédula electrónica/i })).toBeVisible();
-  await expect(page.getByLabel("Código dactilar")).toBeVisible();
-  await expect(page.getByLabel("Número de cédula")).not.toHaveAttribute("required", "");
-  // Sin Google Authenticator en el ingreso por correo.
+  await expect(page.getByLabel("Número de cédula")).toHaveCount(0);
   await expect(page.getByText(/Authenticator/)).toHaveCount(0);
   await page.getByLabel("Correo electrónico").fill("no-es-correo");
   await page.getByRole("button", { name: "Enviarme el código" }).click();
   await expect(page.getByLabel("Correo electrónico")).toHaveAttribute("aria-invalid", "true");
 });
 
-test("el correo cargado en la importación vincula la ficha sola, sin cédula", async ({ page }) => {
+test("el correo cargado no abre el formulario hasta la cédula; el dactilar queda opcional", async ({ page }) => {
   expect(started).toBeTruthy();
   await page.goto("/ingresar");
+  await acceptTerms(page);
   await page.getByLabel("Correo electrónico").fill(EMAIL);
   await page.getByRole("button", { name: "Enviarme el código" }).click();
 
   await expect(page.getByRole("heading", { name: "Revisa tu correo" })).toBeVisible();
   await expect(page.getByText("l***********@example.invalid")).toBeVisible();
-  await expect(page.getByRole("button", { name: /Reenviar código en \d+ s/ })).toBeDisabled();
-  await expect(page.getByRole("button", { name: "Usar otro correo" })).toBeVisible();
-  await expect(page.getByText(started!.cedula)).toHaveCount(0);
-
-  await page.getByLabel("Código de acceso").fill("000000");
-  await page.getByRole("button", { name: "Confirmar y continuar" }).click();
-  await expect(page.getByText("El código no es correcto o ya venció. Revisa el último correo que te enviamos.")).toBeVisible();
-
   await page.getByLabel("Código de acceso").fill(DEMO_EMAIL_OTP_CODE);
   await page.getByRole("button", { name: "Confirmar y continuar" }).click();
+
+  await expect(page.getByRole("heading", { name: "Tu cédula" })).toBeVisible();
+  await expect(page).toHaveURL(/\/ingresar$/);
+  await expect(page.getByLabel("Número de cédula")).toHaveAttribute("required", "");
+  await expect(page.getByLabel("Código dactilar (opcional)")).not.toHaveAttribute("required", "");
+  await page.getByText("¿Dónde encuentro mi código dactilar?").click();
+  await expect(page.getByRole("img", { name: /cédula anterior/i })).toBeVisible();
+  await expect(page.getByRole("img", { name: /cédula electrónica/i })).toBeVisible();
+
+  await page.getByLabel("Número de cédula").fill(started!.cedula);
+  await page.getByRole("button", { name: "Continuar" }).click();
   await expect(page).toHaveURL(/\/verificar\/formulario$/);
   await expect(page.getByText(started!.currentFirstNames, { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Sí, es correcta" }).click();
@@ -48,22 +66,31 @@ test("el correo cargado en la importación vincula la ficha sola, sin cédula", 
 
 test("un correo nuevo crea una cuenta sin vincular que no abre el formulario", async ({ page }) => {
   await page.goto("/ingresar");
+  await acceptTerms(page);
   await page.getByLabel("Correo electrónico").fill(`nuevo.${Date.now()}@example.invalid`);
   await page.getByRole("button", { name: "Enviarme el código" }).click();
   await expect(page.getByRole("heading", { name: "Revisa tu correo" })).toBeVisible();
   await page.getByLabel("Código de acceso").fill(DEMO_EMAIL_OTP_CODE);
   await page.getByRole("button", { name: "Confirmar y continuar" }).click();
+  await expect(page.getByRole("heading", { name: "Tu cédula" })).toBeVisible();
+  await page.getByLabel("Número de cédula").fill("1710034065");
+  await page.getByRole("button", { name: "Continuar" }).click();
   await expect(page).toHaveURL(/\/mi-cuenta$/);
   await expect(page.getByText("Cuenta pendiente de vínculo")).toBeVisible();
   await page.goto("/verificar/formulario");
   await expect(page).not.toHaveURL(/\/verificar\/formulario$/);
 });
 
-test("el enlace personal sigue identificando a la ficha", async ({ page }) => {
+test("el enlace personal sigue vigente y entra por correo y cédula", async ({ page }) => {
   expect(started).toBeTruthy();
   await page.goto(`/verificar/${PRODUCT_SEED_TOKENS.started}`);
+  await acceptTerms(page);
+  await page.getByLabel("Correo electrónico").fill(EMAIL);
+  await page.getByRole("button", { name: "Enviarme el código" }).click();
+  await page.getByLabel("Código de acceso").fill(DEMO_EMAIL_OTP_CODE);
+  await page.getByRole("button", { name: "Confirmar y continuar" }).click();
   await page.getByLabel("Número de cédula").fill(started!.cedula);
-  await page.getByRole("button", { name: "Verificar y continuar" }).click();
+  await page.getByRole("button", { name: "Continuar" }).click();
   await expect(page).toHaveURL(/\/verificar\/formulario$/);
   await expect(page.getByText(started!.currentFirstNames, { exact: true })).toBeVisible();
 });

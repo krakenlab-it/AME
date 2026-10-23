@@ -791,8 +791,13 @@ export class SupabaseRepo implements Repo {
       patch.totp_secret_encrypted = input.totpSecretEncrypted;
       patch.totp_enabled_at = null;
       query = this.db.from("people").update(patch).eq("id", personId).is("anonymized_at", null).is("totp_enabled_at", null);
-    } else {
+    } else if (input.purpose === "verify") {
       query = query.not("totp_enabled_at", "is", null);
+    } else if (input.purpose === "cedula") {
+      return false;
+    } else {
+      const unexpected: never = input.purpose;
+      return unexpected;
     }
     const data = check(await query.select("id"), "beginGeneralChallenge") as { id: string }[] | null;
     return Boolean(data && data.length > 0);
@@ -802,7 +807,7 @@ export class SupabaseRepo implements Repo {
     const data = check(
       await this.db
         .from("people")
-        .select("id, first_names, last_names, national_id_last2, status, submitted_at, general_challenge_purpose, general_challenge_expires_at, totp_secret_encrypted, totp_enabled_at, general_locked_until, general_challenge_email, general_challenge_sent_at")
+        .select("id, first_names, last_names, national_id_last2, status, submitted_at, general_challenge_purpose, general_challenge_expires_at, totp_secret_encrypted, totp_enabled_at, general_locked_until, general_challenge_email, general_challenge_sent_at, general_challenge_auth_user_id")
         .eq("general_challenge_hash", challengeHash)
         .is("anonymized_at", null)
         .maybeSingle(),
@@ -821,9 +826,10 @@ export class SupabaseRepo implements Repo {
       general_locked_until: string | null;
       general_challenge_email: string | null;
       general_challenge_sent_at: string | null;
+      general_challenge_auth_user_id: string | null;
     } | null;
     const purpose = data?.general_challenge_purpose;
-    if (!data?.general_challenge_expires_at || (purpose !== "enroll" && purpose !== "verify" && purpose !== "email")) return null;
+    if (!data?.general_challenge_expires_at || (purpose !== "enroll" && purpose !== "verify" && purpose !== "email" && purpose !== "cedula")) return null;
     return {
       person_id: data.id,
       first_names: data.first_names,
@@ -838,7 +844,86 @@ export class SupabaseRepo implements Repo {
       general_locked_until: data.general_locked_until,
       pending_email: data.general_challenge_email,
       sent_at: data.general_challenge_sent_at,
+      auth_user_id: data.general_challenge_auth_user_id,
     };
+  }
+
+  async markEmailCodeVerified(personId: string, challengeHash: string, authUserId: string | null): Promise<boolean> {
+    const data = check(
+      await this.db
+        .from("people")
+        .update({ general_challenge_purpose: "cedula", general_challenge_auth_user_id: authUserId })
+        .eq("id", personId)
+        .eq("general_challenge_hash", challengeHash)
+        .eq("general_challenge_purpose", "email")
+        .select("id"),
+      "markEmailCodeVerified",
+    ) as { id: string }[] | null;
+    return Boolean(data && data.length > 0);
+  }
+
+  async promoteEmailChallenge(fromPersonId: string, toPersonId: string, challengeHash: string): Promise<boolean> {
+    if (fromPersonId === toPersonId) return false;
+    const source = check(
+      await this.db
+        .from("people")
+        .select("general_challenge_email, general_challenge_expires_at, general_challenge_sent_at, general_challenge_auth_user_id, self_registered_at, national_id_hash")
+        .eq("id", fromPersonId)
+        .eq("general_challenge_hash", challengeHash)
+        .eq("general_challenge_purpose", "cedula")
+        .maybeSingle(),
+      "promoteEmailChallenge.read",
+    ) as {
+      general_challenge_email: string | null;
+      general_challenge_expires_at: string | null;
+      general_challenge_sent_at: string | null;
+      general_challenge_auth_user_id: string | null;
+      self_registered_at: string | null;
+      national_id_hash: string | null;
+    } | null;
+    if (!source?.self_registered_at || source.national_id_hash || !source.general_challenge_email || !source.general_challenge_expires_at) return false;
+    const cleared = check(
+      await this.db
+        .from("people")
+        .update({
+          general_challenge_hash: null,
+          general_challenge_purpose: null,
+          general_challenge_expires_at: null,
+          general_challenge_email: null,
+          general_challenge_sent_at: null,
+          general_challenge_auth_user_id: null,
+        })
+        .eq("id", fromPersonId)
+        .eq("general_challenge_hash", challengeHash)
+        .select("id"),
+      "promoteEmailChallenge.clear",
+    ) as { id: string }[] | null;
+    if (!cleared || cleared.length === 0) return false;
+    const email = source.general_challenge_email.replace(/["\\]/g, "");
+    const moved = check(
+      await this.db
+        .from("people")
+        .update({
+          general_challenge_hash: challengeHash,
+          general_challenge_purpose: "cedula",
+          general_challenge_expires_at: source.general_challenge_expires_at,
+          general_challenge_email: source.general_challenge_email,
+          general_challenge_sent_at: source.general_challenge_sent_at,
+          general_challenge_auth_user_id: source.general_challenge_auth_user_id,
+        })
+        .eq("id", toPersonId)
+        .is("anonymized_at", null)
+        .is("self_registered_at", null)
+        .or(`login_email.is.null,login_email.eq."${email}"`)
+        .select("id"),
+      "promoteEmailChallenge.move",
+    ) as { id: string }[] | null;
+    if (!moved || moved.length === 0) return false;
+    check(
+      await this.db.from("people").delete().eq("id", fromPersonId).not("self_registered_at", "is", null).is("national_id_hash", null).is("login_email", null),
+      "promoteEmailChallenge.delete",
+    );
+    return true;
   }
 
   async touchGeneralChallengeSent(personId: string, challengeHash: string, sentAt: string): Promise<boolean> {
@@ -865,12 +950,13 @@ export class SupabaseRepo implements Repo {
       general_locked_until: null,
     };
     if (mode === "enroll") patch.totp_enabled_at = now;
-    if (mode === "email") {
+    if (mode === "email" || mode === "cedula") {
       if (!link?.email) return false;
       patch.login_email = link.email;
       patch.login_email_verified_at = now;
       patch.general_challenge_email = null;
       patch.general_challenge_sent_at = null;
+      patch.general_challenge_auth_user_id = null;
       if (link.authUserId) patch.auth_user_id = link.authUserId;
     }
     let query = this.db
@@ -880,7 +966,7 @@ export class SupabaseRepo implements Repo {
       .eq("general_challenge_hash", challengeHash)
       .eq("general_challenge_purpose", mode);
     // Un correo ya verificado no se reemplaza desde /ingresar (solo un reinicio del administrador lo libera).
-    if (mode === "email" && link?.email) query = query.or(`login_email.is.null,login_email.eq."${link.email.replace(/["\\]/g, "")}"`);
+    if ((mode === "email" || mode === "cedula") && link?.email) query = query.or(`login_email.is.null,login_email.eq."${link.email.replace(/["\\]/g, "")}"`);
     const res = await query.select("id");
     // 23505: ese usuario de Supabase Auth ya está vinculado a otra cédula (people_auth_user_id_idx).
     if (res.error?.code === "23505") return false;
@@ -925,6 +1011,7 @@ export class SupabaseRepo implements Repo {
           general_challenge_purpose: null,
           general_challenge_email: null,
           general_challenge_sent_at: null,
+          general_challenge_auth_user_id: null,
           // Libera el correo de ingreso para que la persona pueda vincular uno nuevo.
           login_email: null,
           login_email_verified_at: null,

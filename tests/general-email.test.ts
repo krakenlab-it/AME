@@ -3,6 +3,7 @@ import { MemoryRepo } from "@/lib/database/memory-repo";
 import { keyedHash } from "@/lib/encryption/crypto";
 import { demoEmailOtpProvider, DEMO_EMAIL_OTP_CODE, type EmailOtpProvider } from "@/lib/services/email-otp";
 import {
+  confirmGeneralCedula,
   confirmGeneralEmailCode,
   EMAIL_CODE_MISMATCH,
   EMAIL_SEND_LIMIT,
@@ -35,6 +36,16 @@ function deps(otp: EmailOtpProvider, ip = "ip-1"): GeneralEmailDeps {
   return { ipHash: `hash-${ip}`, captchaEnabled: false, verifyCaptcha: async () => true, otp };
 }
 
+function emailInput(email: string, extra: Record<string, string> = {}) {
+  return { email, termsAccepted: true, ...extra };
+}
+
+async function finishWithCedula(repo: MemoryRepo, token: string, cedula: string, otp: EmailOtpProvider, ip = "ip-2", codigoDactilar = "") {
+  const coded = await confirmGeneralEmailCode(repo, token, { code: DEMO_EMAIL_OTP_CODE }, deps(otp, ip));
+  if (!coded.ok) return coded;
+  return confirmGeneralCedula(repo, token, { cedula, codigoDactilar }, deps(otp, ip));
+}
+
 afterEach(() => {
   vi.useRealTimers();
   vi.unstubAllEnvs();
@@ -47,13 +58,19 @@ describe("ingreso con código por correo", () => {
     repo.outreachEmails.set(personId, EMAIL);
     const otp = fakeOtp();
 
-    const started = await startGeneralEmailAccess(repo, { cedula: JUAN, email: " Juan.Perez@Example.com " }, deps(otp));
+    const started = await startGeneralEmailAccess(repo, emailInput(" Juan.Perez@Example.com "), deps(otp));
     expect(started).toMatchObject({ ok: true, phase: "email", maskedEmail: "j*********@example.com", resendAfterSeconds: 60 });
     if (!started.ok) return;
     expect(otp.send).toHaveBeenCalledWith(EMAIL);
     expect(repo.auditLog.some((e) => e.action === "EMAIL_CODE_SENT")).toBe(true);
+    expect(repo.auditLog.some((e) => e.action === "IDENTITY_TERMS_ACCEPTED" && typeof e.metadata?.accepted_at === "string")).toBe(true);
 
-    const confirmed = await confirmGeneralEmailCode(repo, started.challengeToken, { code: DEMO_EMAIL_OTP_CODE }, deps(otp, "ip-2"));
+    const coded = await confirmGeneralEmailCode(repo, started.challengeToken, { code: DEMO_EMAIL_OTP_CODE }, deps(otp, "ip-2"));
+    expect(coded).toMatchObject({ ok: true, phase: "cedula" });
+    expect((await repo.getPerson(personId))?.login_email).toBeFalsy();
+    expect([...repo.sessions.values()].some((session) => session.person_id === personId)).toBe(false);
+
+    const confirmed = await confirmGeneralCedula(repo, started.challengeToken, { cedula: JUAN }, deps(otp, "ip-2"));
     expect(confirmed).toMatchObject({ ok: true, destination: "form" });
     if (!confirmed.ok) return;
     expect(otp.verify).toHaveBeenCalledWith(EMAIL, DEMO_EMAIL_OTP_CODE);
@@ -91,15 +108,18 @@ describe("ingreso con código por correo", () => {
     const repo = new MemoryRepo();
     repo.addPerson("Juan", "Pérez", JUAN);
     const otp = fakeOtp();
-    const bad = await startGeneralEmailAccess(repo, { cedula: JUAN, email: "no-es-correo" }, deps(otp));
+    const bad = await startGeneralEmailAccess(repo, emailInput("no-es-correo"), deps(otp));
     expect(bad.ok).toBe(false);
     if (!bad.ok) expect(bad.fieldErrors?.email).toBeTruthy();
-    const missing = await startGeneralEmailAccess(repo, { cedula: JUAN }, deps(otp));
+    const missing = await startGeneralEmailAccess(repo, { termsAccepted: true }, deps(otp));
     expect(missing.ok).toBe(false);
+    const noTerms = await startGeneralEmailAccess(repo, { email: EMAIL }, deps(otp));
+    expect(noTerms.ok).toBe(false);
+    if (!noTerms.ok) expect(noTerms.error).toMatch(/términos/i);
     expect(otp.send).not.toHaveBeenCalled();
   });
 
-  it("un código dactilar distinto del cargado da el error genérico sin enviar correo; el correcto vincula", async () => {
+  it("un código dactilar distinto del cargado rechaza sin guardar el correo; el correcto vincula", async () => {
     const repo = new MemoryRepo();
     const personId = repo.addPerson("Ana", "Gómez", ANA);
     repo.generalAuth.set(personId, {
@@ -114,13 +134,20 @@ describe("ingreso con código por correo", () => {
       challenge_purpose: null,
     });
     const otp = fakeOtp();
-    const mismatch = await startGeneralEmailAccess(repo, { cedula: ANA, email: EMAIL, codigoDactilar: "A9876B4321" }, deps(otp));
+    const started = await startGeneralEmailAccess(repo, emailInput(EMAIL), deps(otp));
+    if (!started.ok) throw new Error(started.error);
+    expect(otp.send).toHaveBeenCalledWith(EMAIL);
+    const coded = await confirmGeneralEmailCode(repo, started.challengeToken, { code: DEMO_EMAIL_OTP_CODE }, deps(otp));
+    expect(coded).toMatchObject({ ok: true, phase: "cedula" });
+    const mismatch = await confirmGeneralCedula(repo, started.challengeToken, { cedula: ANA, codigoDactilar: "A9876B4321" }, deps(otp));
     expect(mismatch).toMatchObject({ ok: false, error: GENERIC_GENERAL_ERROR });
-    expect(otp.send).not.toHaveBeenCalled();
+    expect((await repo.getPerson(personId))?.login_email).toBeFalsy();
     expect(repo.generalAuth.get(personId)?.failed_attempts).toBe(1);
-    const ok = await startGeneralEmailAccess(repo, { cedula: ANA, email: EMAIL, codigoDactilar: CODE }, deps(otp));
-    if (!ok.ok) throw new Error(ok.error);
-    expect(await confirmGeneralEmailCode(repo, ok.challengeToken, { code: DEMO_EMAIL_OTP_CODE }, deps(otp))).toMatchObject({ ok: true, destination: "form" });
+    expect(repo.generalAuth.get(personId)?.fingerprint_code_hash).toBe(keyedHash(CODE, "fingerprint_code"));
+
+    const again = await startGeneralEmailAccess(repo, emailInput(EMAIL), deps(otp, "ip-2"));
+    if (!again.ok) throw new Error(again.error);
+    expect(await finishWithCedula(repo, again.challengeToken, ANA, otp, "ip-2", CODE)).toMatchObject({ ok: true, destination: "form" });
     expect((await repo.getPerson(personId))?.login_email).toBe(EMAIL);
   });
 
@@ -129,7 +156,7 @@ describe("ingreso con código por correo", () => {
     const personId = repo.addPerson("Juan", "Pérez", JUAN);
     repo.outreachEmails.set(personId, EMAIL);
     const otp = fakeOtp();
-    const started = await startGeneralEmailAccess(repo, { cedula: JUAN, email: EMAIL }, deps(otp));
+    const started = await startGeneralEmailAccess(repo, emailInput(EMAIL), deps(otp));
     if (!started.ok) throw new Error("no inició");
 
     const wrong = await confirmGeneralEmailCode(repo, started.challengeToken, { code: "000000" }, deps(otp));
@@ -155,7 +182,7 @@ describe("ingreso con código por correo", () => {
     const repo = new MemoryRepo();
     repo.addPerson("Juan", "Pérez", JUAN);
     const otp = fakeOtp();
-    const started = await startGeneralEmailAccess(repo, { cedula: JUAN, email: EMAIL }, deps(otp));
+    const started = await startGeneralEmailAccess(repo, emailInput(EMAIL), deps(otp));
     if (!started.ok) throw new Error("no inició");
 
     const early = await resendGeneralEmailCode(repo, started.challengeToken, deps(otp));
@@ -184,16 +211,16 @@ describe("ingreso con código por correo", () => {
     repo.addPerson("Juan", "Pérez", JUAN);
     const otp = fakeOtp();
     for (let i = 0; i < settings.emailOtpLimitPerPerson; i += 1) {
-      const ok = await startGeneralEmailAccess(repo, { cedula: JUAN, email: EMAIL }, deps(otp, `ip-${i}`));
+      const ok = await startGeneralEmailAccess(repo, emailInput(EMAIL), deps(otp, `ip-${i}`));
       expect(ok.ok).toBe(true);
     }
-    const capped = await startGeneralEmailAccess(repo, { cedula: JUAN, email: EMAIL }, deps(otp, "ip-x"));
+    const capped = await startGeneralEmailAccess(repo, emailInput(EMAIL), deps(otp, "ip-x"));
     expect(capped).toMatchObject({ ok: false, error: EMAIL_SEND_LIMIT });
 
     const repo2 = new MemoryRepo();
     repo2.addPerson("Juan", "Pérez", JUAN);
     const limited = fakeOtp({ send: vi.fn(async () => ({ ok: false as const, reason: "rate_limited" as const })) });
-    const blocked = await startGeneralEmailAccess(repo2, { cedula: JUAN, email: EMAIL }, deps(limited));
+    const blocked = await startGeneralEmailAccess(repo2, emailInput(EMAIL), deps(limited));
     expect(blocked).toMatchObject({ ok: false, error: EMAIL_SEND_LIMIT });
   });
 
@@ -205,14 +232,15 @@ describe("ingreso con código por correo", () => {
     repo.outreachEmails.set(anaId, EMAIL);
     const otp = fakeOtp();
 
-    const first = await startGeneralEmailAccess(repo, { cedula: JUAN, email: EMAIL }, deps(otp));
+    const first = await startGeneralEmailAccess(repo, emailInput(EMAIL), deps(otp));
     if (!first.ok) throw new Error("no inició");
-    expect((await confirmGeneralEmailCode(repo, first.challengeToken, { code: DEMO_EMAIL_OTP_CODE }, deps(otp))).ok).toBe(true);
+    expect(await finishWithCedula(repo, first.challengeToken, JUAN, otp)).toMatchObject({ ok: true, destination: "form" });
+    expect((await repo.getPerson(juanId))?.login_email).toBe(EMAIL);
 
-    vi.mocked(otp.send).mockClear();
-    const second = await startGeneralEmailAccess(repo, { cedula: ANA, email: EMAIL }, deps(otp, "ip-2"));
-    expect(second).toMatchObject({ ok: false, error: GENERIC_GENERAL_ERROR });
-    expect(otp.send).not.toHaveBeenCalled();
+    const second = await startGeneralEmailAccess(repo, emailInput(EMAIL), deps(otp, "ip-2"));
+    if (!second.ok) throw new Error("segundo inicio");
+    const otherDocument = await finishWithCedula(repo, second.challengeToken, ANA, otp, "ip-2");
+    expect(otherDocument).toMatchObject({ ok: false, error: GENERIC_GENERAL_ERROR });
     expect((await repo.getPerson(anaId))?.login_email).toBeUndefined();
 
     // Aunque el reto llegue a abrirse para Ana (carrera), el usuario de Auth ya es de Juan.
@@ -224,7 +252,7 @@ describe("ingreso con código por correo", () => {
     const repo = new MemoryRepo();
     repo.addPerson("Juan", "Pérez", JUAN);
     const otp = fakeOtp({ verify: vi.fn(async () => ({ ok: true as const, authUserId: "x", email: "otro@example.com" })) });
-    const started = await startGeneralEmailAccess(repo, { cedula: JUAN, email: EMAIL }, deps(otp));
+    const started = await startGeneralEmailAccess(repo, emailInput(EMAIL), deps(otp));
     if (!started.ok) throw new Error("no inició");
     const result = await confirmGeneralEmailCode(repo, started.challengeToken, { code: "123456" }, deps(otp));
     expect(result).toMatchObject({ ok: false, error: EMAIL_CODE_MISMATCH });
@@ -246,24 +274,26 @@ describe("correo de ingreso ya verificado", () => {
     const personId = repo.addPerson("Juan Carlos", "Pérez López", JUAN);
     repo.outreachEmails.set(personId, EMAIL);
     const otp = fakeOtp();
-    const first = await startGeneralEmailAccess(repo, { cedula: JUAN, email: EMAIL }, deps(otp));
+    const first = await startGeneralEmailAccess(repo, emailInput(EMAIL), deps(otp));
     if (!first.ok) throw new Error("start");
-    expect(await confirmGeneralEmailCode(repo, first.challengeToken, { code: DEMO_EMAIL_OTP_CODE }, deps(otp))).toMatchObject({ ok: true });
+    expect(await finishWithCedula(repo, first.challengeToken, JUAN, otp)).toMatchObject({ ok: true, destination: "form" });
 
-    vi.mocked(otp.send).mockClear();
-    const other = await startGeneralEmailAccess(repo, { cedula: JUAN, email: "otra.persona@example.com" }, deps(otp, "ip-3"));
-    expect(other).toMatchObject({ ok: false, fieldErrors: { email: expect.any(String) } });
-    if (!other.ok) expect(other.error).toContain("j*********@example.com");
-    expect(otp.send).not.toHaveBeenCalled();
+    const other = await startGeneralEmailAccess(repo, emailInput("otra.persona@example.com"), deps(otp, "ip-3"));
+    if (!other.ok) throw new Error(other.error);
+    const takeover = await finishWithCedula(repo, other.challengeToken, JUAN, otp, "ip-3");
+    expect(takeover.ok).toBe(false);
+    if (!takeover.ok) expect(takeover.error).toContain("j*********@example.com");
     expect((await repo.getPerson(personId))?.login_email).toBe(EMAIL);
 
-    const same = await startGeneralEmailAccess(repo, { cedula: JUAN, email: "JUAN.PEREZ@example.com" }, deps(otp, "ip-4"));
-    expect(same).toMatchObject({ ok: true });
-    // Quien ya está vinculado entra solo con el correo, como antes.
-    const emailOnly = await startGeneralEmailAccess(repo, { email: EMAIL }, deps(otp, "ip-5"));
-    if (!emailOnly.ok) throw new Error(emailOnly.error);
-    expect(await confirmGeneralEmailCode(repo, emailOnly.challengeToken, { code: DEMO_EMAIL_OTP_CODE }, deps(otp, "ip-5"))).toMatchObject({ ok: true });
-    expect([...repo.people.values()].filter((p) => p.self_registered_at)).toHaveLength(0);
+    const sessionsBefore = repo.sessions.size;
+    const same = await startGeneralEmailAccess(repo, emailInput("JUAN.PEREZ@example.com"), deps(otp, "ip-4"));
+    if (!same.ok) throw new Error(same.error);
+    const coded = await confirmGeneralEmailCode(repo, same.challengeToken, { code: DEMO_EMAIL_OTP_CODE }, deps(otp, "ip-4"));
+    expect(coded).toMatchObject({ ok: true, phase: "cedula" });
+    expect(repo.sessions.size).toBe(sessionsBefore);
+    expect(await confirmGeneralCedula(repo, same.challengeToken, { cedula: JUAN }, deps(otp, "ip-4"))).toMatchObject({ ok: true, destination: "form" });
+    expect([...repo.people.values()].filter((p) => p.self_registered_at && p.login_email)).toHaveLength(0);
+    expect((await repo.getPerson(personId))?.login_email).toBe(EMAIL);
   });
 
   it("el reinicio del administrador libera la cédula; el correo nuevo queda como cuenta propia hasta que el panel la vincule", async () => {
@@ -271,14 +301,14 @@ describe("correo de ingreso ya verificado", () => {
     const personId = repo.addPerson("Juan Carlos", "Pérez López", JUAN);
     repo.outreachEmails.set(personId, EMAIL);
     const otp = fakeOtp();
-    const first = await startGeneralEmailAccess(repo, { cedula: JUAN, email: EMAIL }, deps(otp));
+    const first = await startGeneralEmailAccess(repo, emailInput(EMAIL), deps(otp));
     if (!first.ok) throw new Error("start");
-    await confirmGeneralEmailCode(repo, first.challengeToken, { code: DEMO_EMAIL_OTP_CODE }, deps(otp));
+    expect((await finishWithCedula(repo, first.challengeToken, JUAN, otp)).ok).toBe(true);
     expect(await repo.resetGeneralAuth(personId)).toBe(true);
 
-    const next = await startGeneralEmailAccess(repo, { cedula: JUAN, email: "nuevo@example.com" }, deps(otp, "ip-5"));
+    const next = await startGeneralEmailAccess(repo, emailInput("nuevo@example.com"), deps(otp, "ip-5"));
     if (!next.ok) throw new Error(next.error);
-    expect(await confirmGeneralEmailCode(repo, next.challengeToken, { code: DEMO_EMAIL_OTP_CODE }, deps(otp, "ip-5"))).toMatchObject({ ok: true, destination: "home" });
+    expect(await finishWithCedula(repo, next.challengeToken, JUAN, otp, "ip-5")).toMatchObject({ ok: true, destination: "home" });
     expect((await repo.getPerson(personId))?.login_email).toBeFalsy();
     const [account] = await repo.listUnlinkedAccounts(10);
     expect(account).toMatchObject({ login_email: "nuevo@example.com", link_request_national_id_last2: JUAN.slice(-2) });

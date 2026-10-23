@@ -7,7 +7,7 @@ import {
   PREVIEW_OUTREACH_RAW_TOKEN,
   normalizePreviewDemoToken,
 } from "@/lib/demo/preview-outreach-tokens";
-import { IdentifyPanel } from "@/components/forms/identify-panel";
+import { GeneralAccessPanel } from "@/components/forms/general-access-panel";
 import { PortalHero } from "@/components/portal/hero";
 import { PortalShell, PortalUnavailable } from "@/components/portal/shell";
 import { getRepo } from "@/lib/database";
@@ -30,7 +30,12 @@ export default async function VerifyLinkPage({ params }: { params: Promise<{ tok
       <PortalHero
         action={
           state === "valid" ? (
-            <IdentifyPanel token={token} turnstileSiteKey={process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY ?? null} />
+            <GeneralAccessPanel
+              turnstileSiteKey={process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY ?? null}
+              requireFingerprint={false}
+              method="email"
+              accessToken={token}
+            />
           ) : (
             <div className="sheet space-y-4 p-6 md:p-8" role="status">
               <LinkIcon className="h-7 w-7 text-marian" aria-hidden />

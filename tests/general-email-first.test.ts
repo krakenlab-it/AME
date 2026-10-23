@@ -3,7 +3,7 @@ import { MemoryRepo } from "@/lib/database/memory-repo";
 import { keyedHash } from "@/lib/encryption/crypto";
 import { demoEmailOtpProvider, DEMO_EMAIL_OTP_CODE, type EmailOtpProvider } from "@/lib/services/email-otp";
 import { linkUnlinkedAccount } from "@/lib/services/account-link";
-import { confirmGeneralEmailCode, startGeneralEmailAccess, type GeneralEmailDeps } from "@/lib/services/general-email";
+import { confirmGeneralCedula, confirmGeneralEmailCode, startGeneralEmailAccess, type GeneralEmailDeps } from "@/lib/services/general-email";
 import { composeInsuredHome } from "@/lib/services/insured-home";
 import { getRespondentContext, submitResponse } from "@/lib/services/respondent";
 import { GENERIC_GENERAL_ERROR } from "@/lib/validation/constants";
@@ -28,10 +28,12 @@ function deps(otp: EmailOtpProvider, ip = "ip-1"): GeneralEmailDeps {
   return { ipHash: `hash-${ip}`, captchaEnabled: false, verifyCaptcha: async () => true, otp };
 }
 
-async function signIn(repo: MemoryRepo, input: Record<string, string>, otp = fakeOtp(), ip = "ip-1") {
-  const started = await startGeneralEmailAccess(repo, input, deps(otp, ip));
+async function signIn(repo: MemoryRepo, input: { email: string; cedula: string; codigoDactilar?: string }, otp = fakeOtp(), ip = "ip-1") {
+  const started = await startGeneralEmailAccess(repo, { email: input.email, termsAccepted: true }, deps(otp, ip));
   if (!started.ok) throw new Error(started.error);
-  const confirmed = await confirmGeneralEmailCode(repo, started.challengeToken, { code: DEMO_EMAIL_OTP_CODE }, deps(otp, ip));
+  const coded = await confirmGeneralEmailCode(repo, started.challengeToken, { code: DEMO_EMAIL_OTP_CODE }, deps(otp, ip));
+  if (!coded.ok) throw new Error(coded.error);
+  const confirmed = await confirmGeneralCedula(repo, started.challengeToken, { cedula: input.cedula, codigoDactilar: input.codigoDactilar ?? "" }, deps(otp, ip));
   if (!confirmed.ok) throw new Error(confirmed.error);
   return confirmed;
 }
@@ -42,7 +44,7 @@ describe("ingreso solo con correo", () => {
   it("un correo nuevo crea una cuenta propia sin cédula, que no puede llenar el formulario", async () => {
     const repo = new MemoryRepo();
     const imported = repo.addPerson("Juan", "Pérez", JUAN);
-    const confirmed = await signIn(repo, { email: "nadie@example.com" });
+    const confirmed = await signIn(repo, { email: "nadie@example.com", cedula: JUAN });
     expect(confirmed.destination).toBe("home");
 
     const [account] = selfAccounts(repo);
@@ -69,7 +71,7 @@ describe("ingreso solo con correo", () => {
     expect(Object.values(await repo.statusCounts()).reduce((a, b) => a + b, 0)).toBe(1);
     expect((await repo.listPeople({ page: 1, pageSize: 50 })).total).toBe(1);
     // Volver a entrar reutiliza la misma cuenta.
-    await signIn(repo, { email: "nadie@example.com" }, fakeOtp(), "ip-2");
+    await signIn(repo, { email: "nadie@example.com", cedula: JUAN }, fakeOtp(), "ip-2");
     expect(selfAccounts(repo)).toHaveLength(1);
   });
 
@@ -77,26 +79,33 @@ describe("ingreso solo con correo", () => {
     const repo = new MemoryRepo();
     const juan = repo.addPerson("Juan", "Pérez", JUAN);
     repo.outreachEmails.set(juan, "juan@example.com");
-    const confirmed = await signIn(repo, { email: "Juan@Example.com" });
+    const confirmed = await signIn(repo, { email: "Juan@Example.com", cedula: JUAN });
     expect(confirmed.destination).toBe("form");
     expect((await repo.getPerson(juan))?.login_email).toBe("juan@example.com");
     expect(selfAccounts(repo)).toHaveLength(0);
 
-    // Dos personas con el mismo correo importado: no se adivina, queda para el panel.
+    // El mismo correo en dos fichas no se adivina por el correo. La cédula elige a la persona.
     const repo2 = new MemoryRepo();
-    for (const [name, id] of [["Juan", JUAN], ["Ana", ANA]] as const) repo2.outreachEmails.set(repo2.addPerson(name, "X", id), "familia@example.com");
-    expect((await signIn(repo2, { email: "familia@example.com" })).destination).toBe("home");
-    expect(selfAccounts(repo2)).toHaveLength(1);
+    let juanId = "";
+    for (const [name, id] of [["Juan", JUAN], ["Ana", ANA]] as const) {
+      const personId = repo2.addPerson(name, "X", id);
+      if (id === JUAN) juanId = personId;
+      repo2.outreachEmails.set(personId, "familia@example.com");
+    }
+    const chosen = await signIn(repo2, { email: "familia@example.com", cedula: JUAN });
+    expect(chosen.destination).toBe("form");
+    expect(selfAccounts(repo2)).toHaveLength(0);
+    expect((await repo2.getPerson(juanId))?.login_email).toBe("familia@example.com");
   });
 
   it("una cuenta propia se vincula sola cuando después importan a la persona con ese correo", async () => {
     const repo = new MemoryRepo();
-    await signIn(repo, { email: "tarde@example.com" });
+    await signIn(repo, { email: "tarde@example.com", cedula: JUAN });
     const [account] = selfAccounts(repo);
     const juan = repo.addPerson("Juan", "Pérez", JUAN);
     repo.outreachEmails.set(juan, "tarde@example.com");
 
-    const again = await signIn(repo, { email: "tarde@example.com" }, fakeOtp(), "ip-2");
+    const again = await signIn(repo, { email: "tarde@example.com", cedula: JUAN }, fakeOtp(), "ip-2");
     expect(again.destination).toBe("form");
     expect((await repo.getPerson(juan))?.login_email).toBe("tarde@example.com");
     expect(repo.generalAuth.get(juan)?.auth_user_id).toBe("auth-tarde@example.com");
@@ -109,10 +118,11 @@ describe("cédula escrita sin vínculo automático", () => {
     const repo = new MemoryRepo();
     const juan = repo.addPerson("Juan", "Pérez", JUAN);
     const otp = fakeOtp();
-    const started = await startGeneralEmailAccess(repo, { email: "alguien@example.com", cedula: JUAN, codigoDactilar: CODE }, deps(otp));
+    const started = await startGeneralEmailAccess(repo, { email: "alguien@example.com", termsAccepted: true }, deps(otp));
     expect(started.ok).toBe(true);
     if (!started.ok) return;
     await confirmGeneralEmailCode(repo, started.challengeToken, { code: DEMO_EMAIL_OTP_CODE }, deps(otp));
+    await confirmGeneralCedula(repo, started.challengeToken, { cedula: JUAN, codigoDactilar: CODE }, deps(otp));
 
     expect((await repo.getPerson(juan))?.login_email).toBeFalsy();
     expect(repo.generalAuth.get(juan)?.fingerprint_code_hash ?? null).toBeNull();
@@ -129,8 +139,14 @@ describe("cédula escrita sin vínculo automático", () => {
     const repo = new MemoryRepo();
     repo.addPerson("Juan", "Pérez", JUAN);
     const otp = fakeOtp();
-    const known = await startGeneralEmailAccess(repo, { email: "a@example.com", cedula: JUAN }, deps(otp));
-    const unknown = await startGeneralEmailAccess(repo, { email: "b@example.com", cedula: ANA }, deps(otp, "ip-2"));
+    const knownStart = await startGeneralEmailAccess(repo, { email: "a@example.com", termsAccepted: true }, deps(otp));
+    const unknownStart = await startGeneralEmailAccess(repo, { email: "b@example.com", termsAccepted: true }, deps(otp, "ip-2"));
+    expect(knownStart.ok && unknownStart.ok).toBe(true);
+    if (!knownStart.ok || !unknownStart.ok) return;
+    await confirmGeneralEmailCode(repo, knownStart.challengeToken, { code: DEMO_EMAIL_OTP_CODE }, deps(otp));
+    await confirmGeneralEmailCode(repo, unknownStart.challengeToken, { code: DEMO_EMAIL_OTP_CODE }, deps(otp, "ip-2"));
+    const known = await confirmGeneralCedula(repo, knownStart.challengeToken, { cedula: JUAN }, deps(otp));
+    const unknown = await confirmGeneralCedula(repo, unknownStart.challengeToken, { cedula: ANA }, deps(otp, "ip-2"));
     expect(known.ok && unknown.ok).toBe(true);
     if (known.ok && unknown.ok) expect(Object.keys(known).sort()).toEqual(Object.keys(unknown).sort());
   });
@@ -139,13 +155,17 @@ describe("cédula escrita sin vínculo automático", () => {
     const repo = new MemoryRepo();
     const juan = repo.addPerson("Juan", "Pérez", JUAN);
     repo.outreachEmails.set(juan, "juan@example.com");
-    await signIn(repo, { email: "juan@example.com" });
+    await signIn(repo, { email: "juan@example.com", cedula: JUAN });
     const otp = fakeOtp();
-    const other = await startGeneralEmailAccess(repo, { email: "intruso@example.com", cedula: JUAN }, deps(otp, "ip-9"));
-    expect(other.ok).toBe(false);
-    if (!other.ok) expect(other.error).toContain("Esta cédula ya ingresó con otro correo");
-    expect(otp.send).not.toHaveBeenCalled();
-    expect(selfAccounts(repo)).toHaveLength(0);
+    const other = await startGeneralEmailAccess(repo, { email: "intruso@example.com", termsAccepted: true }, deps(otp, "ip-9"));
+    expect(other.ok).toBe(true);
+    if (!other.ok) return;
+    await confirmGeneralEmailCode(repo, other.challengeToken, { code: DEMO_EMAIL_OTP_CODE }, deps(otp, "ip-9"));
+    const cedula = await confirmGeneralCedula(repo, other.challengeToken, { cedula: JUAN }, deps(otp, "ip-9"));
+    expect(cedula.ok).toBe(false);
+    if (!cedula.ok) expect(cedula.error).toContain("Esta cédula ya ingresó con otro correo");
+    expect((await repo.getPerson(juan))?.login_email).toBe("juan@example.com");
+    expect(selfAccounts(repo).every((account) => !account.login_email && !account.national_id_hash)).toBe(true);
   });
 
   it("si el correo ya es de otra cédula, no se mezcla", async () => {
@@ -153,8 +173,12 @@ describe("cédula escrita sin vínculo automático", () => {
     const juan = repo.addPerson("Juan", "Pérez", JUAN);
     repo.outreachEmails.set(juan, "juan@example.com");
     repo.addPerson("Ana", "Gómez", ANA);
-    await signIn(repo, { email: "juan@example.com" });
-    const result = await startGeneralEmailAccess(repo, { email: "juan@example.com", cedula: ANA }, deps(fakeOtp(), "ip-2"));
+    await signIn(repo, { email: "juan@example.com", cedula: JUAN });
+    const otp = fakeOtp();
+    const started = await startGeneralEmailAccess(repo, { email: "juan@example.com", termsAccepted: true }, deps(otp, "ip-2"));
+    if (!started.ok) throw new Error(started.error);
+    await confirmGeneralEmailCode(repo, started.challengeToken, { code: DEMO_EMAIL_OTP_CODE }, deps(otp, "ip-2"));
+    const result = await confirmGeneralCedula(repo, started.challengeToken, { cedula: ANA }, deps(otp, "ip-2"));
     expect(result).toMatchObject({ ok: false, error: GENERIC_GENERAL_ERROR });
   });
 });
@@ -165,7 +189,7 @@ describe("vínculo desde el panel", () => {
     const juan = repo.addPerson("Juan", "Pérez", JUAN);
     const ana = repo.addPerson("Ana", "Gómez", ANA);
     repo.outreachEmails.set(ana, "ana@example.com");
-    await signIn(repo, { email: "ana@example.com" });
+    await signIn(repo, { email: "ana@example.com", cedula: ANA });
     await signIn(repo, { email: "juan.nuevo@example.com", cedula: JUAN }, fakeOtp(), "ip-2");
     const [account] = await repo.listUnlinkedAccounts(10);
 
@@ -178,7 +202,7 @@ describe("vínculo desde el panel", () => {
     expect(await repo.listUnlinkedAccounts(10)).toHaveLength(0);
 
     // Después del vínculo entra con su correo directo al formulario.
-    expect((await signIn(repo, { email: "juan.nuevo@example.com" }, fakeOtp(), "ip-3")).destination).toBe("form");
+    expect((await signIn(repo, { email: "juan.nuevo@example.com", cedula: JUAN }, fakeOtp(), "ip-3")).destination).toBe("form");
   });
 
   it("el servicio del panel usa la cédula pedida o la escrita, y no pisa un correo verificado", async () => {
@@ -186,8 +210,10 @@ describe("vínculo desde el panel", () => {
     const juan = repo.addPerson("Juan", "Pérez", JUAN);
     const ana = repo.addPerson("Ana", "Gómez", ANA);
     repo.outreachEmails.set(ana, "ana@example.com");
-    await signIn(repo, { email: "ana@example.com" });
-    await signIn(repo, { email: "sin.cedula@example.com" }, fakeOtp(), "ip-2");
+    await signIn(repo, { email: "ana@example.com", cedula: ANA });
+    const barePerson = await repo.ensurePendingSelfAccount("sin.cedula@example.com");
+    const bareRow = repo.people.get(barePerson!.id);
+    if (bareRow) bareRow.login_email = "sin.cedula@example.com";
     await signIn(repo, { email: "con.cedula@example.com", cedula: JUAN }, fakeOtp(), "ip-3");
     const rows = await repo.listUnlinkedAccounts(10);
     const bare = rows.find((r) => r.login_email === "sin.cedula@example.com")!;

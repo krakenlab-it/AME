@@ -8,7 +8,7 @@ import { captchaEnabled, verifyCaptcha } from "@/lib/security/captcha";
 import { cookieOptions, GENERAL_CHALLENGE_COOKIE, RESPONDENT_COOKIE, RESPONDENT_SESSION_MINUTES } from "@/lib/security/cookies";
 import { clientIp, ipHash } from "@/lib/security/request";
 import { getEmailOtpProvider } from "@/lib/server/email-otp-provider";
-import { confirmGeneralEmailCode, resendGeneralEmailCode, startGeneralEmailAccess } from "@/lib/services/general-email";
+import { confirmGeneralCedula, confirmGeneralEmailCode, resendGeneralEmailCode, startGeneralEmailAccess } from "@/lib/services/general-email";
 import { confirmGeneralTotp, startGeneralAccess } from "@/lib/services/general-link";
 import { settings } from "@/lib/services/settings";
 
@@ -16,7 +16,7 @@ export interface GeneralAccessState {
   error?: string;
   fieldErrors?: Record<string, string>;
   requireCaptcha?: boolean;
-  phase?: "identify" | "enroll" | "totp" | "email";
+  phase?: "identify" | "enroll" | "totp" | "email" | "cedula";
   /** Lo que la persona escribió, para no borrar el formulario cuando hay un error (React 19 lo reinicia). */
   values?: { cedula?: string; email?: string };
   /** Correo enmascarado al que se envió el código (j***@dominio.com). */
@@ -57,9 +57,9 @@ export async function startGeneralAction(_prev: GeneralAccessState, formData: Fo
       const result = await startGeneralEmailAccess(
         repo,
         {
-          cedula: String(formData.get("cedula") ?? ""),
-          codigoDactilar: String(formData.get("codigoDactilar") ?? ""),
           email: String(formData.get("email") ?? ""),
+          termsAccepted: formData.get("termsAccepted") === "true",
+          accessToken: String(formData.get("accessToken") ?? ""),
           captchaToken,
         },
         d,
@@ -69,7 +69,7 @@ export async function startGeneralAction(_prev: GeneralAccessState, formData: Fo
           error: result.error,
           fieldErrors: result.fieldErrors,
           requireCaptcha: result.requireCaptcha,
-          values: { cedula: String(formData.get("cedula") ?? "").slice(0, 16), email: String(formData.get("email") ?? "").slice(0, 254) },
+          values: { email: String(formData.get("email") ?? "").slice(0, 254) },
         };
       }
       (await cookies()).set(GENERAL_CHALLENGE_COOKIE(), result.challengeToken, cookieOptions(settings.generalChallengeMinutes * 60));
@@ -103,13 +103,38 @@ export async function confirmGeneralAction(_prev: GeneralAccessState, formData: 
   let sessionToken = "";
   try {
     const privacy = await getActivePrivacy(repo);
-    if (privacy.readiness.blockPortal) return { error: "El portal no está habilitado todavía. Intenta más tarde.", phase: formData.get("phase") === "email" ? "email" : "totp" };
-    if (formData.get("phase") === "email") {
+    const postedPhase = formData.get("phase") === "email" ? "email" : formData.get("phase") === "cedula" ? "cedula" : "totp";
+    if (privacy.readiness.blockPortal) return { error: "El portal no está habilitado todavía. Intenta más tarde.", phase: postedPhase };
+    if (postedPhase === "email") {
       const d = emailDeps(h);
       if (!d) return { error: UNAVAILABLE, phase: "email" };
       const result = await confirmGeneralEmailCode(repo, jar.get(GENERAL_CHALLENGE_COOKIE())?.value, { code: String(formData.get("code") ?? "") }, d);
       if (!result.ok) {
         return { error: result.error, fieldErrors: result.fieldErrors, requireCaptcha: result.requireCaptcha, phase: result.challengeExpired ? "identify" : "email" };
+      }
+      return { phase: "cedula" };
+    }
+    if (postedPhase === "cedula") {
+      const d = emailDeps(h);
+      if (!d) return { error: UNAVAILABLE, phase: "cedula" };
+      const result = await confirmGeneralCedula(
+        repo,
+        jar.get(GENERAL_CHALLENGE_COOKIE())?.value,
+        {
+          cedula: String(formData.get("cedula") ?? ""),
+          codigoDactilar: String(formData.get("codigoDactilar") ?? ""),
+          accessToken: String(formData.get("accessToken") ?? ""),
+        },
+        d,
+      );
+      if (!result.ok) {
+        return {
+          error: result.error,
+          fieldErrors: result.fieldErrors,
+          requireCaptcha: result.requireCaptcha,
+          phase: result.challengeExpired ? "identify" : "cedula",
+          values: { cedula: String(formData.get("cedula") ?? "").slice(0, 16) },
+        };
       }
       sessionToken = result.sessionToken;
       destination = result.destination;
@@ -128,7 +153,8 @@ export async function confirmGeneralAction(_prev: GeneralAccessState, formData: 
       destination = result.destination;
     }
   } catch {
-    return { error: UNAVAILABLE, phase: formData.get("phase") === "email" ? "email" : "totp" };
+    const failedPhase = formData.get("phase") === "email" ? "email" : formData.get("phase") === "cedula" ? "cedula" : "totp";
+    return { error: UNAVAILABLE, phase: failedPhase };
   }
   jar.set(RESPONDENT_COOKIE(), sessionToken, cookieOptions(RESPONDENT_SESSION_MINUTES * 60));
   jar.set(GENERAL_CHALLENGE_COOKIE(), "", cookieOptions(0));

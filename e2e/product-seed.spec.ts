@@ -2,6 +2,7 @@ import { expect, test } from "@playwright/test";
 import { signInTestAdmin } from "./helpers/admin-login";
 import { PRODUCT_SEED_TOKENS } from "../lib/seed/ci-seed";
 import { PRODUCT_PERSONAS } from "../lib/seed/product-personas";
+import { DEMO_EMAIL_OTP_CODE } from "../lib/services/email-otp";
 
 const started = PRODUCT_PERSONAS.find((persona) => persona.key === "started");
 const completed = PRODUCT_PERSONAS.find((persona) => persona.key === "completed");
@@ -10,8 +11,16 @@ const review = PRODUCT_PERSONAS.find((persona) => persona.key === "needsReview")
 test("el enlace en curso identifica a la ficha sintética", async ({ page }) => {
   expect(started).toBeTruthy();
   await page.goto(`/verificar/${PRODUCT_SEED_TOKENS.started}`);
+  await page.getByRole("button", { name: "haz click aquí" }).click();
+  await page.keyboard.press("Escape");
+  await page.getByRole("checkbox", { name: /He leído el mecanismo de identificación/ }).check();
+  await page.getByRole("button", { name: "Empezar validación" }).click();
+  await page.getByLabel("Correo electrónico").fill(started!.outreachEmail!);
+  await page.getByRole("button", { name: "Enviarme el código" }).click();
+  await page.getByLabel("Código de acceso").fill(DEMO_EMAIL_OTP_CODE);
+  await page.getByRole("button", { name: "Confirmar y continuar" }).click();
   await page.getByLabel("Número de cédula").fill(started!.cedula);
-  await page.getByRole("button", { name: "Verificar y continuar" }).click();
+  await page.getByRole("button", { name: "Continuar" }).click();
   await expect(page).toHaveURL(/\/verificar\/formulario$/);
   await expect(page.getByText(started!.currentFirstNames, { exact: true })).toBeVisible();
   await expect(page.getByText(started!.currentLastNames, { exact: true })).toBeVisible();
