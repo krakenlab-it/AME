@@ -142,7 +142,7 @@ export const ACTION_CONTRACTS: readonly ActionContract[] = [
     exportName: "identifyAction",
     module: "app/verificar/actions.ts",
     auth: { kind: "individual-link", factors: ["token", "cedula"] },
-    summary: "El titular confirma el enlace individual y la cédula. No usa la sesión del panel ni la clave anónima para leer PII.",
+    summary: "El enlace personal vigente entra al mismo recorrido de correo, código y cédula. Esta acción ya no abre el formulario solo con la cédula.",
   },
   {
     id: "admin-confirm-link",

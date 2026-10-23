@@ -1,13 +1,15 @@
 import { encrypt, keyedHash, randomToken, safeEqual, sha256 } from "@/lib/encryption/crypto";
-import type { GeneralAuthRecord, LinkRequest, RespondentRepo } from "@/lib/database/types";
+import type { AccessTokenRecord, EntryMethod, GeneralAuthRecord, GeneralChallengeRecord, LinkRequest, RespondentRepo } from "@/lib/database/types";
 import { RESPONDENT_SESSION_MINUTES } from "@/lib/security/cookies";
 import { maskEmail } from "@/lib/security/masking";
+import { isAccessLinkToken, normalizeAccessLinkToken } from "@/lib/validation/access-link-token";
 import { GENERIC_GENERAL_ERROR } from "@/lib/validation/constants";
-import { flattenIssues, generalEmailCodeSchema, generalEmailIdentifySchema } from "@/lib/validation/schemas";
+import { flattenIssues, generalCedulaStepSchema, generalEmailCodeSchema, generalEmailIdentifySchema, personalLinkDocumentStepSchema } from "@/lib/validation/schemas";
 import { sanitizeDeep } from "@/lib/validation/sanitize";
 import type { EmailOtpProvider } from "./email-otp";
 import { failFingerprint, isLocked, limitIp, needsCaptcha, RATE_LIMIT_ERROR, type GeneralDeps, type GeneralFailure } from "./general-link";
 import { canContinueForm } from "./insured-home";
+import { linkStateMessage, type LinkState } from "./respondent";
 import { settings } from "./settings";
 
 export const EMAIL_CODE_MISMATCH = "El código no es correcto o ya venció. Revisa el último correo que te enviamos.";
@@ -31,7 +33,11 @@ export type GeneralEmailResendResult =
   | { ok: true; maskedEmail: string; resendAfterSeconds: number }
   | { ok: false; error: string; resendAfterSeconds?: number; challengeExpired?: boolean };
 
-export type GeneralEmailConfirmResult =
+export type GeneralEmailCodeResult =
+  | { ok: true; phase: "cedula" }
+  | { ok: false; error: string; fieldErrors?: Record<string, string>; requireCaptcha?: boolean; challengeExpired?: boolean };
+
+export type GeneralCedulaResult =
   | { ok: true; sessionToken: string; expiresAt: string; destination: "form" | "home" }
   | { ok: false; error: string; fieldErrors?: Record<string, string>; requireCaptcha?: boolean; challengeExpired?: boolean };
 
@@ -51,89 +57,82 @@ async function personSendAllowed(repo: RespondentRepo, personId: string, deps: G
   return limit.allowed;
 }
 
-type StartTarget = { person: GeneralAuthRecord; linkRequest?: LinkRequest | null };
+type StartTarget = { person: GeneralAuthRecord };
 
-const FINGERPRINT_REQUIRED = "Escribe el código dactilar de tu cédula.";
+function tokenState(record: Pick<AccessTokenRecord, "expires_at" | "used_at" | "revoked_at">): LinkState {
+  if (record.revoked_at) return "revoked";
+  if (record.used_at) return "used";
+  if (new Date(record.expires_at).getTime() <= Date.now()) return "expired";
+  return "valid";
+}
+
+/** El enlace personal no se revoca ni se rota: solo se comprueba que siga vigente. */
+async function readPersonalLink(repo: RespondentRepo, raw: string | undefined): Promise<{ ok: true; token: AccessTokenRecord | null } | GeneralFailure> {
+  const value = raw?.trim() ?? "";
+  if (!value) return { ok: true, token: null };
+  if (!isAccessLinkToken(value)) return { ok: false, error: linkStateMessage("invalid") };
+  const record = await repo.findAccessToken(sha256(normalizeAccessLinkToken(value)));
+  if (!record) return { ok: false, error: linkStateMessage("invalid") };
+  const state = tokenState(record);
+  if (state !== "valid") return { ok: false, error: linkStateMessage(state) };
+  return { ok: true, token: record };
+}
 
 /**
- * Decide a quién se le abre el reto. Nunca cambia el correo de una cédula que ya ingresó (KAN-148)
- * y nunca asigna una cédula a una cuenta solo porque alguien la escribió: el vínculo automático
- * exige que el correo coincida con el importado (outreach_email) o el código dactilar ya cargado.
- * Si no, la cuenta queda propia (sin cédula) y la cédula escrita queda como solicitud para el panel.
+ * El correo elige a quién se le envía el código. No abre el formulario:
+ * la cédula (y el dactilar, si lo escriben) se piden después de verificar el código.
+ * Un correo que coincide con una ficha no se salta ese segundo paso.
  */
 async function resolveEmailTarget(
   repo: RespondentRepo,
-  data: { email: string; cedula?: string; codigoDactilar: string },
-  deps: GeneralEmailDeps,
-  requireCaptcha: boolean,
+  email: string,
 ): Promise<{ ok: true; target: StartTarget } | GeneralFailure> {
-  const { email } = data;
-  const code = data.codigoDactilar;
   const emailOwner = await repo.findGeneralAuthByLoginEmail(email);
-
-  if (data.cedula) {
-    if (settings.requireFingerprintCode() && !code) {
-      return { ok: false, error: "Revisa los campos marcados.", fieldErrors: { codigoDactilar: FINGERPRINT_REQUIRED }, requireCaptcha };
-    }
-    const cedulaHash = keyedHash(data.cedula, "national_id");
-    const cedulaLimit = await repo.rateLimitHit(`general-cedula:${cedulaHash}`, settings.generalIdentifyLimitPerCedula, settings.generalIdentifyWindowSeconds);
-    if (!cedulaLimit.allowed) {
-      await repo.logSecurityEvent({ event_type: "GENERAL_RATE_LIMITED", ip_hash: deps.ipHash, detail: { scope: "cedula", hits: cedulaLimit.hits } });
-      return { ok: false, error: RATE_LIMIT_ERROR };
-    }
-    const person = await repo.findGeneralAuthByNationalIdHash(cedulaHash);
-    if (person) {
-      if (isLocked(person.general_locked_until)) {
-        await repo.audit({ person_id: person.id, actor_type: "respondent", action: "GENERAL_IDENTIFY_FAILED", metadata: { outcome: "locked" } });
-        await repo.logSecurityEvent({ event_type: "GENERAL_LOCKED", ip_hash: deps.ipHash, detail: { outcome: "locked" } });
-        return { ok: false, error: GENERIC_GENERAL_ERROR, requireCaptcha };
-      }
-      // KAN-148: la cédula queda atada al primer correo verificado.
-      const bound = person.login_email?.trim().toLowerCase();
-      if (bound && bound !== email) {
-        await repo.audit({ person_id: person.id, actor_type: "respondent", action: "GENERAL_IDENTIFY_FAILED", metadata: { outcome: "email_mismatch" } });
-        await repo.logSecurityEvent({ event_type: "GENERAL_EMAIL_MISMATCH", ip_hash: deps.ipHash, detail: {} });
-        return { ok: false, error: emailBoundError(maskEmail(bound)), fieldErrors: { email: "Usa el correo con el que ingresaste antes." } };
-      }
-      // Un código dactilar escrito y distinto del cargado siempre cuenta como intento fallido.
-      const fingerprintMatches = Boolean(code && person.fingerprint_code_hash && safeEqual(keyedHash(code, "fingerprint_code"), person.fingerprint_code_hash));
-      if (code && person.fingerprint_code_hash && !fingerprintMatches) return failFingerprint(repo, person.id, deps, requireCaptcha);
-      if (bound) return { ok: true, target: { person } };
-      if (emailOwner && !emailOwner.self_registered_at) {
-        // El correo ya es el de otra cédula: no se mezcla.
-        await repo.logSecurityEvent({ event_type: "GENERAL_EMAIL_MISMATCH", ip_hash: deps.ipHash, detail: { outcome: "email_taken" } });
-        return { ok: false, error: GENERIC_GENERAL_ERROR, requireCaptcha };
-      }
-      const outreachMatches = person.outreach_email?.trim().toLowerCase() === email;
-      if (outreachMatches || fingerprintMatches) return { ok: true, target: { person } };
-    }
-    // Cédula sin vínculo automático (o que no está en la base): misma respuesta, queda como solicitud.
-    return selfTarget(repo, email, emailOwner, { national_id_hash: cedulaHash, national_id_encrypted: encrypt(data.cedula), national_id_last2: data.cedula.slice(-2) });
+  if (emailOwner && !emailOwner.self_registered_at) {
+    if (isLocked(emailOwner.general_locked_until)) return { ok: false, error: GENERIC_GENERAL_ERROR };
+    return { ok: true, target: { person: emailOwner } };
   }
-
-  if (emailOwner && !emailOwner.self_registered_at) return { ok: true, target: { person: emailOwner } };
-  // Vínculo automático: una sola persona importada con este correo y sin correo de ingreso.
-  // (También si ya había una cuenta propia con este correo: se vincula al confirmar el código.)
   const imported = await repo.findUnboundByOutreachEmail(email);
   if (imported.length === 1 && !isLocked(imported[0]!.general_locked_until)) return { ok: true, target: { person: imported[0]! } };
-  // Dos o más personas importadas con el mismo correo: lo resuelve el panel.
-  return selfTarget(repo, email, emailOwner, null);
+  return selfTarget(repo, email, emailOwner);
 }
 
-async function selfTarget(repo: RespondentRepo, email: string, emailOwner: GeneralAuthRecord | null, linkRequest: LinkRequest | null): Promise<{ ok: true; target: StartTarget } | GeneralFailure> {
-  // Una cuenta propia ya verificada solo cambia su solicitud desde una sesión iniciada (no desde aquí):
-  // así nadie que conozca el correo ajeno le cambia la cédula pedida.
+async function selfTarget(repo: RespondentRepo, email: string, emailOwner: GeneralAuthRecord | null): Promise<{ ok: true; target: StartTarget } | GeneralFailure> {
   if (emailOwner?.self_registered_at) return { ok: true, target: { person: emailOwner } };
   const pending = await repo.ensurePendingSelfAccount(email);
   if (!pending) return { ok: false, error: GENERIC_GENERAL_ERROR };
   if (isLocked(pending.general_locked_until)) return { ok: false, error: GENERIC_GENERAL_ERROR };
-  return { ok: true, target: { person: pending, linkRequest } };
+  return { ok: true, target: { person: pending } };
+}
+
+async function resolveTokenTarget(repo: RespondentRepo, token: AccessTokenRecord, email: string, deps: GeneralEmailDeps, requireCaptcha: boolean): Promise<{ ok: true; target: StartTarget } | GeneralFailure> {
+  const person = await repo.getPerson(token.person_id);
+  if (!person?.national_id_hash) return { ok: false, error: linkStateMessage("invalid") };
+  const auth = await repo.findGeneralAuthByNationalIdHash(person.national_id_hash);
+  if (!auth || auth.id !== token.person_id) return { ok: false, error: linkStateMessage("invalid") };
+  if (isLocked(auth.general_locked_until)) {
+    await repo.audit({ person_id: auth.id, actor_type: "respondent", action: "GENERAL_IDENTIFY_FAILED", metadata: { outcome: "locked" } });
+    await repo.logSecurityEvent({ event_type: "GENERAL_LOCKED", ip_hash: deps.ipHash, detail: { outcome: "locked" } });
+    return { ok: false, error: GENERIC_GENERAL_ERROR, requireCaptcha };
+  }
+  const bound = auth.login_email?.trim().toLowerCase();
+  const outreach = auth.outreach_email?.trim().toLowerCase();
+  if (bound && bound !== email) {
+    await repo.audit({ person_id: auth.id, actor_type: "respondent", action: "GENERAL_IDENTIFY_FAILED", metadata: { outcome: "email_mismatch" } });
+    await repo.logSecurityEvent({ event_type: "GENERAL_EMAIL_MISMATCH", ip_hash: deps.ipHash, detail: {} });
+    return { ok: false, error: emailBoundError(maskEmail(bound)), fieldErrors: { email: "Usa el correo con el que ingresaste antes." } };
+  }
+  if (!bound && outreach && outreach !== email) {
+    await repo.logSecurityEvent({ event_type: "GENERAL_EMAIL_MISMATCH", ip_hash: deps.ipHash, detail: { outcome: "outreach" } });
+    return { ok: false, error: emailBoundError(maskEmail(outreach)), fieldErrors: { email: "Usa el correo al que te escribimos." } };
+  }
+  return { ok: true, target: { person: auth } };
 }
 
 /**
- * Paso 1: correo (obligatorio), cédula y código dactilar (opcionales). Envía el código de acceso
- * (6 a 10 dígitos). Si el correo no corresponde a nadie de la base, la cuenta queda propia, sin cédula.
- * El correo no se registra en la auditoría.
+ * Paso 1: correo. Envía el código de acceso (6 a 10 dígitos).
+ * La cédula no se pide aquí. Si llega un enlace personal vigente, el código sale para esa ficha
+ * y el enlace no se marca como usado.
  */
 export async function startGeneralEmailAccess(repo: RespondentRepo, rawInput: unknown, deps: GeneralEmailDeps): Promise<GeneralEmailStartResult> {
   const ipLimit = await limitIp(repo, deps);
@@ -141,17 +140,24 @@ export async function startGeneralEmailAccess(repo: RespondentRepo, rawInput: un
 
   const parsed = generalEmailIdentifySchema.safeParse(sanitizeDeep(rawInput));
   if (!parsed.success) {
-    return { ok: false, error: "Revisa los campos marcados.", fieldErrors: flattenIssues(parsed.error), requireCaptcha: needsCaptcha(deps, ipLimit.hits) };
+    const fieldErrors = flattenIssues(parsed.error);
+    if (fieldErrors.termsAccepted) return { ok: false, error: fieldErrors.termsAccepted, fieldErrors, requireCaptcha: needsCaptcha(deps, ipLimit.hits) };
+    return { ok: false, error: "Revisa los campos marcados.", fieldErrors, requireCaptcha: needsCaptcha(deps, ipLimit.hits) };
   }
   const requireCaptcha = needsCaptcha(deps, ipLimit.hits);
   if (requireCaptcha) {
     const human = await deps.verifyCaptcha(parsed.data.captchaToken);
     if (!human) return { ok: false, error: "Confirma que no eres un robot para continuar.", requireCaptcha: true };
   }
+
+  const link = await readPersonalLink(repo, parsed.data.accessToken);
+  if (!link.ok) return link;
   const email = parsed.data.email;
-  const resolved = await resolveEmailTarget(repo, { email, cedula: parsed.data.cedula, codigoDactilar: parsed.data.codigoDactilar }, deps, requireCaptcha);
+  const resolved = link.token
+    ? await resolveTokenTarget(repo, link.token, email, deps, requireCaptcha)
+    : await resolveEmailTarget(repo, email);
   if (!resolved.ok) return resolved;
-  const { person, linkRequest } = resolved.target;
+  const { person } = resolved.target;
 
   if (!(await personSendAllowed(repo, person.id, deps))) return { ok: false, error: EMAIL_SEND_LIMIT };
 
@@ -161,18 +167,20 @@ export async function startGeneralEmailAccess(repo: RespondentRepo, rawInput: un
   const expiresAt = new Date(Date.now() + settings.generalChallengeMinutes * 60_000).toISOString();
   const started = await repo.beginGeneralChallenge(person.id, { purpose: "email", challengeHash, expiresAt, email, sentAt });
   if (!started) return { ok: false, error: GENERIC_GENERAL_ERROR };
-  if (linkRequest !== undefined) {
-    // Cuenta propia sin confirmar: la solicitud es la del último intento (o ninguna).
-    await repo.setLinkRequest(person.id, linkRequest);
-    if (linkRequest) await repo.audit({ person_id: person.id, actor_type: "respondent", action: "ACCOUNT_LINK_REQUESTED", metadata: { entry: "general" } });
-  }
+
+  await repo.audit({
+    person_id: person.id,
+    actor_type: "respondent",
+    action: "IDENTITY_TERMS_ACCEPTED",
+    metadata: { accepted_at: sentAt, entry: link.token ? "personal_link" : "general" },
+  });
 
   const sent = await deps.otp.send(email);
   if (!sent.ok) {
     await repo.logSecurityEvent({ event_type: "GENERAL_EMAIL_SEND_FAILED", ip_hash: deps.ipHash, detail: { reason: sent.reason } });
     return { ok: false, error: sent.reason === "rate_limited" ? EMAIL_SEND_LIMIT : EMAIL_SEND_FAILED };
   }
-  await repo.audit({ person_id: person.id, actor_type: "respondent", action: "EMAIL_CODE_SENT", metadata: { entry: "general" } });
+  await repo.audit({ person_id: person.id, actor_type: "respondent", action: "EMAIL_CODE_SENT", metadata: { entry: link.token ? "personal_link" : "general" } });
   return { ok: true, phase: "email", challengeToken, maskedEmail: maskEmail(email), resendAfterSeconds: settings.emailOtpCooldownSeconds };
 }
 
@@ -207,15 +215,15 @@ export async function resendGeneralEmailCode(repo: RespondentRepo, challengeToke
 }
 
 /**
- * Paso 2: el código del correo. Si es correcto, guarda el correo verificado en la ficha
- * (rellena el formulario), vincula el usuario de Supabase Auth con la cédula y abre la sesión del titular.
+ * Paso 2: el código del correo. Si coincide, el reto queda abierto para la cédula.
+ * No guarda el correo como verificado ni abre la sesión del formulario.
  */
 export async function confirmGeneralEmailCode(
   repo: RespondentRepo,
   challengeToken: string | undefined,
   rawInput: unknown,
   deps: GeneralEmailDeps,
-): Promise<GeneralEmailConfirmResult> {
+): Promise<GeneralEmailCodeResult> {
   const ipLimit = await limitIp(repo, deps);
   if (!ipLimit.allowed) return { ok: false, error: RATE_LIMIT_ERROR };
   if (!challengeToken || !CHALLENGE_TOKEN_RE.test(challengeToken)) return { ok: false, error: CHALLENGE_EXPIRED, challengeExpired: true };
@@ -229,7 +237,6 @@ export async function confirmGeneralEmailCode(
     return { ok: false, error: CHALLENGE_EXPIRED, challengeExpired: true };
   }
 
-  // Bloqueado: no se gasta el código en Supabase.
   if (isLocked(challenge.general_locked_until)) {
     await repo.audit({ person_id: challenge.person_id, actor_type: "respondent", action: "GENERAL_IDENTIFY_FAILED", metadata: { outcome: "locked" } });
     await repo.logSecurityEvent({ event_type: "GENERAL_LOCKED", ip_hash: deps.ipHash, detail: { outcome: "locked" } });
@@ -256,43 +263,172 @@ export async function confirmGeneralEmailCode(
     return { ok: false, error: EMAIL_CODE_MISMATCH, requireCaptcha: needsCaptcha(deps, ipLimit.hits) };
   }
 
-  const before = await repo.getPerson(challenge.person_id);
-  if (!before) return { ok: false, error: GENERIC_GENERAL_ERROR, challengeExpired: true };
+  const marked = await repo.markEmailCodeVerified(challenge.person_id, challengeHash, verified.authUserId);
+  if (!marked) return { ok: false, error: CHALLENGE_EXPIRED, challengeExpired: true };
+  return { ok: true, phase: "cedula" };
+}
+
+async function failCedula(repo: RespondentRepo, personId: string, deps: GeneralDeps, requireCaptcha: boolean): Promise<GeneralFailure> {
+  const failure = await repo.registerGeneralFailure(personId, settings.generalLockThreshold, settings.generalLockMinutes);
+  await repo.audit({
+    person_id: personId,
+    actor_type: "respondent",
+    action: "GENERAL_IDENTIFY_FAILED",
+    metadata: { outcome: failure.locked ? "locked" : "cedula", attempt: failure.failed_attempts },
+  });
+  if (failure.locked) {
+    await repo.logSecurityEvent({ event_type: "GENERAL_LOCKED", ip_hash: deps.ipHash, detail: { outcome: "locked" } });
+  } else {
+    await repo.logSecurityEvent({ event_type: "GENERAL_IDENTIFY_FAILED", ip_hash: deps.ipHash, detail: { outcome: "cedula" } });
+  }
+  return { ok: false, error: GENERIC_GENERAL_ERROR, requireCaptcha };
+}
+
+/** Primera vez: se guarda. Si ya había uno y no coincide, se rechaza. Vacío: se sigue. */
+async function applyFingerprint(repo: RespondentRepo, personId: string, code: string, deps: GeneralDeps, requireCaptcha: boolean): Promise<GeneralFailure | null> {
+  if (!code) return null;
+  const claim = await repo.claimFingerprintCode(personId, keyedHash(code, "fingerprint_code"));
+  if (claim === "claimed") {
+    await repo.audit({ person_id: personId, actor_type: "respondent", action: "FINGERPRINT_CLAIMED", metadata: { entry: "general" } });
+    return null;
+  }
+  if (claim === "matched") return null;
+  return failFingerprint(repo, personId, deps, requireCaptcha);
+}
+
+async function openVerifiedSession(
+  repo: RespondentRepo,
+  personId: string,
+  challenge: GeneralChallengeRecord,
+  challengeHash: string,
+  deps: GeneralEmailDeps,
+  accessTokenId: string | null,
+): Promise<GeneralCedulaResult> {
+  const before = await repo.getPerson(personId);
+  if (!before || !challenge.pending_email) return { ok: false, error: GENERIC_GENERAL_ERROR, challengeExpired: true };
   const isSelf = Boolean(before.self_registered_at);
   const firstVerification = !before.login_email;
   if (!isSelf) {
-    // El correo pasa a la persona importada: la cuenta propia de ese correo (si había) se borra antes,
-    // porque el usuario de Auth es único. No es atómico con el paso siguiente (ver BRIEF).
-    await repo.releaseSelfAccount(challenge.pending_email, verified.authUserId ?? null, challenge.person_id);
+    await repo.releaseSelfAccount(challenge.pending_email, challenge.auth_user_id ?? null, personId);
   }
-  const completed = await repo.completeGeneralChallenge(challenge.person_id, challengeHash, "email", {
+  const completed = await repo.completeGeneralChallenge(personId, challengeHash, "cedula", {
     email: challenge.pending_email,
-    authUserId: verified.authUserId,
+    authUserId: challenge.auth_user_id ?? null,
   });
   if (!completed) {
-    // El reto venció en paralelo, o ese correo ya quedó vinculado a otra cédula.
     await repo.logSecurityEvent({ event_type: "GENERAL_EMAIL_LINK_REJECTED", ip_hash: deps.ipHash, detail: {} });
     return { ok: false, error: GENERIC_GENERAL_ERROR, challengeExpired: true };
   }
-  await repo.audit({ person_id: challenge.person_id, actor_type: "respondent", action: "EMAIL_VERIFIED", changed_fields: ["login_email"], metadata: { entry: "general" } });
+  await repo.audit({ person_id: personId, actor_type: "respondent", action: "EMAIL_VERIFIED", changed_fields: ["login_email"], metadata: { entry: accessTokenId ? "personal_link" : "general" } });
   if (isSelf && firstVerification) {
-    await repo.audit({ person_id: challenge.person_id, actor_type: "respondent", action: "ACCOUNT_CREATED", metadata: { entry: "general_email" } });
+    await repo.audit({ person_id: personId, actor_type: "respondent", action: "ACCOUNT_CREATED", metadata: { entry: "general_email" } });
   }
 
-  const person = await repo.getPerson(challenge.person_id);
+  const person = await repo.getPerson(personId);
   if (!person) return { ok: false, error: GENERIC_GENERAL_ERROR };
   const sessionToken = randomToken(32);
   const expiresAt = new Date(Date.now() + RESPONDENT_SESSION_MINUTES * 60_000).toISOString();
   const continueForm = canContinueForm(person);
+  const entryMethod: EntryMethod = accessTokenId ? "token" : "general";
   await repo.createRespondentSession({
     session_hash: sha256(sessionToken),
     person_id: person.id,
-    access_token_id: null,
-    entry_method: "general",
+    access_token_id: accessTokenId,
+    entry_method: entryMethod,
     expires_at: expiresAt,
     submitted_at: continueForm ? null : person.submitted_at,
   });
   if (continueForm) await repo.markStarted(person.id);
-  await repo.audit({ person_id: person.id, actor_type: "respondent", action: "IDENTITY_VERIFIED", metadata: { entry: "general_email" } });
+  await repo.audit({ person_id: person.id, actor_type: "respondent", action: "IDENTITY_VERIFIED", metadata: { entry: accessTokenId ? "personal_link" : "general_email" } });
   return { ok: true, sessionToken, expiresAt, destination: continueForm ? "form" : "home" };
+}
+
+/**
+ * Paso 3: cédula obligatoria y código dactilar opcional.
+ * Si el correo ya estaba en una ficha, la cédula tiene que ser la de esa ficha.
+ * El dactilar, si viene y no había uno, se guarda. Si ya había uno y no coincide, se rechaza.
+ */
+export async function confirmGeneralCedula(
+  repo: RespondentRepo,
+  challengeToken: string | undefined,
+  rawInput: unknown,
+  deps: GeneralEmailDeps,
+): Promise<GeneralCedulaResult> {
+  const ipLimit = await limitIp(repo, deps);
+  if (!ipLimit.allowed) return { ok: false, error: RATE_LIMIT_ERROR };
+  if (!challengeToken || !CHALLENGE_TOKEN_RE.test(challengeToken)) return { ok: false, error: CHALLENGE_EXPIRED, challengeExpired: true };
+
+  const clean = sanitizeDeep(rawInput);
+  const bag = clean && typeof clean === "object" ? (clean as Record<string, unknown>) : {};
+  const accessToken = typeof bag.accessToken === "string" ? bag.accessToken : "";
+  const challengeHash = sha256(challengeToken);
+  const challenge = await repo.findGeneralChallenge(challengeHash);
+  if (!challenge || challenge.purpose !== "cedula" || !challenge.pending_email || new Date(challenge.expires_at).getTime() <= Date.now()) {
+    return { ok: false, error: CHALLENGE_EXPIRED, challengeExpired: true };
+  }
+  if (isLocked(challenge.general_locked_until)) return { ok: false, error: GENERIC_GENERAL_ERROR };
+
+  const link = await readPersonalLink(repo, accessToken);
+  if (!link.ok) return { ...link, challengeExpired: false };
+  const allowPassport = Boolean(link.token && link.token.person_id === challenge.person_id);
+  const parsed = (allowPassport ? personalLinkDocumentStepSchema : generalCedulaStepSchema).safeParse({
+    cedula: bag.cedula ?? "",
+    codigoDactilar: bag.codigoDactilar ?? "",
+  });
+  if (!parsed.success) return { ok: false, error: "Revisa los campos marcados.", fieldErrors: flattenIssues(parsed.error) };
+
+  const requireCaptcha = needsCaptcha(deps, ipLimit.hits);
+  const email = challenge.pending_email;
+  const code = parsed.data.codigoDactilar;
+  const cedulaHash = keyedHash(parsed.data.cedula, "national_id");
+  const cedulaLimit = await repo.rateLimitHit(`general-cedula:${cedulaHash}`, settings.generalIdentifyLimitPerCedula, settings.generalIdentifyWindowSeconds);
+  if (!cedulaLimit.allowed) {
+    await repo.logSecurityEvent({ event_type: "GENERAL_RATE_LIMITED", ip_hash: deps.ipHash, detail: { scope: "cedula", hits: cedulaLimit.hits } });
+    return { ok: false, error: RATE_LIMIT_ERROR };
+  }
+
+  const holder = await repo.getPerson(challenge.person_id);
+  if (!holder) return { ok: false, error: CHALLENGE_EXPIRED, challengeExpired: true };
+
+  let personId = holder.id;
+  const onImported = Boolean(holder.national_id_hash) && !holder.self_registered_at;
+  if (onImported) {
+    if (!holder.national_id_hash || !safeEqual(cedulaHash, holder.national_id_hash)) return failCedula(repo, holder.id, deps, requireCaptcha);
+    const fingerprint = await applyFingerprint(repo, holder.id, code, deps, requireCaptcha);
+    if (fingerprint) return fingerprint;
+  } else {
+    const imported = await repo.findGeneralAuthByNationalIdHash(cedulaHash);
+    const bound = imported?.login_email?.trim().toLowerCase();
+    const outreachMatches = imported?.outreach_email?.trim().toLowerCase() === email;
+    const fingerprintMatches = Boolean(code && imported?.fingerprint_code_hash && safeEqual(keyedHash(code, "fingerprint_code"), imported.fingerprint_code_hash));
+    if (imported && imported.id !== holder.id && code && imported.fingerprint_code_hash && !fingerprintMatches) {
+      return failFingerprint(repo, imported.id, deps, requireCaptcha);
+    }
+    if (imported && imported.id !== holder.id && (bound === email || (!bound && (outreachMatches || fingerprintMatches)))) {
+      if (isLocked(imported.general_locked_until)) return { ok: false, error: GENERIC_GENERAL_ERROR, requireCaptcha };
+      if (code && imported.fingerprint_code_hash && !fingerprintMatches) return failFingerprint(repo, imported.id, deps, requireCaptcha);
+      const moved = await repo.promoteEmailChallenge(holder.id, imported.id, challengeHash);
+      if (!moved) return { ok: false, error: GENERIC_GENERAL_ERROR };
+      const fingerprint = await applyFingerprint(repo, imported.id, code, deps, requireCaptcha);
+      if (fingerprint) return fingerprint;
+      personId = imported.id;
+    } else if (imported && bound && bound !== email) {
+      await repo.audit({ person_id: imported.id, actor_type: "respondent", action: "GENERAL_IDENTIFY_FAILED", metadata: { outcome: "email_mismatch" } });
+      await repo.logSecurityEvent({ event_type: "GENERAL_EMAIL_MISMATCH", ip_hash: deps.ipHash, detail: {} });
+      return { ok: false, error: emailBoundError(maskEmail(bound)), fieldErrors: { cedula: "Usa el correo con el que ingresaste antes." } };
+    } else {
+      const request: LinkRequest = {
+        national_id_hash: cedulaHash,
+        national_id_encrypted: encrypt(parsed.data.cedula),
+        national_id_last2: parsed.data.cedula.slice(-2),
+      };
+      await repo.setLinkRequest(holder.id, request);
+      await repo.audit({ person_id: holder.id, actor_type: "respondent", action: "ACCOUNT_LINK_REQUESTED", metadata: { entry: "general" } });
+    }
+  }
+
+  const accessTokenId = link.token && link.token.person_id === personId ? link.token.id : null;
+  const fresh = await repo.findGeneralChallenge(challengeHash);
+  if (!fresh?.pending_email) return { ok: false, error: CHALLENGE_EXPIRED, challengeExpired: true };
+  return openVerifiedSession(repo, personId, fresh, challengeHash, deps, accessTokenId);
 }

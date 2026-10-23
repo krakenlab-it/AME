@@ -36,6 +36,7 @@ export const AUDIT_LABELS: Record<AuditAction, string> = {
   ACCOUNT_CREATED: "Creó una cuenta solo con su correo",
   ACCOUNT_LINKED: "Un administrador vinculó su cuenta con la ficha importada",
   ACCOUNT_LINK_REQUESTED: "Pidió vincular su cuenta con una cédula",
+  IDENTITY_TERMS_ACCEPTED: "Aceptó el mecanismo de identificación",
 };
 
 export const AUDIT_ACTIONS = Object.keys(AUDIT_LABELS) as AuditAction[];

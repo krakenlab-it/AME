@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useEffect, useState } from "react";
+import { useActionState, useCallback, useEffect, useState } from "react";
 import { KeyRound, Mail, RotateCcw, ShieldCheck } from "lucide-react";
 import { confirmGeneralAction, resendGeneralAction, startGeneralAction, type GeneralAccessState } from "@/app/ingresar/actions";
 import { FingerprintHelp } from "@/components/forms/fingerprint-help";
@@ -8,6 +8,12 @@ import { ProtectedNote } from "@/components/portal/hero";
 import { Button } from "@/components/ui/button";
 import { describedBy, Field } from "@/components/ui/field";
 import { Notice } from "@/components/ui/notice";
+import { TermsDialog } from "@/components/ui/terms-dialog";
+import {
+  identityTermsGate,
+  TERMINOS_IDENTIFICACION_AVISO,
+  TERMINOS_IDENTIFICACION_CHECKBOX,
+} from "@/lib/content/terminos-identificacion";
 
 /** Hasta 10 dígitos (máximo de Supabase) más espacios o guiones al pegar. */
 const EMAIL_OTP_INPUT_MAX = 24;
@@ -19,6 +25,8 @@ interface PanelProps {
   requireFingerprint: boolean;
   /** "email" (por defecto): código por correo. "totp": aplicación autenticadora (AME_GENERAL_AUTH_METHOD=totp). */
   method?: AuthMethod;
+  /** Enlace personal vigente. No se revoca: solo entra al mismo recorrido de correo y cédula. */
+  accessToken?: string;
 }
 
 /** «Usar otro correo» vuelve a montar el panel para empezar de cero. */
@@ -42,6 +50,7 @@ function AccessFlow({
   turnstileSiteKey,
   requireFingerprint,
   method = "email",
+  accessToken,
   onRestart,
   restartNotice,
 }: PanelProps & { onRestart: (message?: string) => void; restartNotice?: string }) {
@@ -51,6 +60,13 @@ function AccessFlow({
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
   const [manualKey, setManualKey] = useState<string | null>(null);
   const [otpauthUrl, setOtpauthUrl] = useState<string | null>(null);
+
+  const [termsOpen, setTermsOpen] = useState(false);
+  const [termsOpened, setTermsOpened] = useState(false);
+  const [termsAccepted, setTermsAccepted] = useState(false);
+  const [pastTerms, setPastTerms] = useState(method !== "email");
+  const closeTerms = useCallback(() => setTermsOpen(false), []);
+  const termsGate = identityTermsGate({ opened: termsOpened, accepted: termsAccepted });
 
   const phase = confirmed.phase ?? started.phase ?? "identify";
 
@@ -88,7 +104,20 @@ function AccessFlow({
 
   return (
     <div className="sheet space-y-6 p-6 md:p-8">
-      {phase === "identify" ? (
+      {method === "email" && !pastTerms ? (
+        <TermsGate
+          open={termsOpen}
+          gate={termsGate}
+          accepted={termsAccepted}
+          onOpen={() => {
+            setTermsOpened(true);
+            setTermsOpen(true);
+          }}
+          onClose={closeTerms}
+          onAcceptedChange={setTermsAccepted}
+          onStart={() => setPastTerms(true)}
+        />
+      ) : phase === "identify" ? (
         <IdentifyStep
           state={!active.error && restartNotice && !started.phase ? { ...active, error: restartNotice } : active}
           pending={startPending}
@@ -97,6 +126,7 @@ function AccessFlow({
           siteKey={turnstileSiteKey}
           requireFingerprint={requireFingerprint}
           method={method}
+          accessToken={accessToken}
         />
       ) : phase === "email" ? (
         <EmailCodeStep
@@ -108,7 +138,10 @@ function AccessFlow({
           resendPending={resendPending}
           resendAction={resendAction}
           onRestart={() => onRestart()}
+          accessToken={accessToken}
         />
+      ) : phase === "cedula" ? (
+        <CedulaStep state={confirmed} pending={confirmPending} action={confirmAction} accessToken={accessToken} />
       ) : (
         <TotpStep
           phase={phase}
@@ -133,6 +166,7 @@ function IdentifyStep({
   siteKey,
   requireFingerprint,
   method,
+  accessToken,
 }: {
   state: GeneralAccessState;
   pending: boolean;
@@ -141,6 +175,7 @@ function IdentifyStep({
   siteKey: string | null;
   requireFingerprint: boolean;
   method: AuthMethod;
+  accessToken?: string;
 }) {
   const emailError = state.fieldErrors?.email;
   const next = "Después configuras la verificación del teléfono.";
@@ -154,11 +189,13 @@ function IdentifyStep({
         <div className="space-y-2">
           <h2 className="text-2xl">Entra con tu correo</h2>
           <p className="text-ink-muted">
-            Escribe tu correo y te enviamos un código de acceso. Si es el correo al que te escribimos, tu registro se abre solo.
+            Escribe tu correo y te enviamos un código de acceso. Después te pedimos tu número de cédula.
           </p>
         </div>
         {banner && <Notice tone="error" live>{banner}</Notice>}
         <form action={action} className="space-y-5" noValidate>
+          <input type="hidden" name="termsAccepted" value="true" />
+          {accessToken ? <input type="hidden" name="accessToken" value={accessToken} /> : null}
           <Field id="email" label="Correo electrónico" required hint="Te enviaremos un código de acceso. Lo usaremos también como tu correo de contacto." error={emailError}>
             <input
               id="email"
@@ -176,40 +213,6 @@ function IdentifyStep({
               aria-describedby={describedBy("email", { hint: "x", error: emailError })}
             />
           </Field>
-          <fieldset className="space-y-4 rounded-xl border border-marian-line p-4">
-            <legend className="px-1 text-sm font-semibold">Tu cédula (opcional)</legend>
-            <p className="text-sm text-ink-muted">
-              Si te escribimos a otro correo, escribe tu cédula. Con el código dactilar tu registro se abre de inmediato; sin él, el equipo lo revisa y lo vincula.
-            </p>
-            <Field id="cedula" label="Número de cédula" hint="10 números, como en tu cédula." error={cedulaError}>
-              <input
-                id="cedula"
-                name="cedula"
-                defaultValue={state.values?.cedula}
-                className="field-input text-xl tracking-[0.12em]"
-                inputMode="numeric"
-                autoComplete="off"
-                spellCheck={false}
-                maxLength={16}
-                aria-invalid={Boolean(cedulaError)}
-                aria-describedby={describedBy("cedula", { hint: "x", error: cedulaError })}
-              />
-            </Field>
-            <Field id="codigo-dactilar" label="Código dactilar" hint="Opcional. Una letra, 4 números, una letra y 4 números. Ejemplo: V1234V1234." error={codeError}>
-              <input
-                id="codigo-dactilar"
-                name="codigoDactilar"
-                className="field-input text-xl uppercase tracking-[0.14em]"
-                autoComplete="off"
-                autoCapitalize="characters"
-                spellCheck={false}
-                maxLength={20}
-                aria-invalid={Boolean(codeError)}
-                aria-describedby={describedBy("codigo-dactilar", { hint: "x", error: codeError })}
-              />
-            </Field>
-            <FingerprintHelp />
-          </fieldset>
           {needsCaptcha && siteKey && <div className="cf-turnstile" data-sitekey={siteKey} data-language="es" />}
           <Button type="submit" block loading={pending}>
             <ShieldCheck className="h-5 w-5" aria-hidden />
@@ -390,6 +393,127 @@ function useCountdown(seconds: number | undefined, stamp: number | undefined): n
   return left;
 }
 
+function TermsGate({
+  open,
+  gate,
+  accepted,
+  onOpen,
+  onClose,
+  onAcceptedChange,
+  onStart,
+}: {
+  open: boolean;
+  gate: { checkboxDisabled: boolean; startDisabled: boolean };
+  accepted: boolean;
+  onOpen: () => void;
+  onClose: () => void;
+  onAcceptedChange: (accepted: boolean) => void;
+  onStart: () => void;
+}) {
+  const [lead, link, tail] = splitTermsNotice(TERMINOS_IDENTIFICACION_AVISO);
+  return (
+    <>
+      <div className="space-y-2">
+        <h2 className="text-2xl">Antes de empezar</h2>
+        <p className="text-ink-muted">
+          {lead}
+          <button type="button" onClick={onOpen} className="font-semibold text-marian underline underline-offset-4">
+            {link}
+          </button>
+          {tail}
+        </p>
+      </div>
+      <TermsDialog open={open} onClose={onClose} />
+      <label className="flex items-start gap-3 text-[15px]">
+        <input
+          type="checkbox"
+          className="mt-1 h-5 w-5 shrink-0 accent-marian disabled:opacity-40"
+          checked={accepted}
+          disabled={gate.checkboxDisabled}
+          onChange={(event) => onAcceptedChange(event.target.checked)}
+        />
+        <span>{TERMINOS_IDENTIFICACION_CHECKBOX}</span>
+      </label>
+      {gate.checkboxDisabled ? <p className="text-sm text-ink-muted">Abre el mecanismo de identificación para poder aceptar.</p> : null}
+      <Button type="button" block disabled={gate.startDisabled} onClick={onStart}>
+        Empezar validación
+      </Button>
+    </>
+  );
+}
+
+function splitTermsNotice(notice: string): [string, string, string] {
+  const link = "haz click aquí";
+  const at = notice.indexOf(link);
+  if (at < 0) return [notice, link, ""];
+  return [notice.slice(0, at), link, notice.slice(at + link.length)];
+}
+
+function CedulaStep({
+  state,
+  pending,
+  action,
+  accessToken,
+}: {
+  state: GeneralAccessState;
+  pending: boolean;
+  action: (payload: FormData) => void;
+  accessToken?: string;
+}) {
+  const cedulaError = state.fieldErrors?.cedula;
+  const codeError = state.fieldErrors?.codigoDactilar;
+  const banner = state.error && state.error !== "Revisa los campos marcados." ? state.error : undefined;
+  return (
+    <>
+      <div className="space-y-2">
+        <h2 className="text-2xl">Tu cédula</h2>
+        <p className="text-ink-muted">Escribe tu número de cédula. Es obligatorio. El código dactilar es opcional.</p>
+      </div>
+      {banner && <Notice tone="error" live>{banner}</Notice>}
+      <form action={action} className="space-y-5" noValidate>
+        <input type="hidden" name="phase" value="cedula" />
+        {accessToken ? <input type="hidden" name="accessToken" value={accessToken} /> : null}
+        <fieldset className="space-y-4 rounded-xl border border-marian-line p-4">
+          <legend className="px-1 text-sm font-semibold">Tu cédula</legend>
+          <Field id="cedula" label="Número de cédula" required hint="10 números, como en tu cédula." error={cedulaError}>
+            <input
+              id="cedula"
+              name="cedula"
+              defaultValue={state.values?.cedula}
+              className="field-input text-xl tracking-[0.12em]"
+              inputMode="numeric"
+              autoComplete="off"
+              spellCheck={false}
+              maxLength={16}
+              required
+              aria-invalid={Boolean(cedulaError)}
+              aria-describedby={describedBy("cedula", { hint: "x", error: cedulaError })}
+            />
+          </Field>
+          <Field id="codigo-dactilar" label="Código dactilar" hint="Opcional. Una letra, 4 números, una letra y 4 números. Ejemplo: V1234V1234." error={codeError}>
+            <input
+              id="codigo-dactilar"
+              name="codigoDactilar"
+              className="field-input text-xl uppercase tracking-[0.14em]"
+              autoComplete="off"
+              autoCapitalize="characters"
+              spellCheck={false}
+              maxLength={20}
+              aria-invalid={Boolean(codeError)}
+              aria-describedby={describedBy("codigo-dactilar", { hint: "x", error: codeError })}
+            />
+          </Field>
+          <FingerprintHelp />
+        </fieldset>
+        <Button type="submit" block loading={pending}>
+          <ShieldCheck className="h-5 w-5" aria-hidden />
+          {pending ? "Verificando…" : "Continuar"}
+        </Button>
+      </form>
+    </>
+  );
+}
+
 function EmailCodeStep({
   started,
   confirmed,
@@ -399,6 +523,7 @@ function EmailCodeStep({
   resendPending,
   resendAction,
   onRestart,
+  accessToken,
 }: {
   started: GeneralAccessState;
   confirmed: GeneralAccessState;
@@ -408,6 +533,7 @@ function EmailCodeStep({
   resendPending: boolean;
   resendAction: (payload: FormData) => void;
   onRestart: () => void;
+  accessToken?: string;
 }) {
   // El aviso más reciente gana: reenvío o confirmación.
   const latestResend = (resent.sentStamp ?? 0) >= (started.sentStamp ?? 0) && (resent.error || resent.info) ? resent : null;
@@ -431,6 +557,7 @@ function EmailCodeStep({
       {latestResend?.info && !latestResend.error && <Notice tone="info" live>{latestResend.info}</Notice>}
       <form action={action} className="space-y-5" noValidate>
         <input type="hidden" name="phase" value="email" />
+        {accessToken ? <input type="hidden" name="accessToken" value={accessToken} /> : null}
         <Field id="email-code" label="Código de acceso" required error={codeError}>
           <input
             id="email-code"

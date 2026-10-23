@@ -17,7 +17,7 @@ async function signInWith(expected: string, typed: string) {
   repo.addPerson("Juan Carlos", "Pérez López", JUAN);
   const demo = demoEmailOtpProvider(expected);
   const otp = { send: vi.fn(demo.send), verify: vi.fn(demo.verify) };
-  const started = await startGeneralEmailAccess(repo, { cedula: JUAN, email: EMAIL }, deps(otp));
+  const started = await startGeneralEmailAccess(repo, { email: EMAIL, termsAccepted: true }, deps(otp));
   if (!started.ok) throw new Error("start failed");
   const confirmed = await confirmGeneralEmailCode(repo, started.challengeToken, { code: typed }, deps(otp, "ip-2"));
   return { confirmed, otp };

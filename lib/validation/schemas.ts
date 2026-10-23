@@ -102,15 +102,40 @@ export const generalIdentifySchema = z
   .strict();
 
 /**
- * /ingresar con código por correo: el correo es lo único obligatorio. La cédula y el código dactilar
- * son opcionales (sirven para vincular la cuenta con la persona importada).
+ * Primer paso de /ingresar: solo el correo. La cédula va después de que el código coincida.
+ * termsAccepted tiene que llegar en true: la pantalla no deja enviar sin abrir y marcar el mecanismo.
  */
 export const generalEmailIdentifySchema = z
   .object({
-    cedula: z.preprocess((value) => (typeof value === "string" && value.trim() === "" ? undefined : value), generalCedulaField.optional()),
-    codigoDactilar: optionalFingerprintField,
     email: emailField,
+    termsAccepted: z.preprocess(
+      (value) => value === true || value === "true",
+      z.boolean().refine((value) => value === true, { message: "Acepta los términos para continuar." }),
+    ),
+    accessToken: z.preprocess(
+      (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
+      z.string().max(200).optional(),
+    ),
     captchaToken: z.string().max(4096).optional(),
+  })
+  .strict();
+
+/** Después del código: cédula ecuatoriana obligatoria. El código dactilar sigue siendo opcional. */
+export const generalCedulaStepSchema = z
+  .object({
+    cedula: generalCedulaField,
+    codigoDactilar: optionalFingerprintField,
+  })
+  .strict();
+
+/**
+ * Mismo paso cuando el ingreso viene de un enlace personal vigente.
+ * Acepta el pasaporte ya importado, para que ese enlace no se quede sin salida.
+ */
+export const personalLinkDocumentStepSchema = z
+  .object({
+    cedula: identityDocumentField,
+    codigoDactilar: optionalFingerprintField,
   })
   .strict();
 

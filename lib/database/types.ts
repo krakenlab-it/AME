@@ -14,7 +14,8 @@ export type AuditAction =
   | "GENERAL_IDENTIFY_FAILED" | "FINGERPRINT_CLAIMED" | "FINGERPRINT_IMPORTED" | "FINGERPRINT_RESET"
   | "TOTP_ENROLLED" | "TOTP_RESET"
   | "EMAIL_CODE_SENT" | "EMAIL_VERIFIED"
-  | "ACCOUNT_CREATED" | "ACCOUNT_LINKED" | "ACCOUNT_LINK_REQUESTED";
+  | "ACCOUNT_CREATED" | "ACCOUNT_LINKED" | "ACCOUNT_LINK_REQUESTED"
+  | "IDENTITY_TERMS_ACCEPTED";
 
 export interface AuditEvent {
   person_id?: string | null;
@@ -150,6 +151,16 @@ export interface RespondentRepo {
   completeGeneralChallenge(personId: string, challengeHash: string, mode: GeneralChallengePurpose, link?: GeneralEmailLink): Promise<boolean>;
   /** Marca un reenvío del código por correo (enfriamiento). */
   touchGeneralChallengeSent(personId: string, challengeHash: string, sentAt: string): Promise<boolean>;
+  /**
+   * El código de correo ya coincidió. El reto sigue abierto (purpose "cedula") hasta la cédula.
+   * Guarda el usuario de Auth sin escribir todavía el correo verificado.
+   */
+  markEmailCodeVerified(personId: string, challengeHash: string, authUserId: string | null): Promise<boolean>;
+  /**
+   * Pasa el reto de una cuenta propia a la persona importada que ya demostró la cédula.
+   * Borra la cuenta propia vacía. No toca otras personas ni enlaces.
+   */
+  promoteEmailChallenge(fromPersonId: string, toPersonId: string, challengeHash: string): Promise<boolean>;
   /** Persona (importada o cuenta propia) cuyo correo de ingreso ya verificado es este. */
   findGeneralAuthByLoginEmail(email: string): Promise<GeneralAuthRecord | null>;
   /** Personas importadas, sin correo de ingreso, cuyo correo cargado (outreach_email) es este. */
@@ -186,7 +197,7 @@ export interface UnlinkedAccountRow {
 
 export type LinkAccountResult = "linked" | "account_missing" | "person_missing" | "person_bound";
 
-export type GeneralChallengePurpose = "enroll" | "verify" | "email";
+export type GeneralChallengePurpose = "enroll" | "verify" | "email" | "cedula";
 
 export interface GeneralEmailLink {
   email: string;
@@ -310,9 +321,11 @@ export interface GeneralChallengeRecord {
   totp_secret_encrypted: string | null;
   totp_enabled_at: string | null;
   general_locked_until: string | null;
-  /** Solo con purpose "email". */
+  /** Correo del reto, en "email" y en "cedula". */
   pending_email?: string | null;
   sent_at?: string | null;
+  /** Usuario de Supabase Auth, guardado al verificar el código y usado al cerrar la cédula. */
+  auth_user_id?: string | null;
 }
 
 export type FingerprintAssignResult = "updated" | "unchanged" | "not_found" | "conflict";

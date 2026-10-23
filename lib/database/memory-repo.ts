@@ -419,6 +419,7 @@ export class MemoryRepo implements Repo {
       challenge_purpose: null,
       challenge_email: null,
       challenge_sent_at: null,
+      challenge_auth_user_id: null,
       auth_user_id: null,
     };
     this.generalAuth.set(personId, created);
@@ -593,8 +594,13 @@ export class MemoryRepo implements Repo {
       if (auth.totp_enabled_at || !input.totpSecretEncrypted) return false;
       auth.totp_secret_encrypted = input.totpSecretEncrypted;
       auth.totp_enabled_at = null;
-    } else if (!auth.totp_enabled_at || !auth.totp_secret_encrypted) {
+    } else if (input.purpose === "verify") {
+      if (!auth.totp_enabled_at || !auth.totp_secret_encrypted) return false;
+    } else if (input.purpose === "cedula") {
       return false;
+    } else {
+      const unexpected: never = input.purpose;
+      return unexpected;
     }
     auth.challenge_hash = input.challengeHash;
     auth.challenge_expires_at = input.expiresAt;
@@ -621,6 +627,7 @@ export class MemoryRepo implements Repo {
         general_locked_until: auth.locked_until,
         pending_email: auth.challenge_email ?? null,
         sent_at: auth.challenge_sent_at ?? null,
+        auth_user_id: auth.challenge_auth_user_id ?? null,
       };
     }
     return null;
@@ -633,10 +640,38 @@ export class MemoryRepo implements Repo {
     return true;
   }
 
+  async markEmailCodeVerified(personId: string, challengeHash: string, authUserId: string | null): Promise<boolean> {
+    const auth = this.generalAuth.get(personId);
+    if (!auth?.challenge_hash || !safeEqual(auth.challenge_hash, challengeHash) || auth.challenge_purpose !== "email") return false;
+    auth.challenge_purpose = "cedula";
+    auth.challenge_auth_user_id = authUserId;
+    return true;
+  }
+
+  async promoteEmailChallenge(fromPersonId: string, toPersonId: string, challengeHash: string): Promise<boolean> {
+    if (fromPersonId === toPersonId) return false;
+    const from = this.people.get(fromPersonId);
+    const to = this.people.get(toPersonId);
+    const auth = this.generalAuth.get(fromPersonId);
+    if (!from?.self_registered_at || from.national_id_hash || !to || to.self_registered_at || !to.national_id_hash) return false;
+    if (!auth?.challenge_hash || !safeEqual(auth.challenge_hash, challengeHash) || auth.challenge_purpose !== "cedula" || !auth.challenge_email) return false;
+    if (to.login_email && to.login_email !== auth.challenge_email) return false;
+    const target = this.ensureGeneral(toPersonId);
+    target.challenge_hash = auth.challenge_hash;
+    target.challenge_expires_at = auth.challenge_expires_at;
+    target.challenge_purpose = "cedula";
+    target.challenge_email = auth.challenge_email;
+    target.challenge_sent_at = auth.challenge_sent_at ?? null;
+    target.challenge_auth_user_id = auth.challenge_auth_user_id ?? null;
+    for (const entry of this.auditLog) if (entry.person_id === fromPersonId) entry.person_id = toPersonId;
+    this.deletePerson(fromPersonId);
+    return true;
+  }
+
   async completeGeneralChallenge(personId: string, challengeHash: string, mode: GeneralChallengePurpose, link?: GeneralEmailLink): Promise<boolean> {
     const auth = this.generalAuth.get(personId);
     if (!auth?.challenge_hash || !safeEqual(auth.challenge_hash, challengeHash) || auth.challenge_purpose !== mode) return false;
-    if (mode === "email") {
+    if (mode === "email" || mode === "cedula") {
       if (!link?.email) return false;
       const bound = this.people.get(personId)?.login_email;
       if (bound && bound !== link.email) return false;
@@ -650,6 +685,7 @@ export class MemoryRepo implements Repo {
       if (person) person.login_email = link.email;
       auth.challenge_email = null;
       auth.challenge_sent_at = null;
+      auth.challenge_auth_user_id = null;
     } else if (mode === "enroll") {
       if (!auth.totp_secret_encrypted) return false;
       auth.totp_enabled_at = new Date().toISOString();
@@ -687,6 +723,7 @@ export class MemoryRepo implements Repo {
       challenge_purpose: null,
       challenge_email: null,
       challenge_sent_at: null,
+      challenge_auth_user_id: null,
       auth_user_id: null,
     });
     const reset = this.people.get(personId);
@@ -711,6 +748,7 @@ interface GeneralAuthState {
   challenge_purpose: GeneralChallengePurpose | null;
   challenge_email?: string | null;
   challenge_sent_at?: string | null;
+  challenge_auth_user_id?: string | null;
   auth_user_id?: string | null;
 }
 

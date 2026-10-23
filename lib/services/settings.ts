@@ -9,7 +9,8 @@ export const settings = {
   captchaAfterAttempts: 3,
   generalLockThreshold: 5,
   generalLockMinutes: 30,
-  generalIdentifyLimitPerIp: 10,
+  /** 10 por IP en producción. La suite de navegador sale de una sola IP y recorre el ingreso varias veces. */
+  generalIdentifyLimitPerIp: process.env.PORTAL_E2E === "true" && !process.env.VERCEL ? 100 : 10,
   generalIdentifyLimitPerCedula: 8,
   generalIdentifyWindowSeconds: 15 * 60,
   generalChallengeMinutes: 10,
@@ -21,7 +22,7 @@ export const settings = {
   /** Espera mínima entre dos envíos del código. Supabase exige 60 s por usuario. */
   emailOtpCooldownSeconds: 60,
   /** Envíos de código por persona por hora (además del límite de Supabase). */
-  emailOtpLimitPerPerson: 5,
+  emailOtpLimitPerPerson: process.env.PORTAL_E2E === "true" && !process.env.VERCEL ? 30 : 5,
   emailOtpWindowSeconds: 60 * 60,
   /** Solo "true" exige el código dactilar en /ingresar. Cualquier otro valor lo deja opcional. */
   requireFingerprintCode: () => process.env.AME_REQUIRE_FINGERPRINT_CODE === "true",

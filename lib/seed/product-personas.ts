@@ -46,7 +46,7 @@ export interface ProductPersonaFixture {
   currentFirstNames: string;
   currentLastNames: string;
   confirmationCode: string | null;
-  /** Correo cargado en la importación: con él, el ingreso por correo vincula la ficha sola. */
+  /** Correo cargado en la importación. El ingreso pide el código de ese correo y después la cédula. */
   outreachEmail?: string | null;
   contact: {
     primary_email: string;

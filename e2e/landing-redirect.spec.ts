@@ -6,6 +6,8 @@ import { PRODUCT_PERSONAS } from "../lib/seed/product-personas";
 test("la portada lleva al ingreso con correo, sin pedir la cédula", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByText(/Ingrese con su correo para actualizar sus datos/i)).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Cómo funciona" })).toBeVisible();
+  await expect(page.getByText("Escribe tu número de cédula. Es obligatorio. El código dactilar del reverso de tu cédula física es opcional.")).toBeVisible();
   await expect(page.getByLabel(/Digita su número de cédula para empezar/i)).toHaveCount(0);
   await expect(page.getByText(/Confirme su cédula/i)).toHaveCount(0);
   await expect(page.getByText(/Si forma parte del equipo/i)).toBeVisible();
@@ -13,7 +15,7 @@ test("la portada lleva al ingreso con correo, sin pedir la cédula", async ({ pa
   await expect(enter).toHaveAttribute("href", "/ingresar");
   await enter.click();
   await expect(page).toHaveURL(/\/ingresar$/);
-  await expect(page.getByLabel(/Correo electrónico/i)).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Antes de empezar" })).toBeVisible();
 });
 
 test("/ingreso redirige a /ingresar", async ({ page }) => {
