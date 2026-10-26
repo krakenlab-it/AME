@@ -33,7 +33,7 @@ async function signIn(repo: MemoryRepo, input: { email: string; cedula: string; 
   if (!started.ok) throw new Error(started.error);
   const coded = await confirmGeneralEmailCode(repo, started.challengeToken, { code: DEMO_EMAIL_OTP_CODE }, deps(otp, ip));
   if (!coded.ok) throw new Error(coded.error);
-  const confirmed = await confirmGeneralCedula(repo, started.challengeToken, { cedula: input.cedula, codigoDactilar: input.codigoDactilar ?? "" }, deps(otp, ip));
+  const confirmed = await confirmGeneralCedula(repo, started.challengeToken, { cedula: input.cedula, codigoDactilar: input.codigoDactilar ?? CODE }, deps(otp, ip));
   if (!confirmed.ok) throw new Error(confirmed.error);
   return confirmed;
 }
@@ -145,8 +145,8 @@ describe("cédula escrita sin vínculo automático", () => {
     if (!knownStart.ok || !unknownStart.ok) return;
     await confirmGeneralEmailCode(repo, knownStart.challengeToken, { code: DEMO_EMAIL_OTP_CODE }, deps(otp));
     await confirmGeneralEmailCode(repo, unknownStart.challengeToken, { code: DEMO_EMAIL_OTP_CODE }, deps(otp, "ip-2"));
-    const known = await confirmGeneralCedula(repo, knownStart.challengeToken, { cedula: JUAN }, deps(otp));
-    const unknown = await confirmGeneralCedula(repo, unknownStart.challengeToken, { cedula: ANA }, deps(otp, "ip-2"));
+    const known = await confirmGeneralCedula(repo, knownStart.challengeToken, { cedula: JUAN, codigoDactilar: CODE }, deps(otp));
+    const unknown = await confirmGeneralCedula(repo, unknownStart.challengeToken, { cedula: ANA, codigoDactilar: CODE }, deps(otp, "ip-2"));
     expect(known.ok && unknown.ok).toBe(true);
     if (known.ok && unknown.ok) expect(Object.keys(known).sort()).toEqual(Object.keys(unknown).sort());
   });
@@ -161,7 +161,7 @@ describe("cédula escrita sin vínculo automático", () => {
     expect(other.ok).toBe(true);
     if (!other.ok) return;
     await confirmGeneralEmailCode(repo, other.challengeToken, { code: DEMO_EMAIL_OTP_CODE }, deps(otp, "ip-9"));
-    const cedula = await confirmGeneralCedula(repo, other.challengeToken, { cedula: JUAN }, deps(otp, "ip-9"));
+    const cedula = await confirmGeneralCedula(repo, other.challengeToken, { cedula: JUAN, codigoDactilar: CODE }, deps(otp, "ip-9"));
     expect(cedula.ok).toBe(false);
     if (!cedula.ok) expect(cedula.error).toContain("Esta cédula ya ingresó con otro correo");
     expect((await repo.getPerson(juan))?.login_email).toBe("juan@example.com");
@@ -178,7 +178,7 @@ describe("cédula escrita sin vínculo automático", () => {
     const started = await startGeneralEmailAccess(repo, { email: "juan@example.com", termsAccepted: true }, deps(otp, "ip-2"));
     if (!started.ok) throw new Error(started.error);
     await confirmGeneralEmailCode(repo, started.challengeToken, { code: DEMO_EMAIL_OTP_CODE }, deps(otp, "ip-2"));
-    const result = await confirmGeneralCedula(repo, started.challengeToken, { cedula: ANA }, deps(otp, "ip-2"));
+    const result = await confirmGeneralCedula(repo, started.challengeToken, { cedula: ANA, codigoDactilar: CODE }, deps(otp, "ip-2"));
     expect(result).toMatchObject({ ok: false, error: GENERIC_GENERAL_ERROR });
   });
 });

@@ -24,8 +24,6 @@ export const settings = {
   /** Envíos de código por persona por hora (además del límite de Supabase). */
   emailOtpLimitPerPerson: process.env.PORTAL_E2E === "true" && !process.env.VERCEL ? 30 : 5,
   emailOtpWindowSeconds: 60 * 60,
-  /** Solo "true" exige el código dactilar en /ingresar. Cualquier otro valor lo deja opcional. */
-  requireFingerprintCode: () => process.env.AME_REQUIRE_FINGERPRINT_CODE === "true",
   adminLoginLimitPerIp: 10,
   adminLoginLimitPerEmail: 5,
   adminLockMinutes: 15,

@@ -36,7 +36,7 @@ test("el enlace general pide términos y correo antes de la cédula", async ({ p
   await expect(page.getByLabel("Correo electrónico")).toHaveAttribute("aria-invalid", "true");
 });
 
-test("el correo cargado no abre el formulario hasta la cédula; el dactilar queda opcional", async ({ page }) => {
+test("el correo cargado no abre el formulario hasta la cédula y el código dactilar", async ({ page }) => {
   expect(started).toBeTruthy();
   await page.goto("/ingresar");
   await acceptTerms(page);
@@ -51,12 +51,17 @@ test("el correo cargado no abre el formulario hasta la cédula; el dactilar qued
   await expect(page.getByRole("heading", { name: "Tu cédula" })).toBeVisible();
   await expect(page).toHaveURL(/\/ingresar$/);
   await expect(page.getByLabel("Número de cédula")).toHaveAttribute("required", "");
-  await expect(page.getByLabel("Código dactilar (opcional)")).not.toHaveAttribute("required", "");
+  await expect(page.getByLabel(/Código dactilar/)).toHaveAttribute("required", "");
+  await expect(page.locator("#codigo-dactilar-hint")).toHaveText("Formato: letra, 4 números, letra, 4 números (ej. V1234V1234)");
   await page.getByText("¿Dónde encuentro mi código dactilar?").click();
   await expect(page.getByRole("img", { name: /cédula anterior/i })).toBeVisible();
   await expect(page.getByRole("img", { name: /cédula electrónica/i })).toBeVisible();
 
   await page.getByLabel("Número de cédula").fill(started!.cedula);
+  await page.getByRole("button", { name: "Continuar" }).click();
+  await expect(page.locator("#codigo-dactilar-error")).toHaveText(/Formato: letra, 4 números, letra, 4 números/);
+  await expect(page).toHaveURL(/\/ingresar$/);
+  await page.getByLabel(/Código dactilar/).fill("v1234-v1234");
   await page.getByRole("button", { name: "Continuar" }).click();
   await expect(page).toHaveURL(/\/verificar\/formulario$/);
   await expect(page.getByText(started!.currentFirstNames, { exact: true })).toBeVisible();
@@ -74,6 +79,7 @@ test("un correo nuevo crea una cuenta sin vincular que no abre el formulario", a
   await page.getByRole("button", { name: "Confirmar y continuar" }).click();
   await expect(page.getByRole("heading", { name: "Tu cédula" })).toBeVisible();
   await page.getByLabel("Número de cédula").fill("1710034065");
+  await page.getByLabel(/Código dactilar/).fill("V1234V1234");
   await page.getByRole("button", { name: "Continuar" }).click();
   await expect(page).toHaveURL(/\/mi-cuenta$/);
   await expect(page.getByText("Cuenta pendiente de vínculo")).toBeVisible();
@@ -90,6 +96,7 @@ test("el enlace personal sigue vigente y entra por correo y cédula", async ({ p
   await page.getByLabel("Código de acceso").fill(DEMO_EMAIL_OTP_CODE);
   await page.getByRole("button", { name: "Confirmar y continuar" }).click();
   await page.getByLabel("Número de cédula").fill(started!.cedula);
+  await page.getByLabel(/Código dactilar/).fill("V1234V1234");
   await page.getByRole("button", { name: "Continuar" }).click();
   await expect(page).toHaveURL(/\/verificar\/formulario$/);
   await expect(page.getByText(started!.currentFirstNames, { exact: true })).toBeVisible();

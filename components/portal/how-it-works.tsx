@@ -5,7 +5,7 @@ const STEPS = [
   },
   {
     title: "Confirma tu identidad con tu cédula",
-    body: "Escribe tu número de cédula. Es obligatorio. El código dactilar del reverso de tu cédula física es opcional.",
+    body: "Escribe tu número de cédula y el código dactilar del reverso. Formato: letra, 4 números, letra, 4 números (ej. V1234V1234).",
   },
   {
     title: "Completa tus datos",
@@ -13,7 +13,7 @@ const STEPS = [
   },
 ] as const;
 
-/** Los tres pasos del ingreso. El segundo deja la cédula como obligatoria y el código dactilar como opcional. */
+/** Los tres pasos del ingreso. El segundo pide la cédula y el código dactilar. */
 export function HowItWorks() {
   return (
     <section aria-labelledby="como-funciona" className="mt-8 max-w-md">

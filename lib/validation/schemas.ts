@@ -2,7 +2,7 @@ import { z } from "zod";
 import { isAccessLinkToken } from "@/lib/validation/access-link-token";
 import { isValidCedula, normalizeCedula } from "./cedula";
 import { assessNationalId, identityDocumentMessage } from "./document";
-import { FINGERPRINT_CODE_RE, normalizeFingerprintCode } from "./fingerprint";
+import { FINGERPRINT_CODE_RE, FINGERPRINT_FORMAT_MESSAGE, normalizeFingerprintCode } from "./fingerprint";
 import { ACCOUNT_TYPES, BANKS, BANKS_REQUIRING_NAME, PASSPORT_GENERAL_MESSAGE } from "./constants";
 import { normalizePhone } from "./phone";
 
@@ -61,12 +61,10 @@ export const identifySchema = z
   })
   .strict();
 
-const FINGERPRINT_FORMAT = "El código dactilar tiene una letra, 4 números, una letra y 4 números.";
-
 export const fingerprintCodeField = z
   .string()
   .transform((value) => normalizeFingerprintCode(value))
-  .refine((value) => FINGERPRINT_CODE_RE.test(value), FINGERPRINT_FORMAT);
+  .refine((value) => FINGERPRINT_CODE_RE.test(value), FINGERPRINT_FORMAT_MESSAGE);
 
 /** Cédula ecuatoriana. Un pasaporte se rechaza con un mensaje fijo, sin consultar la base. */
 const generalCedulaField = z
@@ -91,12 +89,12 @@ export const optionalFingerprintField = z
   .string()
   .optional()
   .transform((value) => normalizeFingerprintCode(value ?? ""))
-  .refine((value) => value === "" || FINGERPRINT_CODE_RE.test(value), FINGERPRINT_FORMAT);
+  .refine((value) => value === "" || FINGERPRINT_CODE_RE.test(value), FINGERPRINT_FORMAT_MESSAGE);
 
 export const generalIdentifySchema = z
   .object({
     cedula: generalCedulaField,
-    codigoDactilar: optionalFingerprintField,
+    codigoDactilar: fingerprintCodeField,
     captchaToken: z.string().max(4096).optional(),
   })
   .strict();
@@ -120,24 +118,27 @@ export const generalEmailIdentifySchema = z
   })
   .strict();
 
-/** Después del código: cédula ecuatoriana obligatoria. El código dactilar sigue siendo opcional. */
+/** Después del código de correo: cédula ecuatoriana y código dactilar obligatorios. */
 export const generalCedulaStepSchema = z
   .object({
     cedula: generalCedulaField,
-    codigoDactilar: optionalFingerprintField,
+    codigoDactilar: fingerprintCodeField,
   })
   .strict();
 
 /**
  * Mismo paso cuando el ingreso viene de un enlace personal vigente.
- * Acepta el pasaporte ya importado, para que ese enlace no se quede sin salida.
+ * Acepta el pasaporte ya importado. En un pasaporte el código dactilar no existe:
+ * llega vacío y se acepta. En una cédula es obligatorio.
  */
-export const personalLinkDocumentStepSchema = z
-  .object({
-    cedula: identityDocumentField,
-    codigoDactilar: optionalFingerprintField,
-  })
-  .strict();
+export function personalLinkDocumentStepSchema(requireFingerprint: boolean) {
+  return z
+    .object({
+      cedula: identityDocumentField,
+      codigoDactilar: requireFingerprint ? fingerprintCodeField : optionalFingerprintField,
+    })
+    .strict();
+}
 
 /**
  * Largo del código por correo. Supabase Auth permite configurar entre 6 y 10 dígitos

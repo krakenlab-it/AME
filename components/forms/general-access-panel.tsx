@@ -14,6 +14,7 @@ import {
   TERMINOS_IDENTIFICACION_AVISO,
   TERMINOS_IDENTIFICACION_CHECKBOX,
 } from "@/lib/content/terminos-identificacion";
+import { FINGERPRINT_FORMAT_MESSAGE } from "@/lib/validation/fingerprint";
 
 /** Hasta 10 dígitos (máximo de Supabase) más espacios o guiones al pegar. */
 const EMAIL_OTP_INPUT_MAX = 24;
@@ -22,7 +23,8 @@ type AuthMethod = "email" | "totp";
 
 interface PanelProps {
   turnstileSiteKey: string | null;
-  requireFingerprint: boolean;
+  /** Enlace personal de pasaporte: el código dactilar no existe en ese documento. */
+  hideFingerprint?: boolean;
   /** "email" (por defecto): código por correo. "totp": aplicación autenticadora (AME_GENERAL_AUTH_METHOD=totp). */
   method?: AuthMethod;
   /** Enlace personal vigente. No se revoca: solo entra al mismo recorrido de correo y cédula. */
@@ -48,7 +50,7 @@ export function GeneralAccessPanel(props: PanelProps) {
 
 function AccessFlow({
   turnstileSiteKey,
-  requireFingerprint,
+  hideFingerprint = false,
   method = "email",
   accessToken,
   onRestart,
@@ -124,7 +126,6 @@ function AccessFlow({
           action={startAction}
           needsCaptcha={needsCaptcha}
           siteKey={turnstileSiteKey}
-          requireFingerprint={requireFingerprint}
           method={method}
           accessToken={accessToken}
         />
@@ -141,7 +142,7 @@ function AccessFlow({
           accessToken={accessToken}
         />
       ) : phase === "cedula" ? (
-        <CedulaStep state={confirmed} pending={confirmPending} action={confirmAction} accessToken={accessToken} />
+        <CedulaStep state={confirmed} pending={confirmPending} action={confirmAction} accessToken={accessToken} hideFingerprint={hideFingerprint} />
       ) : (
         <TotpStep
           phase={phase}
@@ -164,7 +165,6 @@ function IdentifyStep({
   action,
   needsCaptcha,
   siteKey,
-  requireFingerprint,
   method,
   accessToken,
 }: {
@@ -173,7 +173,6 @@ function IdentifyStep({
   action: (payload: FormData) => void;
   needsCaptcha: boolean;
   siteKey: string | null;
-  requireFingerprint: boolean;
   method: AuthMethod;
   accessToken?: string;
 }) {
@@ -228,9 +227,7 @@ function IdentifyStep({
       <div className="space-y-2">
         <h2 className="text-2xl">Entra con tu cédula</h2>
         <p className="text-ink-muted">
-          {requireFingerprint
-            ? `Escribe tu número de cédula y el código dactilar que aparece en ella. ${next}`
-            : `Escribe tu número de cédula. El código dactilar es opcional: si lo escribes y todavía no teníamos uno, lo guardamos para las próximas veces. ${next}`}
+          {`Escribe tu número de cédula y el código dactilar que aparece en ella. ${next}`}
         </p>
       </div>
       {banner && <Notice tone="error" live>{banner}</Notice>}
@@ -253,8 +250,8 @@ function IdentifyStep({
         <Field
           id="codigo-dactilar"
           label="Código dactilar"
-          required={requireFingerprint}
-          hint={requireFingerprint ? "Una letra, 4 números, una letra y 4 números. Ejemplo: V1234V1234." : "Opcional. Una letra, 4 números, una letra y 4 números. Ejemplo: V1234V1234."}
+          required
+          hint={FINGERPRINT_FORMAT_MESSAGE}
           error={codeError}
         >
           <input
@@ -265,7 +262,7 @@ function IdentifyStep({
             autoCapitalize="characters"
             spellCheck={false}
             maxLength={20}
-            required={requireFingerprint}
+            required
             aria-invalid={Boolean(codeError)}
             aria-describedby={describedBy("codigo-dactilar", { hint: "x", error: codeError })}
           />
@@ -454,11 +451,13 @@ function CedulaStep({
   pending,
   action,
   accessToken,
+  hideFingerprint,
 }: {
   state: GeneralAccessState;
   pending: boolean;
   action: (payload: FormData) => void;
   accessToken?: string;
+  hideFingerprint: boolean;
 }) {
   const cedulaError = state.fieldErrors?.cedula;
   const codeError = state.fieldErrors?.codigoDactilar;
@@ -467,7 +466,11 @@ function CedulaStep({
     <>
       <div className="space-y-2">
         <h2 className="text-2xl">Tu cédula</h2>
-        <p className="text-ink-muted">Escribe tu número de cédula. Es obligatorio. El código dactilar es opcional.</p>
+        <p className="text-ink-muted">
+          {hideFingerprint
+            ? "Escribe el número de tu pasaporte, tal como está en el documento."
+            : "Escribe tu número de cédula y el código dactilar del reverso."}
+        </p>
       </div>
       {banner && <Notice tone="error" live>{banner}</Notice>}
       <form action={action} className="space-y-5" noValidate>
@@ -490,20 +493,25 @@ function CedulaStep({
               aria-describedby={describedBy("cedula", { hint: "x", error: cedulaError })}
             />
           </Field>
-          <Field id="codigo-dactilar" label="Código dactilar" hint="Opcional. Una letra, 4 números, una letra y 4 números. Ejemplo: V1234V1234." error={codeError}>
-            <input
-              id="codigo-dactilar"
-              name="codigoDactilar"
-              className="field-input text-xl uppercase tracking-[0.14em]"
-              autoComplete="off"
-              autoCapitalize="characters"
-              spellCheck={false}
-              maxLength={20}
-              aria-invalid={Boolean(codeError)}
-              aria-describedby={describedBy("codigo-dactilar", { hint: "x", error: codeError })}
-            />
-          </Field>
-          <FingerprintHelp />
+          {hideFingerprint ? null : (
+            <>
+              <Field id="codigo-dactilar" label="Código dactilar" required hint={FINGERPRINT_FORMAT_MESSAGE} error={codeError}>
+                <input
+                  id="codigo-dactilar"
+                  name="codigoDactilar"
+                  className="field-input text-xl uppercase tracking-[0.14em]"
+                  autoComplete="off"
+                  autoCapitalize="characters"
+                  spellCheck={false}
+                  maxLength={20}
+                  required
+                  aria-invalid={Boolean(codeError)}
+                  aria-describedby={describedBy("codigo-dactilar", { hint: "x", error: codeError })}
+                />
+              </Field>
+              <FingerprintHelp />
+            </>
+          )}
         </fieldset>
         <Button type="submit" block loading={pending}>
           <ShieldCheck className="h-5 w-5" aria-hidden />

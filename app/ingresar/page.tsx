@@ -25,7 +25,6 @@ export default async function GeneralAccessPage() {
         <h1 className="mb-6 text-[32px] leading-tight">Actualización de información</h1>
         <GeneralAccessPanel
           turnstileSiteKey={process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY ?? null}
-          requireFingerprint={settings.requireFingerprintCode()}
           method={settings.generalAuthMethod()}
         />
         <div className="mt-8">

@@ -2,6 +2,7 @@ import QRCode from "qrcode";
 import { encrypt, decrypt, keyedHash, randomToken, safeEqual, sha256 } from "@/lib/encryption/crypto";
 import type { AdminRepo, GeneralAuthRecord, RespondentRepo } from "@/lib/database/types";
 import { GENERIC_GENERAL_ERROR } from "@/lib/validation/constants";
+import { FINGERPRINT_FORMAT_MESSAGE } from "@/lib/validation/fingerprint";
 import { flattenIssues, generalIdentifySchema, generalTotpSchema } from "@/lib/validation/schemas";
 import { sanitizeDeep } from "@/lib/validation/sanitize";
 import { maskCedulaTail } from "@/lib/security/masking";
@@ -13,7 +14,6 @@ import { settings } from "./settings";
 export const RATE_LIMIT_ERROR = "Hiciste demasiados intentos. Espera 15 minutos y vuelve a intentarlo.";
 const TOTP_MISMATCH = "El código de verificación no es correcto. Inténtalo otra vez.";
 export const CHALLENGE_EXPIRED = "Esta verificación venció. Vuelve a escribir tu cédula.";
-const FINGERPRINT_REQUIRED = "Escribe el código dactilar de tu cédula.";
 const ISSUER = "AME Portal";
 
 export interface GeneralDeps {
@@ -55,8 +55,8 @@ export async function limitIp(repo: RespondentRepo, deps: GeneralDeps): Promise<
 }
 
 /**
- * Paso 1: cédula. El código dactilar es opcional salvo AME_REQUIRE_FINGERPRINT_CODE=true.
- * Si lo escriben y no había uno, se guarda hasheado. Si ya hay hash, tiene que coincidir.
+ * Paso 1: cédula y código dactilar obligatorios.
+ * El primero válido se guarda hasheado. Si ya hay hash, tiene que coincidir.
  */
 export async function startGeneralAccess(repo: RespondentRepo, rawInput: unknown, deps: GeneralDeps): Promise<GeneralStartResult> {
   const ipLimit = await limitIp(repo, deps);
@@ -74,7 +74,7 @@ export async function startGeneralAccess(repo: RespondentRepo, rawInput: unknown
 export type GeneralFailure = { ok: false; error: string; fieldErrors?: Record<string, string>; requireCaptcha?: boolean };
 
 /**
- * Cédula + código dactilar opcional: límites, CAPTCHA, bloqueo y el mismo error genérico para todo.
+ * Cédula + código dactilar obligatorio: límites, CAPTCHA, bloqueo y el mismo error genérico para todo.
  * Lo usan el ingreso con TOTP y el ingreso con código por correo.
  */
 export async function resolveGeneralPerson(
@@ -84,8 +84,8 @@ export async function resolveGeneralPerson(
   ipHits: number,
 ): Promise<{ ok: true; person: GeneralAuthRecord } | GeneralFailure> {
   const code = data.codigoDactilar;
-  if (settings.requireFingerprintCode() && !code) {
-    return { ok: false, error: "Revisa los campos marcados.", fieldErrors: { codigoDactilar: FINGERPRINT_REQUIRED }, requireCaptcha: needsCaptcha(deps, ipHits) };
+  if (!code) {
+    return { ok: false, error: "Revisa los campos marcados.", fieldErrors: { codigoDactilar: FINGERPRINT_FORMAT_MESSAGE }, requireCaptcha: needsCaptcha(deps, ipHits) };
   }
 
   if (needsCaptcha(deps, ipHits)) {
