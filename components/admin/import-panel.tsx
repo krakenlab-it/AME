@@ -169,8 +169,8 @@ export function ImportPanel({ outreachSimulation = false }: { outreachSimulation
         <div className="space-y-1">
           <h2 className="text-xl">4. Precargar códigos dactilares</h2>
           <p className="text-[15px] text-ink-muted">
-            Opcional. La persona entra por <strong>/ingresar</strong> con el código de su correo y después su cédula. Si escribe un código dactilar y todavía no había uno, ese queda guardado. Si ya hay uno, tiene que coincidir.
-            Este archivo puede dejarlo listo antes: columnas <code>cedula</code> y <code>codigo_dactilar</code>. El código no se guarda ni se muestra en claro.
+            Este archivo no es obligatorio para cargar personas. Al entrar, cada cédula tiene que escribir su código: letra, 4 números, letra, 4 números (ej. V1234V1234). El primero válido se guarda. Si ya hay uno, tiene que coincidir.
+            Un pasaporte no trae ese código; esas filas no se cargan. Columnas <code>cedula</code> y <code>codigo_dactilar</code>. El código no se guarda ni se muestra en claro.
             Si ya hay uno distinto, no se cambia: hay que restablecerlo desde la ficha.
             Plantilla: <a className="font-semibold text-marian underline underline-offset-2" href="/templates/codigo_dactilar.csv" download>ejemplo.csv</a>.
           </p>

@@ -37,6 +37,8 @@ export const AUDIT_LABELS: Record<AuditAction, string> = {
   ACCOUNT_LINKED: "Un administrador vinculó su cuenta con la ficha importada",
   ACCOUNT_LINK_REQUESTED: "Pidió vincular su cuenta con una cédula",
   IDENTITY_TERMS_ACCEPTED: "Aceptó el mecanismo de identificación",
+  PERSON_RESET_TO_GUEST: "Restableció la ficha para que la persona vuelva a ingresar",
+  PERSON_DELETED: "Eliminó la ficha de la persona",
 };
 
 export const AUDIT_ACTIONS = Object.keys(AUDIT_LABELS) as AuditAction[];

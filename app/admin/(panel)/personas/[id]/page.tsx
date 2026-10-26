@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ManualEditForm } from "@/components/admin/manual-edit-form";
 import { PersonActions } from "@/components/admin/person-actions";
+import { PersonLifecycleActions } from "@/components/admin/person-lifecycle-actions";
 import { ResetGeneralAuth } from "@/components/admin/reset-general-auth";
 import { StatusBadge } from "@/components/admin/status-badge";
 import { actorLabel, auditLabel, CONSENT_LABELS, REVIEW_REASON_LABELS } from "@/lib/admin/labels";
@@ -54,6 +55,7 @@ export default async function PersonPage({ params }: { params: Promise<{ id: str
       </Card>
 
       {can(admin.role, "people:reset-factors") && <ResetGeneralAuth personId={person.id} />}
+      {can(admin.role, "people:reset-factors") && <PersonLifecycleActions personId={person.id} />}
 
       {can(admin.role, "people:edit") && (
         <ManualEditForm

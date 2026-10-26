@@ -18,6 +18,9 @@ test("el panel administrador explica el acceso, la carga y la ficha con código"
   await expect(page.getByRole("heading", { name: "2. Enlaces para registros sin enlace vigente" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Generar enlaces faltantes" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "3. Enlace para completar datos" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "4. Precargar códigos dactilares" })).toBeVisible();
+  await expect(page.getByText(/cada cédula tiene que escribir su código/i)).toBeVisible();
+  await expect(page.getByText(/Si escribe un código dactilar/i)).toHaveCount(0);
   await expect(page.getByText(/RESEND_API_KEY/)).toHaveCount(0);
   await page.getByRole("button", { name: "Generar y descargar enlaces" }).click();
   await expect(page.getByText("No hay registros válidos importados.")).not.toBeVisible();

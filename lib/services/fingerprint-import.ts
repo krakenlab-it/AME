@@ -25,7 +25,7 @@ interface ParsedRow {
   code: string;
 }
 
-/** Precarga opcional. No pisa un código ya registrado si el hash es distinto. */
+/** Precarga el código de una cédula. No pisa uno ya registrado si el hash es distinto. Un pasaporte no entra. */
 export async function importFingerprintCodes(repo: AdminRepo, bytes: ArrayBuffer, filename: string, adminId: string): Promise<FingerprintImportReport> {
   if (bytes.byteLength > FINGERPRINT_IMPORT_MAX_BYTES) throw new FingerprintImportError("El archivo supera 5 MB.");
   const rows = await readRows(bytes, filename);
