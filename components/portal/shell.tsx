@@ -2,6 +2,7 @@ import { Lock } from "lucide-react";
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { MaristaLogo, PartnerStrip } from "@/components/brand/logos";
+import { ResponsibleContact } from "@/components/portal/responsible-contact";
 import type { LegalReadiness } from "@/lib/privacy/readiness";
 
 export function PortalShell({ children, readiness, organizationName }: { children: ReactNode; readiness?: LegalReadiness; organizationName: string }) {
@@ -38,6 +39,7 @@ export function PortalFooter() {
           <Link className="font-medium text-marian underline-offset-4 hover:underline" href="/privacidad#aviso">Aviso de Privacidad</Link>
           <Link className="font-medium text-marian underline-offset-4 hover:underline" href="/privacidad#contacto">Contacto</Link>
         </nav>
+        <ResponsibleContact />
         <PartnerStrip />
       </div>
     </footer>
@@ -52,6 +54,9 @@ export function PortalUnavailable() {
       <p className="mt-4 text-ink-muted">
         Estamos terminando de configurar este portal. Vuelve a intentarlo más tarde con el mismo enlace que recibiste.
       </p>
+      <div className="mt-10 text-left">
+        <PortalFooter />
+      </div>
     </div>
   );
 }
