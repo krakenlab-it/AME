@@ -40,7 +40,7 @@ function emailInput(email: string, extra: Record<string, string> = {}) {
   return { email, termsAccepted: true, ...extra };
 }
 
-async function finishWithCedula(repo: MemoryRepo, token: string, cedula: string, otp: EmailOtpProvider, ip = "ip-2", codigoDactilar = "") {
+async function finishWithCedula(repo: MemoryRepo, token: string, cedula: string, otp: EmailOtpProvider, ip = "ip-2", codigoDactilar = CODE) {
   const coded = await confirmGeneralEmailCode(repo, token, { code: DEMO_EMAIL_OTP_CODE }, deps(otp, ip));
   if (!coded.ok) return coded;
   return confirmGeneralCedula(repo, token, { cedula, codigoDactilar }, deps(otp, ip));
@@ -70,7 +70,7 @@ describe("ingreso con código por correo", () => {
     expect((await repo.getPerson(personId))?.login_email).toBeFalsy();
     expect([...repo.sessions.values()].some((session) => session.person_id === personId)).toBe(false);
 
-    const confirmed = await confirmGeneralCedula(repo, started.challengeToken, { cedula: JUAN }, deps(otp, "ip-2"));
+    const confirmed = await confirmGeneralCedula(repo, started.challengeToken, { cedula: JUAN, codigoDactilar: CODE }, deps(otp, "ip-2"));
     expect(confirmed).toMatchObject({ ok: true, destination: "form" });
     if (!confirmed.ok) return;
     expect(otp.verify).toHaveBeenCalledWith(EMAIL, DEMO_EMAIL_OTP_CODE);
@@ -291,7 +291,7 @@ describe("correo de ingreso ya verificado", () => {
     const coded = await confirmGeneralEmailCode(repo, same.challengeToken, { code: DEMO_EMAIL_OTP_CODE }, deps(otp, "ip-4"));
     expect(coded).toMatchObject({ ok: true, phase: "cedula" });
     expect(repo.sessions.size).toBe(sessionsBefore);
-    expect(await confirmGeneralCedula(repo, same.challengeToken, { cedula: JUAN }, deps(otp, "ip-4"))).toMatchObject({ ok: true, destination: "form" });
+    expect(await confirmGeneralCedula(repo, same.challengeToken, { cedula: JUAN, codigoDactilar: CODE }, deps(otp, "ip-4"))).toMatchObject({ ok: true, destination: "form" });
     expect([...repo.people.values()].filter((p) => p.self_registered_at && p.login_email)).toHaveLength(0);
     expect((await repo.getPerson(personId))?.login_email).toBe(EMAIL);
   });

@@ -20,6 +20,7 @@ test("el enlace en curso identifica a la ficha sintética", async ({ page }) => 
   await page.getByLabel("Código de acceso").fill(DEMO_EMAIL_OTP_CODE);
   await page.getByRole("button", { name: "Confirmar y continuar" }).click();
   await page.getByLabel("Número de cédula").fill(started!.cedula);
+  await page.getByLabel(/Código dactilar/).fill("V1234V1234");
   await page.getByRole("button", { name: "Continuar" }).click();
   await expect(page).toHaveURL(/\/verificar\/formulario$/);
   await expect(page.getByText(started!.currentFirstNames, { exact: true })).toBeVisible();

@@ -11,9 +11,12 @@ import { GeneralAccessPanel } from "@/components/forms/general-access-panel";
 import { PortalHero } from "@/components/portal/hero";
 import { PortalShell, PortalUnavailable } from "@/components/portal/shell";
 import { getRepo } from "@/lib/database";
+import { sha256 } from "@/lib/encryption/crypto";
 import { getActivePrivacy } from "@/lib/privacy/active";
 import { ipHash } from "@/lib/security/request";
+import { storedDocumentIsPassport } from "@/lib/services/passport-document";
 import { inspectLink, linkStateMessage } from "@/lib/services/respondent";
+import { normalizeAccessLinkToken } from "@/lib/validation/access-link-token";
 
 export default async function VerifyLinkPage({ params }: { params: Promise<{ token: string }> }) {
   const { token: rawToken } = await params;
@@ -24,6 +27,9 @@ export default async function VerifyLinkPage({ params }: { params: Promise<{ tok
   if (privacy.readiness.blockPortal) return <PortalUnavailable />;
 
   const state = await inspectLink(repo, token, ipHash(await headers()));
+  const link = state === "valid" ? await repo.findAccessToken(sha256(normalizeAccessLinkToken(token))) : null;
+  const person = link ? await repo.getPerson(link.person_id) : null;
+  const hideFingerprint = storedDocumentIsPassport(person?.national_id_encrypted);
 
   return (
     <PortalShell readiness={privacy.readiness} organizationName={privacy.config.organizationName}>
@@ -32,7 +38,7 @@ export default async function VerifyLinkPage({ params }: { params: Promise<{ tok
           state === "valid" ? (
             <GeneralAccessPanel
               turnstileSiteKey={process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY ?? null}
-              requireFingerprint={false}
+              hideFingerprint={hideFingerprint}
               method="email"
               accessToken={token}
             />

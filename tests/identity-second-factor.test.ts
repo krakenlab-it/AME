@@ -55,7 +55,7 @@ describe("puerta de términos", () => {
   });
 });
 
-describe("cédula obligatoria y código dactilar opcional", () => {
+describe("cédula y código dactilar obligatorios", () => {
   it("un correo que ya está en la ficha no abre el formulario hasta la cédula", async () => {
     const repo = new MemoryRepo();
     const personId = repo.addPerson("Juan", "Pérez", JUAN);
@@ -73,14 +73,14 @@ describe("cédula obligatoria y código dactilar opcional", () => {
     if (!missing.ok) expect(missing.fieldErrors?.cedula).toBeTruthy();
     expect(repo.sessions.size).toBe(0);
 
-    const wrong = await confirmGeneralCedula(repo, started.challengeToken, { cedula: "0926687856" }, deps(otp));
+    const wrong = await confirmGeneralCedula(repo, started.challengeToken, { cedula: "0926687856", codigoDactilar: CODE }, deps(otp));
     expect(wrong).toMatchObject({ ok: false, error: GENERIC_GENERAL_ERROR });
     expect((await repo.getPerson(personId))?.login_email).toBeFalsy();
 
     const again = await startGeneralEmailAccess(repo, { email: EMAIL, termsAccepted: true }, deps(otp, "ip-2"));
     if (!again.ok) throw new Error(again.error);
     await confirmGeneralEmailCode(repo, again.challengeToken, { code: DEMO_EMAIL_OTP_CODE }, deps(otp, "ip-2"));
-    const ok = await confirmGeneralCedula(repo, again.challengeToken, { cedula: JUAN }, deps(otp, "ip-2"));
+    const ok = await confirmGeneralCedula(repo, again.challengeToken, { cedula: JUAN, codigoDactilar: CODE }, deps(otp, "ip-2"));
     expect(ok).toMatchObject({ ok: true, destination: "form" });
     expect((await repo.getPerson(personId))?.login_email).toBe(EMAIL);
   });
@@ -102,7 +102,9 @@ describe("cédula obligatoria y código dactilar opcional", () => {
     const empty = await startGeneralEmailAccess(repo, { email: EMAIL, termsAccepted: true }, deps(otp, "ip-2"));
     if (!empty.ok) throw new Error(empty.error);
     await confirmGeneralEmailCode(repo, empty.challengeToken, { code: DEMO_EMAIL_OTP_CODE }, deps(otp, "ip-2"));
-    expect(await confirmGeneralCedula(repo, empty.challengeToken, { cedula: JUAN, codigoDactilar: "" }, deps(otp, "ip-2"))).toMatchObject({ ok: true });
+    const skipped = await confirmGeneralCedula(repo, empty.challengeToken, { cedula: JUAN, codigoDactilar: "" }, deps(otp, "ip-2"));
+    expect(skipped.ok).toBe(false);
+    if (!skipped.ok) expect(skipped.fieldErrors?.codigoDactilar).toMatch(/^Formato:/);
     expect(repo.generalAuth.get(personId)?.fingerprint_code_hash).toBe(keyedHash(CODE, "fingerprint_code"));
 
     const mismatch = await startGeneralEmailAccess(repo, { email: EMAIL, termsAccepted: true }, deps(otp, "ip-3"));
@@ -135,11 +137,46 @@ describe("enlace personal con correo ya cargado", () => {
     expect(coded).toEqual({ ok: true, phase: "cedula" });
     expect(repo.sessions.size).toBe(0);
 
-    const done = await confirmGeneralCedula(repo, started.challengeToken, { cedula: JUAN, accessToken: token }, deps(otp, "ip-2"));
+    const missingCode = await confirmGeneralCedula(repo, started.challengeToken, { cedula: JUAN, accessToken: token }, deps(otp, "ip-2"));
+    expect(missingCode.ok).toBe(false);
+    if (!missingCode.ok) expect(missingCode.fieldErrors?.codigoDactilar).toMatch(/^Formato:/);
+    expect(repo.sessions.size).toBe(0);
+
+    const done = await confirmGeneralCedula(repo, started.challengeToken, { cedula: JUAN, codigoDactilar: "v 1234-v1234", accessToken: token }, deps(otp, "ip-2"));
     expect(done).toMatchObject({ ok: true, destination: "form" });
     expect([...repo.sessions.values()][0]).toMatchObject({ entry_method: "token", access_token_id: tokenId, person_id: personId });
     expect(repo.tokens.get(tokenId)?.used_at).toBeNull();
     expect(repo.tokens.get(tokenId)?.revoked_at).toBeNull();
     expect((await repo.getPerson(personId))?.login_email).toBe(EMAIL);
+  });
+
+  it("un pasaporte no pide código dactilar y un formato inválido no entra", async () => {
+    const repo = new MemoryRepo();
+    const passport = "BH823158";
+    const email = "oscar.bolivar@example.com";
+    const personId = repo.addPerson("Oscar", "Bolivar", passport);
+    repo.outreachEmails.set(personId, email);
+    const token = randomToken();
+    repo.addToken(personId, sha256(token));
+    const otp = otpFor();
+
+    const started = await startGeneralEmailAccess(repo, { email, termsAccepted: true, accessToken: token }, deps(otp));
+    if (!started.ok) throw new Error(started.error);
+    await confirmGeneralEmailCode(repo, started.challengeToken, { code: DEMO_EMAIL_OTP_CODE }, deps(otp));
+
+    const bad = await confirmGeneralCedula(
+      repo,
+      started.challengeToken,
+      { cedula: passport, codigoDactilar: "V123", accessToken: token },
+      deps(otp),
+    );
+    expect(bad.ok).toBe(false);
+    if (!bad.ok) expect(bad.fieldErrors?.codigoDactilar).toMatch(/^Formato:/);
+    expect(repo.sessions.size).toBe(0);
+
+    const done = await confirmGeneralCedula(repo, started.challengeToken, { cedula: passport, accessToken: token }, deps(otp));
+    expect(done).toMatchObject({ ok: true, destination: "form" });
+    expect(repo.generalAuth.get(personId)?.fingerprint_code_hash ?? null).toBeNull();
+    expect(repo.auditLog.some((entry) => entry.action === "FINGERPRINT_CLAIMED")).toBe(false);
   });
 });

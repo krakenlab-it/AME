@@ -40,10 +40,14 @@ describe("código dactilar", () => {
   it("normaliza espacios, guiones y mayúsculas", () => {
     expect(normalizeFingerprintCode(" v1234-v1234 ")).toBe(CODE);
     expect(normalizeFingerprintCode("v 1234 v 1234")).toBe(CODE);
-    expect(generalIdentifySchema.safeParse({ cedula: JUAN, codigoDactilar: "v1234-v1234" }).success).toBe(true);
-    expect(generalIdentifySchema.safeParse({ cedula: JUAN, codigoDactilar: "" }).success).toBe(true);
-    expect(generalIdentifySchema.safeParse({ cedula: JUAN }).success).toBe(true);
-    expect(generalIdentifySchema.safeParse({ cedula: JUAN, codigoDactilar: "V123V1234" }).success).toBe(false);
+    const normalized = generalIdentifySchema.safeParse({ cedula: JUAN, codigoDactilar: "v1234-v1234" });
+    expect(normalized.success).toBe(true);
+    if (normalized.success) expect(normalized.data.codigoDactilar).toBe(CODE);
+    expect(generalIdentifySchema.safeParse({ cedula: JUAN, codigoDactilar: "" }).success).toBe(false);
+    expect(generalIdentifySchema.safeParse({ cedula: JUAN }).success).toBe(false);
+    const short = generalIdentifySchema.safeParse({ cedula: JUAN, codigoDactilar: "V123V1234" });
+    expect(short.success).toBe(false);
+    if (!short.success) expect(short.error.issues.some((issue) => issue.message.startsWith("Formato:"))).toBe(true);
   });
 
   it("no usa el enlace general para un pasaporte", () => {
@@ -220,13 +224,13 @@ describe("ingreso general", () => {
     expect(repo.auditLog.filter((event) => event.action === "FINGERPRINT_CLAIMED")).toHaveLength(2);
   });
 
-  it("deja pasar la cédula sola y guarda el código solo si lo escriben", async () => {
+  it("exige el código dactilar, guarda el primero y rechaza uno distinto", async () => {
     const repo = new MemoryRepo();
     const personId = repo.addPerson("Ana", "Gómez", JUAN);
-    const blank = await startGeneralAccess(repo, { cedula: JUAN, codigoDactilar: "" }, deps("opt-1"));
-    expect(blank).toMatchObject({ ok: true, phase: "enroll" });
+    const blank = await startGeneralAccess(repo, { cedula: JUAN, codigoDactilar: "  " }, deps("opt-1"));
+    expect(blank).toMatchObject({ ok: false, fieldErrors: { codigoDactilar: expect.stringContaining("Formato:") } });
     expect(repo.generalAuth.get(personId)?.fingerprint_code_hash ?? null).toBeNull();
-    expect(repo.auditLog.some((event) => event.action === "FINGERPRINT_CLAIMED")).toBe(false);
+    expect(repo.auditLog).toHaveLength(0);
 
     const withCode = new MemoryRepo();
     const claimedId = withCode.addPerson("Ana", "Gómez", JUAN);
@@ -248,27 +252,12 @@ describe("ingreso general", () => {
       challenge_expires_at: null,
       challenge_purpose: null,
     });
-    const missing = await startGeneralAccess(preloaded, { cedula: JUAN }, deps("opt-3"));
+    const missing = await startGeneralAccess(preloaded, { cedula: JUAN, codigoDactilar: "" }, deps("opt-3"));
     const wrong = await startGeneralAccess(preloaded, { cedula: JUAN, codigoDactilar: OTHER }, deps("opt-4"));
     const right = await startGeneralAccess(preloaded, { cedula: JUAN, codigoDactilar: CODE }, deps("opt-5"));
-    expect(missing).toMatchObject({ ok: false, error: GENERIC_GENERAL_ERROR });
+    expect(missing).toMatchObject({ ok: false, fieldErrors: { codigoDactilar: expect.stringContaining("Formato:") } });
     expect(wrong).toMatchObject({ ok: false, error: GENERIC_GENERAL_ERROR });
     expect(right).toMatchObject({ ok: true, phase: "enroll" });
-  });
-
-  it("exige el código dactilar cuando AME_REQUIRE_FINGERPRINT_CODE está activo", async () => {
-    process.env.AME_REQUIRE_FINGERPRINT_CODE = "true";
-    try {
-      const repo = new MemoryRepo();
-      repo.addPerson("Ana", "Gómez", JUAN);
-      const blocked = await startGeneralAccess(repo, { cedula: JUAN, codigoDactilar: "  " }, deps("flag"));
-      expect(blocked).toMatchObject({ ok: false, fieldErrors: { codigoDactilar: expect.any(String) } });
-      expect(repo.auditLog).toHaveLength(0);
-      const allowed = await startGeneralAccess(repo, { cedula: JUAN, codigoDactilar: CODE }, deps("flag-2"));
-      expect(allowed).toMatchObject({ ok: true, phase: "enroll" });
-    } finally {
-      delete process.env.AME_REQUIRE_FINGERPRINT_CODE;
-    }
   });
 
   it("abre la cuenta en lectura si la persona ya envió sus datos", async () => {

@@ -7,6 +7,7 @@ import { GENERIC_GENERAL_ERROR } from "@/lib/validation/constants";
 import { flattenIssues, generalCedulaStepSchema, generalEmailCodeSchema, generalEmailIdentifySchema, personalLinkDocumentStepSchema } from "@/lib/validation/schemas";
 import { sanitizeDeep } from "@/lib/validation/sanitize";
 import type { EmailOtpProvider } from "./email-otp";
+import { storedDocumentIsPassport } from "./passport-document";
 import { failFingerprint, isLocked, limitIp, needsCaptcha, RATE_LIMIT_ERROR, type GeneralDeps, type GeneralFailure } from "./general-link";
 import { canContinueForm } from "./insured-home";
 import { linkStateMessage, type LinkState } from "./respondent";
@@ -80,7 +81,7 @@ async function readPersonalLink(repo: RespondentRepo, raw: string | undefined): 
 
 /**
  * El correo elige a quién se le envía el código. No abre el formulario:
- * la cédula (y el dactilar, si lo escriben) se piden después de verificar el código.
+ * la cédula y el código dactilar se piden después de verificar el código.
  * Un correo que coincide con una ficha no se salta ese segundo paso.
  */
 async function resolveEmailTarget(
@@ -284,7 +285,7 @@ async function failCedula(repo: RespondentRepo, personId: string, deps: GeneralD
   return { ok: false, error: GENERIC_GENERAL_ERROR, requireCaptcha };
 }
 
-/** Primera vez: se guarda. Si ya había uno y no coincide, se rechaza. Vacío: se sigue. */
+/** Primera vez: se guarda. Si ya había uno y no coincide, se rechaza. Vacío solo en un pasaporte. */
 async function applyFingerprint(repo: RespondentRepo, personId: string, code: string, deps: GeneralDeps, requireCaptcha: boolean): Promise<GeneralFailure | null> {
   if (!code) return null;
   const claim = await repo.claimFingerprintCode(personId, keyedHash(code, "fingerprint_code"));
@@ -344,9 +345,10 @@ async function openVerifiedSession(
 }
 
 /**
- * Paso 3: cédula obligatoria y código dactilar opcional.
+ * Paso 3: cédula y código dactilar obligatorios.
  * Si el correo ya estaba en una ficha, la cédula tiene que ser la de esa ficha.
- * El dactilar, si viene y no había uno, se guarda. Si ya había uno y no coincide, se rechaza.
+ * El dactilar, si no había uno, se guarda. Si ya había uno y no coincide, se rechaza.
+ * Un enlace personal de pasaporte no pide el código: ese documento no lo trae.
  */
 export async function confirmGeneralCedula(
   repo: RespondentRepo,
@@ -370,8 +372,11 @@ export async function confirmGeneralCedula(
 
   const link = await readPersonalLink(repo, accessToken);
   if (!link.ok) return { ...link, challengeExpired: false };
+  const holder = await repo.getPerson(challenge.person_id);
+  if (!holder) return { ok: false, error: CHALLENGE_EXPIRED, challengeExpired: true };
   const allowPassport = Boolean(link.token && link.token.person_id === challenge.person_id);
-  const parsed = (allowPassport ? personalLinkDocumentStepSchema : generalCedulaStepSchema).safeParse({
+  const passportExempt = allowPassport && storedDocumentIsPassport(holder.national_id_encrypted);
+  const parsed = (allowPassport ? personalLinkDocumentStepSchema(!passportExempt) : generalCedulaStepSchema).safeParse({
     cedula: bag.cedula ?? "",
     codigoDactilar: bag.codigoDactilar ?? "",
   });
@@ -386,9 +391,6 @@ export async function confirmGeneralCedula(
     await repo.logSecurityEvent({ event_type: "GENERAL_RATE_LIMITED", ip_hash: deps.ipHash, detail: { scope: "cedula", hits: cedulaLimit.hits } });
     return { ok: false, error: RATE_LIMIT_ERROR };
   }
-
-  const holder = await repo.getPerson(challenge.person_id);
-  if (!holder) return { ok: false, error: CHALLENGE_EXPIRED, challengeExpired: true };
 
   let personId = holder.id;
   const onImported = Boolean(holder.national_id_hash) && !holder.self_registered_at;
