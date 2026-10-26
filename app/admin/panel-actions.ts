@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import { createHash } from "node:crypto";
 import { getRepo } from "@/lib/database";
 import { adminForAction } from "@/lib/server/admin-guard";
@@ -8,6 +9,8 @@ import { hasPlaceholder } from "@/lib/privacy/placeholders";
 import { ImportFileError, importPeople, parseImportFile, type ImportError, type ImportNote } from "@/lib/services/import";
 import { FingerprintImportError, importFingerprintCodes, type FingerprintImportReport } from "@/lib/services/fingerprint-import";
 import { resetPersonGeneralAuth } from "@/lib/services/general-link";
+import { deletePersonRecord, resetPersonToGuest } from "@/lib/services/person-lifecycle";
+import { createServiceRoleClient } from "@/lib/supabase/service";
 import { linkUnlinkedAccount } from "@/lib/services/account-link";
 import { issueLinks, linksToCsv, regenerateLink, revokeLinks } from "@/lib/services/links";
 import { isMemoryRepo } from "@/lib/database/memory-repo";
@@ -255,4 +258,52 @@ export async function resetGeneralAuthAction(_prev: ManualEditState, formData: F
   if (!cleared) return { error: "No encontramos a esa persona." };
   revalidatePath(`/admin/personas/${personId}`);
   return { ok: true };
+}
+
+async function removeRespondentAuthUser(authUserId: string | null): Promise<string | null> {
+  if (!authUserId) return null;
+  const supabase = createServiceRoleClient();
+  if (!supabase) return null;
+  const removed = await supabase.auth.admin.deleteUser(authUserId);
+  return removed.error ? "La ficha cambió, pero no se pudo borrar el usuario de acceso. Avise a soporte." : null;
+}
+
+function lifecycleInput(formData: FormData, word: "RESTABLECER" | "ELIMINAR") {
+  const personId = String(formData.get("personId") ?? "");
+  const confirm = String(formData.get("confirm") ?? "").trim().toUpperCase();
+  const reason = String(formData.get("reason") ?? "").trim();
+  if (!/^[0-9a-f-]{36}$/i.test(personId)) return { error: "Registro no válido." };
+  if (confirm !== word) return { error: `Escribe ${word} para confirmar.` };
+  if (reason.length < 3 || reason.length > 200) return { error: "Escribe el motivo, entre 3 y 200 caracteres." };
+  return { personId, reason };
+}
+
+export async function resetPersonToGuestAction(_prev: ManualEditState, formData: FormData): Promise<ManualEditState> {
+  const ctx = await adminForAction("people:reset-factors");
+  if (!ctx) return { error: DENIED };
+  const parsed = lifecycleInput(formData, "RESTABLECER");
+  if ("error" in parsed) return { error: parsed.error };
+  const totp = await reconfirmAdminTotp(String(formData.get("totp") ?? ""));
+  if (!totp.ok) return { error: totp.error };
+  const result = await resetPersonToGuest(getRepo(), { personId: parsed.personId, adminId: ctx.admin.id, adminRole: ctx.admin.role, reason: parsed.reason });
+  if (!result.ok) return { error: result.error };
+  const authError = await removeRespondentAuthUser(result.deleteAuthUserId);
+  revalidatePath(`/admin/personas/${parsed.personId}`);
+  if (authError) return { error: authError };
+  return { ok: true };
+}
+
+export async function deletePersonAction(_prev: ManualEditState, formData: FormData): Promise<ManualEditState> {
+  const ctx = await adminForAction("people:reset-factors");
+  if (!ctx) return { error: DENIED };
+  const parsed = lifecycleInput(formData, "ELIMINAR");
+  if ("error" in parsed) return { error: parsed.error };
+  const totp = await reconfirmAdminTotp(String(formData.get("totp") ?? ""));
+  if (!totp.ok) return { error: totp.error };
+  const result = await deletePersonRecord(getRepo(), { personId: parsed.personId, adminId: ctx.admin.id, adminRole: ctx.admin.role, reason: parsed.reason });
+  if (!result.ok) return { error: result.error };
+  const authError = await removeRespondentAuthUser(result.deleteAuthUserId);
+  revalidatePath("/admin");
+  if (authError) return { error: authError };
+  redirect("/admin");
 }

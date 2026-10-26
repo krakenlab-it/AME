@@ -37,7 +37,7 @@ import type { PersonStatus } from "@/lib/validation/constants";
 export class MemoryRepo implements Repo {
   /** Marca estructural: `instanceof` falla si Next carga el módulo en dos bundles distintos. */
   readonly isMemoryRepo = true as const;
-  people = new Map<string, PersonRecord & { review_reasons: string[]; retention_until: string | null }>();
+  people = new Map<string, PersonRecord & { review_reasons: string[]; retention_until: string | null; anonymized_at?: string | null }>();
   tokens = new Map<string, AccessTokenRecord>();
   sessions = new Map<string, RespondentSessionRecord>();
   submissions = new Map<string, SubmissionRecord>();
@@ -237,7 +237,7 @@ export class MemoryRepo implements Repo {
     const s = this.submissions.get(id);
     const now = new Date().toISOString();
     return {
-      person: { ...p, created_at: now, updated_at: now, reviewed_at: null, anonymized_at: null },
+      person: { ...p, created_at: now, updated_at: now, reviewed_at: null, anonymized_at: p.anonymized_at ?? null },
       contact: s ? { ...s.contact } : null,
       bank: s ? { bank_name: s.bank.bank_name, bank_other_name: s.bank.bank_other_name || null, account_type: s.bank.account_type, account_number_last4: s.bank.account_number_last4, account_holder_name: s.bank.account_holder_name, holder_is_titular: s.bank.holder_is_titular, ownership_declared: s.bank.ownership_declared, updated_at: now } : null,
       consents: s ? s.consents.map((c) => ({ consent_type: c.type, privacy_notice_version: s.notice_version, accepted_at: p.submitted_at, revoked_at: null, session_id: s.session_id, consent_text_hash: c.text_hash })) : [],
@@ -500,11 +500,11 @@ export class MemoryRepo implements Repo {
     for (const item of [...this.people.values()]) {
       if (item.id === keepPersonId || !item.self_registered_at || item.national_id_hash) continue;
       const auth = this.generalAuth.get(item.id);
-      if (item.login_email === email || (authUserId && auth?.auth_user_id === authUserId)) this.deletePerson(item.id);
+      if (item.login_email === email || (authUserId && auth?.auth_user_id === authUserId)) this.removeSelfAccount(item.id);
     }
   }
 
-  private deletePerson(id: string) {
+  private removeSelfAccount(id: string) {
     this.people.delete(id);
     this.generalAuth.delete(id);
     this.linkRequests.delete(id);
@@ -732,6 +732,70 @@ export class MemoryRepo implements Repo {
     for (const session of this.sessions.values()) {
       if (session.person_id === personId && !session.revoked_at) session.revoked_at = now;
     }
+    return true;
+  }
+
+  async getPersonLifecycle(personId: string) {
+    const person = this.people.get(personId);
+    if (!person) return null;
+    return {
+      id: person.id,
+      authUserId: this.generalAuth.get(personId)?.auth_user_id ?? null,
+      nationalIdEncrypted: person.national_id_encrypted,
+      nationalIdLast2: person.national_id_last2,
+      outreachEmail: this.outreachEmails.get(personId) ?? null,
+      submittedAt: person.submitted_at,
+      anonymizedAt: person.anonymized_at ?? null,
+    };
+  }
+
+  async resetPersonToGuest(personId: string, keepAuthUser: boolean): Promise<boolean> {
+    const person = this.people.get(personId);
+    if (!person) return false;
+    const keptAuth = keepAuthUser ? this.generalAuth.get(personId)?.auth_user_id ?? null : null;
+    const keptLogin = keepAuthUser ? person.login_email ?? null : null;
+    this.submissions.delete(personId);
+    this.profiles.delete(personId);
+    this.nameChanges.delete(personId);
+    this.linkRequests.delete(personId);
+    for (const [id, token] of this.tokens) if (token.person_id === personId) this.tokens.delete(id);
+    for (const [id, session] of this.sessions) if (session.person_id === personId) this.sessions.delete(id);
+    person.status = "PENDING";
+    person.confirmation_code = null;
+    person.submitted_at = null;
+    person.review_reasons = [];
+    person.retention_until = null;
+    person.login_email = keptLogin;
+    this.generalAuth.set(personId, {
+      fingerprint_code_hash: null,
+      fingerprint_claimed_at: null,
+      totp_secret_encrypted: null,
+      totp_enabled_at: null,
+      failed_attempts: 0,
+      locked_until: null,
+      challenge_hash: null,
+      challenge_expires_at: null,
+      challenge_purpose: null,
+      challenge_email: null,
+      challenge_sent_at: null,
+      challenge_auth_user_id: null,
+      auth_user_id: keptAuth,
+    });
+    return true;
+  }
+
+  async deletePerson(personId: string): Promise<boolean> {
+    if (!this.people.has(personId)) return false;
+    this.people.delete(personId);
+    this.submissions.delete(personId);
+    this.profiles.delete(personId);
+    this.nameChanges.delete(personId);
+    this.linkRequests.delete(personId);
+    this.outreachEmails.delete(personId);
+    this.outreachPhones.delete(personId);
+    this.generalAuth.delete(personId);
+    for (const [id, token] of this.tokens) if (token.person_id === personId) this.tokens.delete(id);
+    for (const [id, session] of this.sessions) if (session.person_id === personId) this.sessions.delete(id);
     return true;
   }
 }
