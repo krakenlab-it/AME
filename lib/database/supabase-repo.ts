@@ -98,6 +98,9 @@ export class SupabaseRepo implements Repo {
       action: e.action,
       changed_fields: e.changed_fields ?? [],
       metadata: e.metadata ?? {},
+      recorded_person_id: e.recorded_person_id ?? null,
+      masked_cedula: e.masked_cedula ?? null,
+      reason: e.reason ?? null,
     });
     if (res.error) console.error(`[db] audit_logs: ${res.error.message}`);
   }
@@ -1028,5 +1031,83 @@ export class SupabaseRepo implements Repo {
       "resetGeneralAuth.sessions",
     );
     return true;
+  }
+
+  async getPersonLifecycle(personId: string) {
+    const data = check(
+      await this.db
+        .from("people")
+        .select("id, auth_user_id, national_id_encrypted, national_id_last2, outreach_email, submitted_at, anonymized_at")
+        .eq("id", personId)
+        .maybeSingle(),
+      "getPersonLifecycle",
+    ) as {
+      id: string;
+      auth_user_id: string | null;
+      national_id_encrypted: string | null;
+      national_id_last2: string | null;
+      outreach_email: string | null;
+      submitted_at: string | null;
+      anonymized_at: string | null;
+    } | null;
+    if (!data) return null;
+    return {
+      id: data.id,
+      authUserId: data.auth_user_id,
+      nationalIdEncrypted: data.national_id_encrypted,
+      nationalIdLast2: data.national_id_last2,
+      outreachEmail: data.outreach_email,
+      submittedAt: data.submitted_at,
+      anonymizedAt: data.anonymized_at,
+    };
+  }
+
+  async resetPersonToGuest(personId: string, keepAuthUser: boolean): Promise<boolean> {
+    const current = await this.getPersonLifecycle(personId);
+    if (!current) return false;
+    for (const table of ["consents", "name_change_history", "bank_information", "contact_information", "respondent_sessions", "access_tokens"] as const) {
+      check(await this.db.from(table).delete().eq("person_id", personId), `resetPersonToGuest.${table}`);
+    }
+    const cleared = {
+      status: "PENDING",
+      confirmation_code: null,
+      submitted_at: null,
+      reviewed_at: null,
+      review_reasons: [],
+      retention_until: null,
+      fingerprint_code_hash: null,
+      fingerprint_claimed_at: null,
+      totp_secret_encrypted: null,
+      totp_enabled_at: null,
+      general_failed_attempts: 0,
+      general_locked_until: null,
+      general_challenge_hash: null,
+      general_challenge_expires_at: null,
+      general_challenge_purpose: null,
+      general_challenge_email: null,
+      general_challenge_sent_at: null,
+      general_challenge_auth_user_id: null,
+      link_request_national_id_hash: null,
+      link_request_national_id_encrypted: null,
+      link_request_national_id_last2: null,
+      link_requested_at: null,
+      login_email: keepAuthUser ? undefined : null,
+      login_email_verified_at: keepAuthUser ? undefined : null,
+      auth_user_id: keepAuthUser ? undefined : null,
+    };
+    const patch = Object.fromEntries(Object.entries(cleared).filter((entry) => entry[1] !== undefined));
+    const updated = check(
+      await this.db.from("people").update(patch).eq("id", personId).select("id"),
+      "resetPersonToGuest",
+    ) as { id: string }[] | null;
+    return Boolean(updated && updated.length > 0);
+  }
+
+  async deletePerson(personId: string): Promise<boolean> {
+    const updated = check(
+      await this.db.from("people").delete().eq("id", personId).select("id"),
+      "deletePerson",
+    ) as { id: string }[] | null;
+    return Boolean(updated && updated.length > 0);
   }
 }

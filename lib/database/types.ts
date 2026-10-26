@@ -15,7 +15,8 @@ export type AuditAction =
   | "TOTP_ENROLLED" | "TOTP_RESET"
   | "EMAIL_CODE_SENT" | "EMAIL_VERIFIED"
   | "ACCOUNT_CREATED" | "ACCOUNT_LINKED" | "ACCOUNT_LINK_REQUESTED"
-  | "IDENTITY_TERMS_ACCEPTED";
+  | "IDENTITY_TERMS_ACCEPTED"
+  | "PERSON_RESET_TO_GUEST" | "PERSON_DELETED";
 
 export interface AuditEvent {
   person_id?: string | null;
@@ -25,6 +26,10 @@ export interface AuditEvent {
   /** Solo NOMBRES de campos, nunca valores. */
   changed_fields?: string[];
   metadata?: Record<string, unknown>;
+  /** Copia sin clave foránea. Sobrevive aunque borrar la persona deje person_id en null. */
+  recorded_person_id?: string | null;
+  masked_cedula?: string | null;
+  reason?: string | null;
 }
 
 export interface PersonRecord {
@@ -460,10 +465,25 @@ export interface AdminRepo {
   purgeExpiredSessions(): Promise<void>;
   assignFingerprintHash(nationalIdHash: string, codeHash: string): Promise<FingerprintAssignResult>;
   resetGeneralAuth(personId: string): Promise<boolean>;
+  getPersonLifecycle(personId: string): Promise<PersonLifecycle | null>;
+  /** Borra respuestas, sesiones y enlaces. Conserva la fila, la cédula importada y el correo de precarga. */
+  resetPersonToGuest(personId: string, keepAuthUser: boolean): Promise<boolean>;
+  deletePerson(personId: string): Promise<boolean>;
   // cuentas propias (solo correo)
   listUnlinkedAccounts(limit: number): Promise<UnlinkedAccountRow[]>;
   /** Vincula la cuenta propia con la persona importada, en una sola transacción. */
   linkSelfAccount(accountId: string, personId: string, adminId: string): Promise<LinkAccountResult>;
+}
+
+/** Datos mínimos para restablecer o borrar sin llevar la ficha completa al navegador. */
+export interface PersonLifecycle {
+  id: string;
+  authUserId: string | null;
+  nationalIdEncrypted: string | null;
+  nationalIdLast2: string | null;
+  outreachEmail: string | null;
+  submittedAt: string | null;
+  anonymizedAt: string | null;
 }
 
 export type Repo = RespondentRepo & AdminRepo;
