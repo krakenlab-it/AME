@@ -52,14 +52,14 @@ test("el correo cargado no abre el formulario hasta la cédula y el código dact
   await expect(page).toHaveURL(/\/ingresar$/);
   await expect(page.getByLabel("Número de cédula")).toHaveAttribute("required", "");
   await expect(page.getByLabel(/Código dactilar/)).toHaveAttribute("required", "");
-  await expect(page.getByText("Formato: letra, 4 números, letra, 4 números (ej. V1234V1234)")).toBeVisible();
+  await expect(page.locator("#codigo-dactilar-hint")).toHaveText("Formato: letra, 4 números, letra, 4 números (ej. V1234V1234)");
   await page.getByText("¿Dónde encuentro mi código dactilar?").click();
   await expect(page.getByRole("img", { name: /cédula anterior/i })).toBeVisible();
   await expect(page.getByRole("img", { name: /cédula electrónica/i })).toBeVisible();
 
   await page.getByLabel("Número de cédula").fill(started!.cedula);
   await page.getByRole("button", { name: "Continuar" }).click();
-  await expect(page.getByText("Formato: letra, 4 números, letra, 4 números (ej. V1234V1234)")).toBeVisible();
+  await expect(page.locator("#codigo-dactilar-error")).toHaveText(/Formato: letra, 4 números, letra, 4 números/);
   await expect(page).toHaveURL(/\/ingresar$/);
   await page.getByLabel(/Código dactilar/).fill("v1234-v1234");
   await page.getByRole("button", { name: "Continuar" }).click();
