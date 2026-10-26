@@ -308,6 +308,9 @@ export function headerRowScore(cells: string[]): number {
 
 /** Busca la fila de títulos entre las primeras filas. Si ninguna tiene títulos conocidos, la primera con datos. */
 export const HEADER_SCAN_ROWS = 10;
+export const HEADER_NOT_RECOGNIZED =
+  "No reconocemos los títulos del archivo. Incluye columnas como Nombres, Apellidos, Cédula, Correo o Teléfono.";
+export const FILE_UNREADABLE = "No pudimos leer el archivo. Guárdalo como CSV en UTF-8 o como Excel .xlsx.";
 export function pickHeaderRow(rows: string[][]): number {
   let best = -1;
   let bestScore = 0;

@@ -6,8 +6,9 @@ import { createHash } from "node:crypto";
 import { getRepo } from "@/lib/database";
 import { adminForAction } from "@/lib/server/admin-guard";
 import { hasPlaceholder } from "@/lib/privacy/placeholders";
-import { ImportFileError, importPeople, parseImportFile, type ImportError, type ImportNote } from "@/lib/services/import";
-import { FingerprintImportError, importFingerprintCodes, type FingerprintImportReport } from "@/lib/services/fingerprint-import";
+import { importPeople, parseImportFile, type ImportError, type ImportNote } from "@/lib/services/import";
+import { classifyImportFailure } from "@/lib/services/import-failure";
+import { importFingerprintCodes, type FingerprintImportReport } from "@/lib/services/fingerprint-import";
 import { resetPersonGeneralAuth } from "@/lib/services/general-link";
 import { deletePersonRecord, resetPersonToGuest } from "@/lib/services/person-lifecycle";
 import { createServiceRoleClient } from "@/lib/supabase/service";
@@ -64,9 +65,7 @@ export async function importAction(_prev: ImportState, formData: FormData): Prom
     revalidatePath("/admin");
     return out;
   } catch (err) {
-    if (err instanceof ImportFileError) return { error: err.message };
-    console.error("[import] error inesperado");
-    return { error: "No se pudo procesar el archivo." };
+    return classifyImportFailure(err);
   }
 }
 
@@ -234,9 +233,7 @@ export async function importFingerprintAction(_prev: FingerprintImportState, for
     revalidatePath("/admin");
     return report;
   } catch (err) {
-    if (err instanceof FingerprintImportError) return { error: err.message };
-    console.error("[fingerprint-import] error inesperado");
-    return { error: "No se pudo procesar el archivo." };
+    return classifyImportFailure(err);
   }
 }
 

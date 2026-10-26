@@ -112,7 +112,12 @@ export interface SubmissionRecord {
 }
 
 export class RepoError extends Error {
-  constructor(public code: "ALREADY_SUBMITTED" | "SESSION_INVALID" | "TOKEN_INVALID" | "PERSON_NOT_FOUND" | "DUPLICATE_CODE" | "UNKNOWN", message?: string) {
+  constructor(
+    public code: "ALREADY_SUBMITTED" | "SESSION_INVALID" | "TOKEN_INVALID" | "PERSON_NOT_FOUND" | "DUPLICATE_CODE" | "UNKNOWN",
+    message?: string,
+    /** Código de Postgres, por ejemplo 23505. No es el mensaje, que puede traer datos. */
+    public pgCode?: string,
+  ) {
     super(message ?? code);
   }
 }
@@ -460,6 +465,9 @@ export interface AdminRepo {
   updateAdmin(id: string, patch: Partial<Pick<AdminUserRecord, "mfa_enabled" | "active" | "auth_user_id" | "full_name" | "role" | "must_change_password">> & { last_login_at?: string | null }): Promise<void>;
   // people
   statusCounts(): Promise<Record<PersonStatus, number>>;
+  /** Filas de la lista de correos que todavía no coinciden con login_email ni outreach_email. */
+  pendingEmailInvites(): Promise<number>;
+  existingPreloadedEmails(emails: string[]): Promise<Set<string>>;
   listPeople(q: { status?: PersonStatus; search?: string; nationalIdHash?: string; page: number; pageSize: number }): Promise<{ rows: PersonListRow[]; total: number }>;
   getPersonDetail(id: string): Promise<PersonDetail | null>;
   markReviewed(personId: string, adminId: string): Promise<void>;

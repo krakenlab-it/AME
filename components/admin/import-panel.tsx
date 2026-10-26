@@ -11,6 +11,7 @@ import {
   type FingerprintImportState,
   type ImportState,
 } from "@/app/admin/panel-actions";
+import { ImportBaseCopy } from "@/components/admin/import-base-copy";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
 import { Notice } from "@/components/ui/notice";
@@ -46,12 +47,7 @@ export function ImportPanel({ outreachSimulation = false }: { outreachSimulation
       >
         <div className="space-y-1">
           <h2 className="text-xl">1. Cargar base inicial</h2>
-          <p className="text-[15px] text-ink-muted">
-            Suba un archivo .csv o .xlsx (máximo 5 MB). En cada fila lo único obligatorio es el <strong>documento</strong>: cédula ecuatoriana de 10 dígitos, o pasaporte de 6 a 12 caracteres (1 a 3 letras y después números, por ejemplo BH823158).
-            La plantilla recomendada usa las columnas Nombres, Apellidos y Cédula; también aceptamos títulos equivalentes, como <code>first_names</code>, <code>last_names</code> y <code>national_id</code>.
-            Si faltan nombres, la fila se importa igual con el documento. Un correo opcional en el archivo queda guardado en la ficha.
-            ¿Necesita un modelo? Descargue la <a className="font-semibold text-marian underline underline-offset-2" href="/templates/initial_people.csv" download>plantilla de ejemplo</a>.
-          </p>
+          <ImportBaseCopy />
         </div>
         <Field id="import-file" label="Archivo de personas" required>
           <input id="import-file" name="file" type="file" accept=".csv,.xlsx" required className="block w-full rounded-xl border border-marian-line bg-white p-2 text-[15px] file:mr-4 file:min-h-[44px] file:cursor-pointer file:rounded-lg file:border-0 file:bg-marian-soft file:px-4 file:font-semibold file:text-marian hover:border-marian" />

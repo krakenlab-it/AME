@@ -42,9 +42,10 @@ function one<T>(value: unknown): T | null {
 
 function check<T>(res: { data: T; error: { message: string; code?: string } | null }, context: string): T {
   if (res.error) {
-    // Nunca se registran valores de la consulta, solo el contexto y el código.
-    console.error(`[db] ${context}: ${res.error.code ?? ""} ${res.error.message}`);
-    throw new RepoError("UNKNOWN", `Error de base de datos (${context})`);
+    const pgCode = res.error.code ?? "";
+    // El mensaje de Postgres puede incluir el correo. Solo se registra el contexto y el código.
+    console.error(`[db] ${context}: ${pgCode || "sin código"}`);
+    throw new RepoError("UNKNOWN", `Error de base de datos (${context})`, pgCode || undefined);
   }
   return res.data;
 }
@@ -278,6 +279,37 @@ export class SupabaseRepo implements Repo {
     const counts = Object.fromEntries(PERSON_STATUSES.map((s) => [s, 0])) as Record<PersonStatus, number>;
     for (const row of data ?? []) counts[row.status] = Number(row.total);
     return counts;
+  }
+
+  async pendingEmailInvites() {
+    const contacts = check(await this.db.from("ame_preloaded_contacts").select("email"), "pendingEmailInvites.contacts") as { email: string | null }[] | null;
+    const people = check(
+      await this.db.from("people").select("login_email, outreach_email").is("anonymized_at", null),
+      "pendingEmailInvites.people",
+    ) as { login_email: string | null; outreach_email: string | null }[] | null;
+    const linked = new Set<string>();
+    for (const person of people ?? []) {
+      const login = person.login_email?.trim().toLowerCase();
+      const outreach = person.outreach_email?.trim().toLowerCase();
+      if (login) linked.add(login);
+      if (outreach) linked.add(outreach);
+    }
+    return (contacts ?? []).filter((contact) => {
+      const email = contact.email?.trim().toLowerCase() ?? "";
+      if (!email) return true;
+      return !linked.has(email);
+    }).length;
+  }
+
+  async existingPreloadedEmails(emails: string[]) {
+    const wanted = [...new Set(emails.map((email) => email.trim().toLowerCase()).filter(Boolean))];
+    const found = new Set<string>();
+    for (let i = 0; i < wanted.length; i += 100) {
+      const chunk = wanted.slice(i, i + 100);
+      const data = check(await this.db.from("ame_preloaded_contacts").select("email").in("email", chunk), "existingPreloadedEmails") as { email: string | null }[] | null;
+      for (const row of data ?? []) if (row.email) found.add(row.email.trim().toLowerCase());
+    }
+    return found;
   }
 
   async listPeople(q: { status?: PersonStatus; search?: string; nationalIdHash?: string; page: number; pageSize: number }) {

@@ -1,4 +1,4 @@
-import { CheckCircle2, Clock, Hourglass, Play, Users, ClipboardCheck, Search, X, type LucideIcon } from "lucide-react";
+import { CheckCircle2, Clock, Hourglass, Mail, Play, Users, ClipboardCheck, Search, X, type LucideIcon } from "lucide-react";
 import Link from "next/link";
 import { LinkAccount } from "@/components/admin/link-account";
 import { StatusBadge } from "@/components/admin/status-badge";
@@ -21,6 +21,7 @@ export default async function AdminDashboard({ searchParams }: { searchParams: P
   const sp = await searchParams;
   const repo = getRepo();
   const counts = await repo.statusCounts();
+  const pendingEmailInvites = await repo.pendingEmailInvites();
   const invited = Object.values(counts).reduce((a, b) => a + b, 0);
 
   const cards: { label: string; value: number; status: PersonStatus | null; Icon: LucideIcon; tone: string }[] = [
@@ -113,6 +114,15 @@ export default async function AdminDashboard({ searchParams }: { searchParams: P
           );
         })}
       </Stagger>
+
+      <section aria-label="Invitados por correo (pendientes)" className="sheet flex max-w-md items-center gap-4 p-4">
+        <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-marian-soft text-marian"><Mail className="h-5 w-5" aria-hidden /></span>
+        <div>
+          <p className="text-sm font-medium text-ink-muted">Invitados por correo (pendientes)</p>
+          <AnimatedNumber value={pendingEmailInvites} className="mt-0.5 block font-serif text-3xl font-semibold text-marian" />
+          <p className="mt-1 text-sm text-ink-muted">Correos de la lista que todavía no están en una ficha. Un teléfono sin correo sigue contando.</p>
+        </div>
+      </section>
 
       {list && (
         <section className="space-y-4" aria-labelledby="personas">
