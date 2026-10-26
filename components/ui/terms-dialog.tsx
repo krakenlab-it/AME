@@ -2,6 +2,7 @@
 
 import { useEffect, useId, useRef } from "react";
 import { X } from "lucide-react";
+import { ResponsibleContact } from "@/components/portal/responsible-contact";
 import { TERMINOS_IDENTIFICACION_TEXTO, TERMINOS_IDENTIFICACION_TITULO } from "@/lib/content/terminos-identificacion";
 
 const FOCUSABLE = 'button, [href], input, textarea, select, [tabindex]:not([tabindex="-1"])';
@@ -75,6 +76,9 @@ export function TermsDialog({ open, onClose }: { open: boolean; onClose: () => v
         </div>
         <div className="overflow-y-auto px-5 py-4">
           <p className="whitespace-pre-wrap text-[15px] leading-relaxed text-ink">{TERMINOS_IDENTIFICACION_TEXTO}</p>
+          <div className="mt-6 border-t border-marian-line pt-4">
+            <ResponsibleContact heading />
+          </div>
         </div>
       </div>
     </div>

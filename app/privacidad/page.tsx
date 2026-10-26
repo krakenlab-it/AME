@@ -1,3 +1,4 @@
+import { ResponsibleContact } from "@/components/portal/responsible-contact";
 import { PortalShell, PortalUnavailable } from "@/components/portal/shell";
 import { getRepo } from "@/lib/database";
 import { getActivePrivacy } from "@/lib/privacy/active";
@@ -82,6 +83,8 @@ export default async function PrivacyPage() {
             contractuales aplicables, los datos se bloquean, eliminan o anonimizan, según corresponda.
           </p>
         </section>
+
+        <ResponsibleContact heading />
 
         <section id="contacto" className="space-y-4 scroll-mt-6">
           <h2 className="text-2xl">Contacto</h2>
