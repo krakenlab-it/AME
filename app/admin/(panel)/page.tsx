@@ -12,7 +12,7 @@ import { PERSON_STATUSES, STATUS_LABELS, type PersonStatus } from "@/lib/validat
 import { maskCedulaTail, maskEmail } from "@/lib/security/masking";
 import { can } from "@/lib/security/rbac";
 import { requireAdmin } from "@/lib/server/admin-guard";
-import { autoLinkMatchLabel, guayaquilDayStart } from "@/lib/admin/auto-links";
+import { autoLinkMatchLabel } from "@/lib/admin/auto-links";
 import { formatDateTime } from "@/lib/utils";
 
 const PAGE_SIZE = 25;
@@ -23,7 +23,7 @@ export default async function AdminDashboard({ searchParams }: { searchParams: P
   const repo = getRepo();
   const counts = await repo.statusCounts();
   const pendingEmailInvites = await repo.pendingEmailInvites();
-  const autoLinks = await repo.listAutoLinksSince(guayaquilDayStart());
+  const autoLinks = await repo.listAutoLinksSince("1970-01-01T00:00:00.000Z");
   const invited = Object.values(counts).reduce((a, b) => a + b, 0);
 
   const cards: { label: string; value: number; status: PersonStatus | null; Icon: LucideIcon; tone: string }[] = [
@@ -126,13 +126,13 @@ export default async function AdminDashboard({ searchParams }: { searchParams: P
         </div>
       </section>
 
-      <section aria-label="Vinculados automáticamente hoy" className="sheet max-w-3xl space-y-3 p-4">
+      <section aria-label="Vinculados automáticamente" className="sheet max-w-3xl space-y-3 p-4">
         <div className="flex items-center gap-4">
           <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-marian-soft text-marian"><Users className="h-5 w-5" aria-hidden /></span>
           <div>
-            <p className="text-sm font-medium text-ink-muted">Vinculados automáticamente hoy</p>
+            <p className="text-sm font-medium text-ink-muted">Vinculados automáticamente</p>
             <AnimatedNumber value={autoLinks.length} className="mt-0.5 block font-serif text-3xl font-semibold text-marian" />
-            <p className="mt-1 text-sm text-ink-muted">Si una persona no es quien dice, abre su ficha y restablécela.</p>
+            <p className="mt-1 text-sm text-ink-muted">Los más recientes, no solo los de hoy. Si una persona no es quien dice, abre su ficha y restablécela.</p>
           </div>
         </div>
         {autoLinks.length > 0 && (

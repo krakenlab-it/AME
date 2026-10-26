@@ -9,8 +9,10 @@ export const settings = {
   captchaAfterAttempts: 3,
   generalLockThreshold: 5,
   generalLockMinutes: 30,
-  /** 10 por IP en producción. La suite de navegador sale de una sola IP y recorre el ingreso varias veces. */
-  generalIdentifyLimitPerIp: process.env.PORTAL_E2E === "true" && !process.env.VERCEL ? 100 : 10,
+  /** 30 por IP en producción para que una oficina no se bloquee. La suite de navegador sale de una sola IP. */
+  generalIdentifyLimitPerIp: process.env.PORTAL_E2E === "true" && !process.env.VERCEL ? 100 : 30,
+  /** Tope por correo, además del de la IP, para que una sola dirección no dispare el ingreso. */
+  generalIdentifyLimitPerEmail: process.env.PORTAL_E2E === "true" && !process.env.VERCEL ? 100 : 10,
   generalIdentifyLimitPerCedula: 8,
   generalIdentifyWindowSeconds: 15 * 60,
   generalChallengeMinutes: 10,

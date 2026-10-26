@@ -28,6 +28,7 @@ test("la revisión envía la ficha vinculada y no regresa a contacto sin decir p
   await expect(page).toHaveURL(/\/verificar\/formulario$/);
 
   await page.getByRole("button", { name: "Sí, es correcta" }).click();
+  await expect(page).toHaveURL(/paso=3/);
   await page.getByLabel("Correo electrónico alternativo").fill("secundario@hotmail.com");
   await page.getByLabel("Teléfono celular").fill("0991234567");
   await page.getByLabel("Dirección domiciliaria").fill("Leonardo Vigagomez, S/N, Daniel Brito");
@@ -53,4 +54,11 @@ test("la revisión envía la ficha vinculada y no regresa a contacto sin decir p
   await page.getByRole("button", { name: "Enviar mi información" }).click();
   await expect(page).toHaveURL(/\/confirmacion$/, { timeout: 20_000 });
   await expect(page.getByText("No se pudo enviar")).toHaveCount(0);
+});
+
+test("sin sesión, el formulario explica /ingresar y no se rompe con un paso inválido", async ({ page }) => {
+  await page.goto("/verificar/formulario?paso=99");
+  await expect(page.getByRole("heading", { name: "Tu sesión no está activa" })).toBeVisible();
+  await expect(page.getByText("/ingresar")).toBeVisible();
+  await expect(page.getByText("enlace personal")).toBeVisible();
 });

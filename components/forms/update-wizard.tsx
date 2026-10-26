@@ -13,7 +13,7 @@ import { ErrorSummary, type SummaryItem } from "@/components/ui/error-summary";
 import { describedBy, Field, RequiredLegend } from "@/components/ui/field";
 import { Notice } from "@/components/ui/notice";
 import { ACCOUNT_TYPES, BANKS, BANKS_REQUIRING_NAME, EC_PROVINCES, PHONE_COUNTRY_CODES, type BankOption } from "@/lib/validation/constants";
-import { describeFieldErrors, flattenFormErrors, stepForField, type FieldErrorItem } from "@/lib/services/submit-errors";
+import { describeFieldErrors, flattenFormErrors, holderNamePrefill, registeredNamesNeedEdit, sessionFollowUp, stepForField, wizardStepFromQuery, type FieldErrorItem } from "@/lib/services/submit-errors";
 import { submissionSchema, type Submission, type SubmissionInput } from "@/lib/validation/schemas";
 import { maskAccount, maskCedulaTail } from "@/lib/security/masking";
 import { cn } from "@/lib/utils";
@@ -86,7 +86,7 @@ function getError(errors: unknown, path: string): string | undefined {
   return typeof msg === "string" ? msg : undefined;
 }
 
-export function UpdateWizard({ registered, privacy, supportContact }: WizardProps) {
+export function UpdateWizard({ registered, privacy, supportContact, entryMethod }: WizardProps & { entryMethod?: "token" | "general" }) {
   const router = useRouter();
   const [step, setStep] = useState(2);
   const [serverError, setServerError] = useState<string | null>(null);
@@ -108,7 +108,7 @@ export function UpdateWizard({ registered, privacy, supportContact }: WizardProp
       },
       bank: {
         bankName: "" as BankOption, bankOtherName: "", accountType: "" as (typeof ACCOUNT_TYPES)[number],
-        accountNumber: "", accountNumberConfirm: "", accountHolderName: `${registered.firstNames} ${registered.lastNames}`,
+        accountNumber: "", accountNumberConfirm: "", accountHolderName: holderNamePrefill(registered.firstNames, registered.lastNames),
         ownershipDeclared: false,
       },
       consents: { privacyAccepted: false, sharingAccepted: false, accuracyDeclared: false },
@@ -120,7 +120,8 @@ export function UpdateWizard({ registered, privacy, supportContact }: WizardProp
   const err = (p: Path) => getError(errors, p) ?? serverIssues.find((item) => item.id === p)?.message;
 
   const namesConfirmed = watch("names.namesConfirmed");
-  const [namesDecision, setNamesDecision] = useState<"pending" | "confirmed" | "editing">("pending");
+  const namesBlocked = registeredNamesNeedEdit(registered.firstNames, registered.lastNames);
+  const [namesDecision, setNamesDecision] = useState<"pending" | "confirmed" | "editing">(namesBlocked ? "editing" : "pending");
   const country = watch("contact.country");
   const bankName = watch("bank.bankName");
 
@@ -129,6 +130,32 @@ export function UpdateWizard({ registered, privacy, supportContact }: WizardProp
     const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     window.scrollTo({ top: 0, behavior: reduce ? "auto" : "smooth" });
   }, [step]);
+
+  useEffect(() => {
+    setStep(wizardStepFromQuery(new URLSearchParams(window.location.search).get("paso")));
+    const onPop = () => setStep(wizardStepFromQuery(new URLSearchParams(window.location.search).get("paso")));
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);
+
+  useEffect(() => {
+    if (step === 2 && !formState.isDirty) return;
+    const warn = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [formState.isDirty, step]);
+
+  function moveStep(next: number) {
+    const safe = wizardStepFromQuery(String(next));
+    setStep(safe);
+    const url = new URL(window.location.href);
+    if (url.searchParams.get("paso") === String(safe)) return;
+    url.searchParams.set("paso", String(safe));
+    window.history.pushState({ paso: safe }, "", url);
+  }
 
   useEffect(() => {
     if (!focusPath || stepForField(focusPath) !== step) return;
@@ -152,14 +179,14 @@ export function UpdateWizard({ registered, privacy, supportContact }: WizardProp
     const first = items[0];
     if (!first) return;
     setFocusPath(first.id);
-    setStep(first.step);
+    moveStep(first.step);
   }
 
   async function next() {
     const ok = await trigger(STEP_FIELDS[step] ?? [], { shouldFocus: true });
     if (!ok) return;
     setServerIssues((current) => current.filter((item) => item.step !== step));
-    setStep((s) => Math.min(s + 1, 6));
+    moveStep(Math.min(step + 1, 6));
   }
 
   const summaryItems: SummaryItem[] = (STEP_FIELDS[step] ?? []).flatMap((p) => {
@@ -186,11 +213,18 @@ export function UpdateWizard({ registered, privacy, supportContact }: WizardProp
   }
 
   function confirmNames() {
+    if (registeredNamesNeedEdit(registered.firstNames, registered.lastNames)) {
+      setNamesDecision("editing");
+      setValue("names.namesConfirmed", false);
+      setError("names.firstNames", { type: "server", message: "Corrige el nombre tal como está en la cédula." });
+      setError("names.lastNames", { type: "server", message: "Corrige el apellido tal como está en la cédula." });
+      return;
+    }
     setValue("names.namesConfirmed", true);
     setValue("names.firstNames", registered.firstNames);
     setValue("names.lastNames", registered.lastNames);
     setNamesDecision("confirmed");
-    setStep(3);
+    moveStep(3);
   }
 
   function editNames() {
@@ -232,7 +266,7 @@ export function UpdateWizard({ registered, privacy, supportContact }: WizardProp
       <div className="sheet mx-auto max-w-xl space-y-4 p-8">
         <h1 className="text-2xl">Tu sesión terminó</h1>
         <Notice tone="warning">{serverError}</Notice>
-        <p className="text-ink-muted">Para continuar, abre otra vez el enlace personal que recibiste. Si necesitas ayuda, escribe a {supportContact}.</p>
+        <p className="text-ink-muted">{sessionFollowUp(entryMethod)} Si necesitas ayuda, escribe a {supportContact}.</p>
       </div>
     );
   }
@@ -252,7 +286,7 @@ export function UpdateWizard({ registered, privacy, supportContact }: WizardProp
                   <button
                     type="button"
                     className="text-left font-medium underline underline-offset-4"
-                    onClick={() => { setFocusPath(item.id); setStep(item.step); }}
+                    onClick={() => { setFocusPath(item.id); moveStep(item.step); }}
                   >
                     {item.label}: {item.message}
                   </button>
@@ -276,6 +310,7 @@ export function UpdateWizard({ registered, privacy, supportContact }: WizardProp
           <>
             <header className="space-y-2">
               <h1 id="step-title" ref={headingRef} tabIndex={-1} className="text-[28px]">Datos que tenemos registrados</h1>
+              <p id="names.namesConfirmed" className="sr-only">Nombre registrado</p>
               <p className="text-ink-muted">Revisa que tu nombre esté escrito como aparece en tu cédula.</p>
             </header>
             <dl className="divide-y divide-marian-line/70 rounded-xl border border-marian-line/70">
@@ -330,7 +365,7 @@ export function UpdateWizard({ registered, privacy, supportContact }: WizardProp
             <ErrorSummary items={summaryItems} onSelect={focusField} />
             <RequiredLegend />
             <div className="grid gap-5">
-              <Field id="contact.primaryEmail" label="Correo electrónico principal" hint={registered.email ? "Es el correo con el que ingresaste." : undefined} required error={err("contact.primaryEmail")}>
+              <Field id="contact.primaryEmail" label="Correo electrónico principal" hint={registered.email ? "Este correo es el de tu ingreso. Si quieres otro, escríbelo en el correo alternativo." : undefined} required error={err("contact.primaryEmail")}>
                 <input {...input("contact.primaryEmail")} type="email" inputMode="email" autoComplete="email" {...register("contact.primaryEmail")} readOnly={Boolean(registered.email)} aria-readonly={registered.email ? true : undefined} />
               </Field>
               <Field id="contact.secondaryEmail" label="Correo electrónico alternativo" error={err("contact.secondaryEmail")}>
@@ -378,7 +413,7 @@ export function UpdateWizard({ registered, privacy, supportContact }: WizardProp
                 </Field>
               </div>
             </div>
-            <StepNav onBack={() => setStep(2)} onNext={next} />
+            <StepNav onBack={() => moveStep(2)} onNext={next} />
           </>
         )}
 
@@ -407,7 +442,7 @@ export function UpdateWizard({ registered, privacy, supportContact }: WizardProp
                   <input {...input("bank.bankOtherName")} autoComplete="off" {...register("bank.bankOtherName")} />
                 </Field>
               )}
-              <fieldset className="space-y-2 text-center">
+              <fieldset id="bank.accountType" className="space-y-2 text-center">
                 <legend className="text-[15px] font-semibold">Tipo de cuenta <span className="text-alert" aria-hidden>*</span><span className="sr-only"> (obligatorio)</span></legend>
                 <div className="grid grid-cols-2 gap-3">
                   {ACCOUNT_TYPES.map((t) => (
@@ -430,7 +465,7 @@ export function UpdateWizard({ registered, privacy, supportContact }: WizardProp
               </Field>
               <Checkbox id="bank.ownershipDeclared" centerLabel error={err("bank.ownershipDeclared")} label={privacy.consentTexts.BANK_ACCOUNT_AUTHORIZATION} registration={register("bank.ownershipDeclared")} />
             </div>
-            <StepNav onBack={() => setStep(3)} onNext={next} />
+            <StepNav onBack={() => moveStep(3)} onNext={next} />
           </>
         )}
 
@@ -469,7 +504,7 @@ export function UpdateWizard({ registered, privacy, supportContact }: WizardProp
                 <span className="sr-only"> (se abre en una pestaña nueva)</span>
               </a>
             </p>
-            <StepNav onBack={() => setStep(4)} onNext={next} />
+            <StepNav onBack={() => moveStep(4)} onNext={next} />
           </>
         )}
 
@@ -480,24 +515,24 @@ export function UpdateWizard({ registered, privacy, supportContact }: WizardProp
               <h1 id="step-title" ref={headingRef} tabIndex={-1} className="text-[28px]">Revisa tu información</h1>
               <p className="text-ink-muted">Confirma que todo esté correcto. Puedes editar cualquier sección antes de enviar.</p>
             </header>
-            <ReviewCard icon={UserRound} title="Datos personales" onEdit={() => setStep(2)}>
+            <ReviewCard icon={UserRound} title="Datos personales" onEdit={() => moveStep(2)}>
               <Row k="Nombres" v={namesConfirmed ? registered.firstNames : v.names.firstNames} />
               <Row k="Apellidos" v={namesConfirmed ? registered.lastNames : v.names.lastNames} />
               <Row k="Cédula" v={maskCedulaTail(registered.cedulaLast2)} />
             </ReviewCard>
-            <ReviewCard icon={Mail} title="Contacto" onEdit={() => setStep(3)}>
+            <ReviewCard icon={Mail} title="Contacto" onEdit={() => moveStep(3)}>
               <Row k="Correo" v={v.contact.primaryEmail} />
               {v.contact.secondaryEmail && <Row k="Correo alternativo" v={v.contact.secondaryEmail} />}
               <Row k="Teléfono" v={`${v.contact.phoneCountryCode} ${v.contact.phoneNumber}`} />
               <Row k="Dirección" v={[v.contact.addressLine1, v.contact.addressLine2, v.contact.city, v.contact.province, v.contact.country].filter(Boolean).join(", ")} />
             </ReviewCard>
-            <ReviewCard icon={Building2} title="Información bancaria" onEdit={() => setStep(4)}>
+            <ReviewCard icon={Building2} title="Información bancaria" onEdit={() => moveStep(4)}>
               <Row k="Banco" v={BANKS_REQUIRING_NAME.includes(v.bank.bankName) ? `${v.bank.bankName}: ${v.bank.bankOtherName}` : v.bank.bankName} />
               <Row k="Tipo de cuenta" v={v.bank.accountType} />
               <Row k="Cuenta" v={maskAccount(v.bank.accountNumber.slice(-4))} />
               <Row k="Titular" v={v.bank.accountHolderName} />
             </ReviewCard>
-            <ReviewCard icon={ShieldCheck} title="Autorizaciones" onEdit={() => setStep(5)}>
+            <ReviewCard icon={ShieldCheck} title="Autorizaciones" onEdit={() => moveStep(5)}>
               <div className="sm:col-span-2">
                 <ul className="space-y-1.5 text-[15px]">
                   {[
@@ -515,7 +550,7 @@ export function UpdateWizard({ registered, privacy, supportContact }: WizardProp
               Después de enviar no podrás cambiar estos datos con este enlace. Si algo está mal, usa “Editar” en la sección correspondiente.
             </Notice>
             <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-between">
-              <Button type="button" variant="ghost" onClick={() => setStep(5)}>Volver</Button>
+              <Button type="button" variant="ghost" onClick={() => moveStep(5)}>Volver</Button>
               <Button type="submit" loading={formState.isSubmitting}>
                 {formState.isSubmitting ? "Enviando…" : "Enviar mi información"}
               </Button>

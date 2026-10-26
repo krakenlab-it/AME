@@ -6,6 +6,7 @@ import { decrypt, keyedHash } from "@/lib/encryption/crypto";
 import { totpCode } from "@/lib/security/totp";
 import { can } from "@/lib/security/rbac";
 import { confirmGeneralTotp, resetPersonGeneralAuth, startGeneralAccess, totpAccountLabel, type GeneralDeps } from "@/lib/services/general-link";
+import { settings } from "@/lib/services/settings";
 import { importFingerprintCodes } from "@/lib/services/fingerprint-import";
 import { identify, submitResponse } from "@/lib/services/respondent";
 import { sha256 } from "@/lib/encryption/crypto";
@@ -146,7 +147,7 @@ describe("ingreso general", () => {
   it("limita por IP y por cédula", async () => {
     const repo = new MemoryRepo();
     repo.addPerson("Ana", "Gómez", JUAN);
-    for (let i = 0; i < 10; i++) {
+    for (let i = 0; i < settings.generalIdentifyLimitPerIp; i++) {
       expect((await startGeneralAccess(repo, { cedula: makeCedula(`09000000${i}`), codigoDactilar: CODE }, deps("same-ip"))).ok).toBe(false);
     }
     const blockedIp = await startGeneralAccess(repo, { cedula: JUAN, codigoDactilar: CODE }, deps("same-ip"));

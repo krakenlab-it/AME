@@ -8,6 +8,7 @@ import { getRepo } from "@/lib/database";
 import { getActivePrivacy } from "@/lib/privacy/active";
 import { canContinueForm } from "@/lib/services/insured-home";
 import { registeredView } from "@/lib/services/respondent";
+import { sessionFollowUp } from "@/lib/services/submit-errors";
 import { currentRespondent } from "@/lib/server/respondent-session";
 
 const UpdateWizard = dynamic(() => import("@/components/forms/update-wizard").then((m) => m.UpdateWizard), {
@@ -34,7 +35,7 @@ export default async function FormPage() {
         <div className="mx-auto max-w-xl space-y-4 px-5 py-16">
           <h1 className="text-3xl">Tu sesión no está activa</h1>
           <Notice tone="warning">
-            Por seguridad, la sesión se cierra después de 30 minutos o al terminar el proceso. Vuelve a entrar con el mismo enlace que usaste.
+            Por seguridad, la sesión se cierra después de 30 minutos o al terminar el proceso. {sessionFollowUp(undefined)}
           </Notice>
           <p className="text-ink-muted">Si el enlace ya no funciona, escribe a {config.supportContact}.</p>
         </div>
@@ -47,6 +48,7 @@ export default async function FormPage() {
         </div>
         <UpdateWizard
           registered={registeredView(ctx.person)}
+          entryMethod={ctx.session.entry_method}
           supportContact={config.supportContact}
           privacy={{
             version: privacy.version,
