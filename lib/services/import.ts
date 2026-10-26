@@ -32,6 +32,7 @@ export interface RawImportRow {
   outreach_email?: string;
   /** Celular en E.164 si el archivo trae una columna de teléfono. Nunca se usa como cédula. */
   outreach_phone?: string;
+  comunidad?: string;
 }
 
 export interface ImportError {
@@ -49,6 +50,7 @@ export interface ImportNote {
 
 export interface ValidatedImport {
   valid: RawImportRow[];
+  contacts: RawImportRow[];
   errors: ImportError[];
   notes: ImportNote[];
   total: number;
@@ -57,28 +59,79 @@ export interface ValidatedImport {
 export async function parseImportFile(bytes: ArrayBuffer, filename: string): Promise<RawImportRow[]> {
   if (bytes.byteLength > IMPORT_MAX_BYTES) throw new ImportFileError("El archivo supera 5 MB.");
   const lower = filename.toLowerCase();
-  let grid: GridRow[];
+  let sheets: GridRow[][];
   if (lower.endsWith(".csv")) {
-    grid = parseCsvGrid(bytes);
+    sheets = [parseCsvGrid(bytes)];
   } else if (lower.endsWith(".xlsx")) {
-    grid = await parseXlsxGrid(bytes);
+    sheets = await parseXlsxGrid(bytes);
   } else {
     throw new ImportFileError("Formato no soportado. Usa un archivo .csv o .xlsx.");
   }
-  const table = buildTable(grid);
-  if (table.rows.length > IMPORT_MAX_ROWS) throw new ImportFileError(`El archivo supera el máximo de ${IMPORT_MAX_ROWS} registros.`);
-  const rows = table.rows.map((entry) => {
-    const { outreach_phone: phone, ...rest } = interpretImportCells(entry.cells);
-    const row: RawImportRow = { row: entry.row, ...rest };
-    if (phone) row.outreach_phone = phone;
-    return row;
-  });
-  if (rows.length > 0 && rows.every((row) => !row.national_id)) {
-    const phoneHeaders = table.headers.filter((_, index) => table.roles[index] === "phone");
-    if (phoneHeaders.length > 0) throw new ImportFileError(noIdColumnMessage(phoneHeaders));
+  const tables = sheets.map(buildTable).filter((table) => table.rows.length > 0);
+  const rowCount = tables.reduce((sum, table) => sum + table.rows.length, 0);
+  if (rowCount > IMPORT_MAX_ROWS) throw new ImportFileError(`El archivo supera el máximo de ${IMPORT_MAX_ROWS} registros.`);
+  const rows = tables.flatMap((table) => table.rows.map((entry) => rowFromCells(entry.row, entry.cells)));
+  const usable = dedupeImportRows(rows);
+  if (usable.length > 0 && usable.every((row) => !row.national_id && !row.outreach_email && !row.outreach_phone)) {
     throw new ImportFileError(TEMPLATE_HINT);
   }
-  return rows;
+  if (usable.length === 0) throw new ImportFileError(TEMPLATE_HINT);
+  return usable;
+}
+
+function rowFromCells(row: number, cells: ImportCell[]): RawImportRow {
+  const interpreted = interpretImportCells(cells);
+  const entry: RawImportRow = {
+    row,
+    first_names: interpreted.first_names,
+    last_names: interpreted.last_names,
+    national_id: interpreted.national_id,
+    outreach_email: interpreted.outreach_email.trim().toLowerCase(),
+  };
+  if (interpreted.outreach_phone) entry.outreach_phone = interpreted.outreach_phone;
+  if (interpreted.comunidad) entry.comunidad = interpreted.comunidad;
+  return entry;
+}
+
+function contactName(row: RawImportRow): string {
+  return `${row.first_names} ${row.last_names}`.trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+/**
+ * Primero el correo: un correo repetido es la misma persona.
+ * Un teléfono repetido no borra una fila posterior que sí trae correo.
+ * Si el teléfono coincide y los nombres son distintos, se guardan los dos contactos.
+ * Si el teléfono y el nombre coinciden, se queda uno solo y se le copia el correo si el primero no lo tenía.
+ */
+export function dedupeImportRows(rows: RawImportRow[]): RawImportRow[] {
+  const people: RawImportRow[] = [];
+  const contacts: RawImportRow[] = [];
+  const byEmail = new Set<string>();
+  const byPhone = new Map<string, number[]>();
+  for (const row of rows) {
+    if (row.national_id) {
+      people.push(row);
+      continue;
+    }
+    const email = (row.outreach_email ?? "").trim().toLowerCase();
+    const phone = row.outreach_phone ?? "";
+    if (!email && !phone) continue;
+    if (email && byEmail.has(email)) continue;
+    const name = contactName(row);
+    const samePhone = (phone ? byPhone.get(phone) ?? [] : []).map((index) => contacts[index]!).find((existing) => contactName(existing) === name);
+    if (samePhone) {
+      if (email && !(samePhone.outreach_email ?? "").trim()) {
+        samePhone.outreach_email = email;
+        byEmail.add(email);
+      }
+      continue;
+    }
+    const index = contacts.length;
+    contacts.push({ ...row, outreach_email: email });
+    if (email) byEmail.add(email);
+    if (phone) byPhone.set(phone, [...(byPhone.get(phone) ?? []), index]);
+  }
+  return [...people, ...contacts];
 }
 
 /** Error claro cuando el archivo trae teléfonos pero ninguna cédula ni pasaporte. */
@@ -117,7 +170,7 @@ function buildTable(grid: GridRow[]): ImportTable {
   const roles = classifyImportColumns(headers, columns);
   // Una columna sin título ni contenido útil se ignora. Una sin título pero con datos sí cuenta
   // (por ejemplo, teléfonos o nombres pegados al lado de la tabla).
-  const used = headers.map((header, column) => Boolean(header) || columns[column]!.some((value) => value.trim()));
+  const used = roles.map((role) => role !== "ignore");
   const rows = data.map((entry) => ({
     row: entry.row,
     cells: headers.flatMap((header, column) => (used[column] ? [{ header, value: entry.values[column] ?? "", role: roles[column] }] : [])),
@@ -133,21 +186,23 @@ function parseCsvGrid(bytes: ArrayBuffer): GridRow[] {
     .filter((entry) => entry.values.some((value) => value.trim()));
 }
 
-async function parseXlsxGrid(bytes: ArrayBuffer): Promise<GridRow[]> {
+/** Lee cada hoja. La fila de títulos puede no ser la primera: pickHeaderRow recorre las primeras filas de cada hoja. */
+export async function parseXlsxGrid(bytes: ArrayBuffer): Promise<GridRow[][]> {
   const wb = new ExcelJS.Workbook();
   await wb.xlsx.load(bytes);
-  const ws = wb.worksheets[0];
-  if (!ws) throw new ImportFileError("El archivo no tiene hojas.");
-  const grid: GridRow[] = [];
-  ws.eachRow({ includeEmpty: false }, (row, rowNumber) => {
-    const values: string[] = [];
-    row.eachCell({ includeEmpty: true }, (cell, col) => {
-      values[col - 1] = excelCellString(cell);
+  if (wb.worksheets.length === 0) throw new ImportFileError("El archivo no tiene hojas.");
+  return wb.worksheets.map((ws) => {
+    const grid: GridRow[] = [];
+    ws.eachRow({ includeEmpty: false }, (row, rowNumber) => {
+      const values: string[] = [];
+      row.eachCell({ includeEmpty: true }, (cell, col) => {
+        values[col - 1] = excelCellString(cell);
+      });
+      for (let i = 0; i < values.length; i += 1) values[i] = values[i] ?? "";
+      if (values.some((value) => value.trim())) grid.push({ row: rowNumber, values });
     });
-    for (let i = 0; i < values.length; i += 1) values[i] = values[i] ?? "";
-    if (values.some((value) => value.trim())) grid.push({ row: rowNumber, values });
+    return grid;
   });
-  return grid;
 }
 
 /** Si la cédula está guardada como texto, conserva el cero inicial. Un número de Excel ya lo perdió: se escribe en dígitos, sin notación científica. */
@@ -187,22 +242,43 @@ function duplicateDocumentLabel(kind: "cedula" | "foreign"): string {
 }
 
 /** Valida formato, cédula y duplicados dentro del archivo. Nada se descarta en silencio. */
+function asContact(raw: RawImportRow, first: string, last: string): RawImportRow {
+  const entry: RawImportRow = {
+    row: raw.row,
+    first_names: first || "Sin nombre",
+    last_names: last || "Registrado",
+    national_id: "",
+    outreach_email: cleanText(raw.outreach_email ?? "").toLowerCase(),
+  };
+  if (raw.outreach_phone) entry.outreach_phone = raw.outreach_phone;
+  if (raw.comunidad) entry.comunidad = raw.comunidad;
+  return entry;
+}
+
 export function validateImportRows(rows: RawImportRow[]): ValidatedImport {
   const valid: RawImportRow[] = [];
+  const contacts: RawImportRow[] = [];
   const errors: ImportError[] = [];
   const notes: ImportNote[] = [];
   const seen = new Map<string, number>();
   for (const raw of rows) {
     const first = cleanText(raw.first_names);
     const last = cleanText(raw.last_names);
+    const hasContact = Boolean(cleanText(raw.outreach_email ?? "") || raw.outreach_phone);
+    if (!cleanText(raw.national_id)) {
+      if (hasContact) contacts.push(asContact(raw, first, last));
+      continue;
+    }
     const assessed = assessNationalId(cleanText(raw.national_id));
     const id = assessed.value;
     const masked = id.length >= 4 ? maskCedula(id) : "—";
-    const reasons: string[] = [];
-    if (!assessed.ok) reasons.push(assessed.message);
-    else if (seen.has(id)) reasons.push(`${duplicateDocumentLabel(assessed.kind)} en el archivo (fila ${seen.get(id)})`);
-    if (reasons.length) {
-      errors.push({ row: raw.row, reason: reasons.join("; "), cedula: masked });
+    if (!assessed.ok) {
+      notes.push({ row: raw.row, cedula: masked, text: assessed.message });
+      if (hasContact) contacts.push(asContact(raw, first, last));
+      continue;
+    }
+    if (seen.has(id)) {
+      errors.push({ row: raw.row, reason: `${duplicateDocumentLabel(assessed.kind)} en el archivo (fila ${seen.get(id)})`, cedula: masked });
       continue;
     }
     seen.set(id, raw.row);
@@ -224,18 +300,22 @@ export function validateImportRows(rows: RawImportRow[]): ValidatedImport {
     }
     const entry: RawImportRow = { row: raw.row, first_names: resolvedFirst, last_names: resolvedLast, national_id: id, outreach_email: outreach };
     if (raw.outreach_phone) entry.outreach_phone = raw.outreach_phone;
+    if (raw.comunidad) entry.comunidad = raw.comunidad;
     valid.push(entry);
   }
-  return { valid, errors, notes, total: rows.length };
+  return { valid, contacts: dedupeImportRows(contacts), errors, notes, total: rows.length };
 }
 
 export interface ImportOutcome {
   imported: number;
+  contacts: number;
+  withEmail: number;
   rejected: ImportError[];
   notes: ImportNote[];
   total: number;
   linksCsv: string | null;
   committed: boolean;
+  preview: boolean;
   noteTitle: string;
   noteBody: string;
 }
@@ -263,10 +343,10 @@ export function importNovedades(input: { committed: boolean; imported: number; r
  * Importa personas. Si hay errores y allowPartial = false, NO importa nada y devuelve el reporte.
  * Si allowPartial = true, importa solo las filas válidas y reporta explícitamente las rechazadas.
  */
-export async function importPeople(repo: AdminRepo, input: { rows: RawImportRow[]; filename: string; adminId: string; allowPartial: boolean }): Promise<ImportOutcome> {
-  const { valid, errors, notes, total } = validateImportRows(input.rows);
+export async function importPeople(repo: AdminRepo, input: { rows: RawImportRow[]; filename: string; adminId: string; allowPartial: boolean; dryRun?: boolean }): Promise<ImportOutcome> {
+  const { valid, contacts, errors, notes, total } = validateImportRows(input.rows);
   const hashes = valid.map((r) => keyedHash(r.national_id, "national_id"));
-  const existing = await repo.existingNationalIdHashes(hashes);
+  const existing = hashes.length ? await repo.existingNationalIdHashes(hashes) : new Set<string>();
   const toInsert = valid.filter((r, i) => {
     if (existing.has(hashes[i]!)) {
       errors.push({ row: r.row, reason: "La cédula ya existe en la base de datos", cedula: maskCedula(r.national_id) });
@@ -275,10 +355,15 @@ export async function importPeople(repo: AdminRepo, input: { rows: RawImportRow[
     return true;
   });
   errors.sort((a, b) => a.row - b.row);
-
-  if ((errors.length && !input.allowPartial) || toInsert.length === 0) {
+  const withEmail = contacts.filter((row) => Boolean(row.outreach_email)).length;
+  const blocked = errors.length > 0 && !input.allowPartial;
+  if (input.dryRun) {
     const note = importNovedades({ committed: false, imported: 0, rejected: errors.length, notes: notes.length });
-    return { imported: 0, rejected: errors, notes, total, linksCsv: null, committed: false, ...note };
+    return { imported: toInsert.length, contacts: contacts.length, withEmail, rejected: errors, notes, total, linksCsv: null, committed: false, preview: true, ...note };
+  }
+  if (blocked || (toInsert.length === 0 && contacts.length === 0)) {
+    const note = importNovedades({ committed: false, imported: 0, rejected: errors.length, notes: notes.length });
+    return { imported: 0, contacts: 0, withEmail: 0, rejected: errors, notes, total, linksCsv: null, committed: false, preview: false, ...note };
   }
 
   const batchId = await repo.createImportBatch({ admin_id: input.adminId, filename: input.filename.slice(0, 200), total_rows: total, imported_rows: toInsert.length, rejected_rows: errors.length });
@@ -295,7 +380,18 @@ export async function importPeople(repo: AdminRepo, input: { rows: RawImportRow[
     batchId,
   );
   const byHash = new Map(toInsert.map((r) => [keyedHash(r.national_id, "national_id"), r]));
-  const links = await issueLinks(repo, inserted.map((p) => p.id), input.adminId);
+  await repo.insertPreloadedContacts(
+    contacts.map((row) => ({
+      email: row.outreach_email || null,
+      phone: row.outreach_phone || null,
+      firstNames: row.first_names,
+      lastNames: row.last_names,
+      comunidad: row.comunidad || null,
+    })),
+    batchId,
+    input.adminId,
+  );
+  const links = inserted.length ? await issueLinks(repo, inserted.map((p) => p.id), input.adminId) : [];
   const linkByPerson = new Map(links.map((l) => [l.person_id, l]));
   const csvRows = inserted.map((p) => {
     const r = byHash.get(p.national_id_hash)!;
@@ -303,6 +399,17 @@ export async function importPeople(repo: AdminRepo, input: { rows: RawImportRow[
     return { row: r.row, first_names: r.first_names, last_names: r.last_names, cedula_masked: maskCedula(r.national_id), url: link.url, expires_at: link.expires_at };
   });
   await repo.audit({ actor_type: "admin", actor_id: input.adminId, action: "IMPORT_CREATED", metadata: { batch_id: batchId, imported: inserted.length, rejected: errors.length, notes: notes.length } });
-  const note = importNovedades({ committed: true, imported: inserted.length, rejected: errors.length, notes: notes.length });
-  return { imported: inserted.length, rejected: errors, notes, total, linksCsv: linksToCsv(csvRows), committed: true, ...note };
+  const note = importNovedades({ committed: true, imported: inserted.length + contacts.length, rejected: errors.length, notes: notes.length });
+  return {
+    imported: inserted.length,
+    contacts: contacts.length,
+    withEmail,
+    rejected: errors,
+    notes,
+    total,
+    linksCsv: csvRows.length ? linksToCsv(csvRows) : null,
+    committed: true,
+    preview: false,
+    ...note,
+  };
 }

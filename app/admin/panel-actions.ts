@@ -41,6 +41,9 @@ export interface ImportState {
   linksCsv?: string | null;
   noteTitle?: string;
   noteBody?: string;
+  contacts?: number;
+  withEmail?: number;
+  preview?: boolean;
 }
 
 export async function importAction(_prev: ImportState, formData: FormData): Promise<ImportState> {
@@ -52,7 +55,11 @@ export async function importAction(_prev: ImportState, formData: FormData): Prom
     await loadPreviewSandboxRepo();
     const repo = getRepo();
     const rows = await parseImportFile(await file.arrayBuffer(), file.name);
-    const out = await importPeople(repo, { rows, filename: file.name, adminId: ctx.admin.id, allowPartial: formData.get("allowPartial") === "on" });
+    const preview = String(formData.get("intent") ?? "") !== "commit";
+    const out = await importPeople(repo, { rows, filename: file.name, adminId: ctx.admin.id, allowPartial: formData.get("allowPartial") === "on", dryRun: preview });
+    if (preview) {
+      return { ...out, noteTitle: "Vista previa", noteBody: `No se escribió nada. ${out.contacts} contactos sin cédula (${out.withEmail} con correo) y ${out.imported} personas con cédula. ${out.rejected.length} fallos.` };
+    }
     if (out.committed) await persistPreviewSandboxRepo(repo);
     revalidatePath("/admin");
     return out;

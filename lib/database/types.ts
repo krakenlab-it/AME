@@ -46,6 +46,8 @@ export interface PersonRecord {
   login_email?: string | null;
   /** Cuenta creada solo con correo, todavía sin cédula. La vincula un administrador. */
   self_registered_at?: string | null;
+  /** Celular de la lista precargada, en E.164. Rellena el formulario. */
+  outreach_phone?: string | null;
 }
 
 export interface AccessTokenRecord {
@@ -182,6 +184,25 @@ export interface RespondentRepo {
    * (si existe y no tiene cédula). Nunca toca una persona con cédula.
    */
   releaseSelfAccount(email: string, authUserId: string | null, keepPersonId: string): Promise<void>;
+  findPreloadedContactByEmail(email: string): Promise<PreloadedContact | null>;
+  /** La lista precargada aprueba la cédula sin un administrador. Borra la marca de cuenta propia. */
+  bindAllowlistedIdentity(personId: string, identity: { nationalIdEncrypted: string; nationalIdHash: string; nationalIdLast2: string; firstNames: string; lastNames: string; phone: string | null }): Promise<boolean>;
+}
+
+export interface PreloadedContact {
+  email: string | null;
+  phone: string | null;
+  firstNames: string;
+  lastNames: string;
+  comunidad: string | null;
+}
+
+export interface NewPreloadedContact {
+  email: string | null;
+  phone: string | null;
+  firstNames: string;
+  lastNames: string;
+  comunidad: string | null;
 }
 
 export interface LinkRequest {
@@ -445,6 +466,7 @@ export interface AdminRepo {
   existingNationalIdHashes(hashes: string[]): Promise<Set<string>>;
   createImportBatch(b: { admin_id: string; filename: string; total_rows: number; imported_rows: number; rejected_rows: number }): Promise<string>;
   insertPeople(rows: NewPersonRow[], batchId: string): Promise<{ id: string; national_id_hash: string }[]>;
+  insertPreloadedContacts(rows: NewPreloadedContact[], batchId: string, adminId: string): Promise<number>;
   createAccessTokens(items: { person_id: string; token_hash: string; expires_at: string; created_by: string }[]): Promise<void>;
   revokeTokensForPerson(personId: string, reason: string): Promise<number>;
   listPersonIdsWithoutActiveToken(personIds?: string[]): Promise<string[]>;

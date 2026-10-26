@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useState, useTransition } from "react";
+import { startTransition, useActionState, useRef, useState, useTransition } from "react";
 import { Download, Upload } from "lucide-react";
 import {
   generatePersonalLinksAction,
@@ -27,6 +27,7 @@ function download(csv: string, name: string) {
 
 export function ImportPanel({ outreachSimulation = false }: { outreachSimulation?: boolean }) {
   const [state, formAction, pending] = useActionState<ImportState, FormData>(importAction, {});
+  const importForm = useRef<HTMLFormElement>(null);
   const [finger, fingerAction, fingerPending] = useActionState<FingerprintImportState, FormData>(importFingerprintAction, {});
   const [linksMsg, setLinksMsg] = useState<string | null>(null);
   const [personalLinksMsg, setPersonalLinksMsg] = useState<string | null>(null);
@@ -38,7 +39,11 @@ export function ImportPanel({ outreachSimulation = false }: { outreachSimulation
 
   return (
     <div className="space-y-8">
-      <form action={formAction} className="sheet space-y-5 p-6">
+      <form
+        ref={importForm}
+        className="sheet space-y-5 p-6"
+        onSubmit={(event) => event.preventDefault()}
+      >
         <div className="space-y-1">
           <h2 className="text-xl">1. Cargar base inicial</h2>
           <p className="text-[15px] text-ink-muted">
@@ -55,7 +60,25 @@ export function ImportPanel({ outreachSimulation = false }: { outreachSimulation
           <input type="checkbox" name="allowPartial" className="mt-0.5 h-5 w-5 shrink-0 accent-marian" />
           <span>Si hay filas con errores, importar solo las válidas. Las rechazadas aparecen en el reporte y no se importan.</span>
         </label>
-        <Button type="submit" loading={pending}><Upload className="h-4 w-4" aria-hidden /> {pending ? "Importando…" : "Validar e importar"}</Button>
+        <div className="flex flex-wrap gap-3">
+          <Button type="button" variant="secondary" loading={pending} onClick={() => {
+            if (!importForm.current) return;
+            const data = new FormData(importForm.current);
+            data.set("intent", "preview");
+            startTransition(() => formAction(data));
+          }}><Upload className="h-4 w-4" aria-hidden /> {pending ? "Revisando…" : "Vista previa"}</Button>
+          <Button type="button" loading={pending} disabled={!state.preview} onClick={() => {
+            if (!importForm.current) return;
+            const data = new FormData(importForm.current);
+            data.set("intent", "commit");
+            startTransition(() => formAction(data));
+          }}>Confirmar importación</Button>
+        </div>
+        {state.preview && (
+          <p className="text-[15px] text-ink-muted">
+            Vista previa: {state.contacts ?? 0} contactos ({state.withEmail ?? 0} con correo), {state.imported ?? 0} personas con cédula, {state.rejected?.length ?? 0} fallos. Nada se ha guardado todavía.
+          </p>
+        )}
       </form>
 
       {state.error && <Notice tone="error" live>{state.error}</Notice>}

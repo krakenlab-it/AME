@@ -96,7 +96,7 @@ describe("columna de teléfono detectada por contenido (columna entera, no celda
   it("un título de teléfono gana al contenido y un título de cédula también", () => {
     const cedulas = [makeCedula("091234567"), makeCedula("092345678")];
     const phones = [fakeMobile(5), fakeMobile(6)];
-    expect(classifyImportColumns(["Celular", "Cédula", ""], [cedulas, phones, phones])).toEqual(["phone", "id", "phone"]);
+    expect(classifyImportColumns(["Celular", "Cédula", ""], [cedulas, phones, phones])).toEqual(["id", "phone", "ignore"]);
   });
 });
 
@@ -110,16 +110,12 @@ describe("nombres con números", () => {
 });
 
 describe("archivo de Jaime (copia anonimizada)", () => {
-  it("sin columna de cédula: error claro en español que nombra la columna de teléfono", async () => {
+  it("sin columna de cédula queda como lista de contacto, no como fallo", async () => {
     const bytes = arrayBuffer(readFileSync(phoneOnlyFixture));
-    const failure = await parseImportFile(bytes, "marista-telefonos.xlsx").then(
-      () => null,
-      (error: unknown) => error,
-    );
-    expect(failure).toBeInstanceOf(ImportFileError);
-    const message = (failure as Error).message;
-    expect(message).toMatch(/no tiene una columna de cédula ni de pasaporte/);
-    expect(message).toMatch(/«TELÉFONO» tiene números de teléfono, no cédulas/);
+    const parsed = await parseImportFile(bytes, "marista-telefonos.xlsx");
+    expect(parsed.length).toBeGreaterThan(15);
+    expect(parsed.every((row) => !row.national_id)).toBe(true);
+    expect(parsed.every((row) => row.outreach_phone?.startsWith("+5939"))).toBe(true);
   });
 
   it("la copia conserva el layout: título arriba, títulos en la fila 2, columna de teléfonos y lista sin título", async () => {
@@ -171,7 +167,7 @@ describe("importación con teléfono y cédula", () => {
     const parsed = await parseImportFile(bytes, "x.csv");
     expect(parsed[0]!.national_id).toBe(ana);
     expect(parsed[1]!.national_id).not.toBe(mobileThatLooksLikeCedula());
-    expect(parsed.every((row) => row.outreach_phone?.startsWith("+5939"))).toBe(true);
+    expect(parsed.every((row) => !row.outreach_phone)).toBe(true);
   });
 
   it("columna sin título con cédulas de Guayas (09…) sigue siendo el documento", async () => {

@@ -20,6 +20,8 @@ import {
   type LinkAccountResult,
   type LinkMailTarget,
   type LinkRequest,
+  type NewPreloadedContact,
+  type PreloadedContact,
   type ManualPersonPatch,
   type NoticeRecord,
   type PersonDetail,
@@ -143,7 +145,7 @@ export class SupabaseRepo implements Repo {
     const data = check(
       await this.db
         .from("people")
-        .select("id, first_names, last_names, national_id_encrypted, national_id_hash, national_id_last2, status, confirmation_code, submitted_at, login_email, self_registered_at")
+        .select("id, first_names, last_names, national_id_encrypted, national_id_hash, national_id_last2, status, confirmation_code, submitted_at, login_email, self_registered_at, outreach_phone")
         .eq("id", id)
         .is("anonymized_at", null)
         .maybeSingle(),
@@ -371,6 +373,48 @@ export class SupabaseRepo implements Repo {
       for (const r of data ?? []) out.push({ id: String(r.id), national_id_hash: String(r.national_id_hash) });
     }
     return out;
+  }
+
+  async insertPreloadedContacts(rows: NewPreloadedContact[], batchId: string, adminId: string): Promise<number> {
+    if (rows.length === 0) return 0;
+    const payload = rows.map((row) => ({
+      email: row.email?.trim().toLowerCase() || null,
+      phone: row.phone,
+      name: `${row.lastNames} | ${row.firstNames}`,
+      comunidad: row.comunidad,
+      import_batch_id: batchId,
+      created_by: adminId,
+    }));
+    for (let i = 0; i < payload.length; i += 500) {
+      check(await this.db.from("ame_preloaded_contacts").insert(payload.slice(i, i + 500)), "insertPreloadedContacts");
+    }
+    return rows.length;
+  }
+
+  async findPreloadedContactByEmail(email: string): Promise<PreloadedContact | null> {
+    const data = check(
+      await this.db.from("ame_preloaded_contacts").select("email, phone, name, comunidad").eq("email", email.trim().toLowerCase()).maybeSingle(),
+      "findPreloadedContactByEmail",
+    ) as { email: string | null; phone: string | null; name: string | null; comunidad: string | null } | null;
+    if (!data) return null;
+    const [lastNames = "Registrado", firstNames = "Sin nombre"] = (data.name ?? "").split(" | ");
+    return { email: data.email, phone: data.phone, firstNames: firstNames || "Sin nombre", lastNames: lastNames || "Registrado", comunidad: data.comunidad };
+  }
+
+  async bindAllowlistedIdentity(personId: string, identity: { nationalIdEncrypted: string; nationalIdHash: string; nationalIdLast2: string; firstNames: string; lastNames: string; phone: string | null }): Promise<boolean> {
+    const updated = check(
+      await this.db.from("people").update({
+        national_id_encrypted: identity.nationalIdEncrypted,
+        national_id_hash: identity.nationalIdHash,
+        national_id_last2: identity.nationalIdLast2,
+        first_names: identity.firstNames,
+        last_names: identity.lastNames,
+        self_registered_at: null,
+        outreach_phone: identity.phone,
+      }).eq("id", personId).select("id"),
+      "bindAllowlistedIdentity",
+    ) as { id: string }[] | null;
+    return Boolean(updated && updated.length > 0);
   }
 
   async createAccessTokens(items: Parameters<Repo["createAccessTokens"]>[0]) {

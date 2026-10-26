@@ -35,12 +35,12 @@ describe("extracto Marista (caso real de datos mal armados)", () => {
 
     const validated = validateImportRows(parsed);
     // 162 cédulas de persona natural y el pasaporte BH823158. Las otras 3 no son un documento válido
-    // (número corto 86520, o cédula con verificador/provincia incorrectos). El rechazo es el documento, no el apellido.
+    // (número corto 86520, o cédula con verificador/provincia incorrectos). Quedan como aviso, no como fallo.
     expect(validated.valid).toHaveLength(163);
-    expect(validated.errors).toHaveLength(3);
-    expect(validated.errors.every((error) => error.reason.includes("Cédula inválida"))).toBe(true);
+    expect(validated.errors).toHaveLength(0);
+    expect(validated.notes.filter((note) => note.text.includes("Cédula inválida") || note.text.includes("Documento no válido") || note.text.includes("no es válido"))).toHaveLength(3);
     expect(byId(validated.valid, "BH823158")).toMatchObject({ last_names: "BOLIVAR BOLIVAR", first_names: "OSCAR ALEXANDER" });
-    expect(validated.errors.some((error) => error.reason.includes("Apellidos"))).toBe(false);
+    expect(validated.notes.some((note) => note.text.includes("Apellidos"))).toBe(false);
 
     expect(validated.valid.every((row) => !/^\d+$/.test(row.last_names))).toBe(true);
     expect(validated.valid.every((row) => !row.first_names.includes("Ґ") && !row.first_names.includes("Ц"))).toBe(true);

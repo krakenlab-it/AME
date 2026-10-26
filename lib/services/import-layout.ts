@@ -111,7 +111,7 @@ const PHONE_HEADERS = new Set([
 
 const EMAIL_RE = /^[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+$/;
 
-export type HeaderRole = "full" | "first" | "last" | "id" | "email" | "phone" | "other";
+export type HeaderRole = "full" | "first" | "last" | "id" | "email" | "phone" | "responsable" | "community" | "other" | "ignore";
 
 export interface ImportCell {
   header: string;
@@ -130,6 +130,7 @@ export interface InterpretedImport {
   outreach_email: string;
   /** Teléfono en E.164 si el archivo trae una columna de teléfono. */
   outreach_phone?: string;
+  comunidad?: string;
 }
 
 export function repairImportedText(value: string): string {
@@ -148,6 +149,8 @@ export function headerRole(header: string): HeaderRole {
   if (FULL_HEADERS.has(normalized)) return "full";
   if (FIRST_HEADERS.has(normalized)) return "first";
   if (LAST_HEADERS.has(normalized)) return "last";
+  if (normalized === "responsable") return "responsable";
+  if (normalized === "comunidad" || normalized.includes("comunidad")) return "community";
   if (EMAIL_HEADERS.has(normalized) || normalized.includes("correo") || normalized === "email") return "email";
   if (
     PHONE_HEADERS.has(normalized) ||
@@ -238,16 +241,52 @@ export function looksLikePhoneColumn(profile: ColumnProfile): boolean {
 }
 
 /**
+ * Una columna sin título se ignora, salvo dos casos:
+ * - si la mayoría de sus celdas de 10 dígitos pasa el verificador, es cédula;
+ * - si la mayoría son nombres completos (tres palabras o más), sirve de nombre
+ *   cuando RESPONSABLE no es el nombre de una persona.
+ * Un teléfono suelto sin título no se usa.
+ */
+export function looksLikeFullNameColumn(values: string[]): boolean {
+  const filled = values.map((value) => cleanText(value)).filter(Boolean);
+  if (filled.length < 3) return false;
+  const names = filled.filter((value) => looksLikePersonName(value)).length;
+  return names / filled.length >= 0.6;
+}
+
+/**
+ * Nombre de persona: tres o más palabras con letras (apellido, apellido, nombres).
+ * "Pastoral" o "Responsable de pastoral" no cuentan: RESPONSABLE a veces es un cargo.
+ * En ese caso se usa la columna sin título de nombres completos.
+ */
+export function looksLikePersonName(value: string): boolean {
+  const tokens = value.split(/\s+/).filter((token) => /\p{L}{2,}/u.test(token));
+  return tokens.length >= 3 && !isNumericJunk(value);
+}
+
+function columnIsCedula(profile: ColumnProfile): boolean {
+  const checked = profile.validCedulas + profile.cedulaFailures;
+  return checked > 0 && profile.validCedulas > profile.cedulaFailures;
+}
+
+/**
  * Rol de cada columna mirando el título y el contenido completo.
- * Columnas sin título también se clasifican (por ejemplo, teléfonos sueltos).
+ * Si el verificador de cédula pasa en la mayoría de la columna, es cédula aunque el título diga teléfono.
+ * Si no pasa, y parece celular, es teléfono.
  */
 export function classifyImportColumns(headers: string[], columns: string[][]): HeaderRole[] {
   return headers.map((header, index) => {
+    const values = columns[index] ?? [];
+    const profile = profileColumn(values);
+    if (!cleanText(header)) {
+      if (columnIsCedula(profile)) return "id";
+      if (looksLikeFullNameColumn(values)) return "full";
+      return "ignore";
+    }
+    if (columnIsCedula(profile)) return "id";
     const byHeader = headerRole(header);
-    if (byHeader === "phone" || byHeader === "email") return byHeader;
-    const profile = profileColumn(columns[index] ?? []);
-    if (byHeader === "id") return "id";
-    if (looksLikePhoneColumn(profile)) return "phone";
+    if (byHeader === "phone" || looksLikePhoneColumn(profile)) return "phone";
+    if (byHeader === "email") return "email";
     return byHeader;
   });
 }
@@ -314,6 +353,9 @@ function rankIdColumn(role: HeaderRole): number {
     case "last":
     case "email":
     case "phone":
+    case "responsable":
+    case "community":
+    case "ignore":
       return 0;
     default: {
       const exhaustive: never = role;
@@ -423,7 +465,7 @@ export function interpretImportCells(cells: ImportCell[]): InterpretedImport {
   const nameCells = prepared.filter((cell) => {
     if (usedAsId.has(cell.index)) return false;
     if (emailPick && cell.index === emailPick.index) return false;
-    if (cell.role === "email" || cell.role === "phone") return false;
+    if (cell.role === "email" || cell.role === "phone" || cell.role === "community" || cell.role === "ignore") return false;
     if (!cell.text) return false;
     if (looksLikeEmail(cell.text)) return false;
     // Un apellido que es la cédula (solo dígitos, o el mismo valor que la columna de identidad) no es un apellido.
@@ -434,9 +476,17 @@ export function interpretImportCells(cells: ImportCell[]): InterpretedImport {
     return /\p{L}/u.test(cell.text);
   });
 
-  const names = mapNameCells(nameCells);
+  const comunidad = prepared.find((cell) => cell.role === "community" && cell.text)?.text ?? "";
+  const responsable = prepared.find((cell) => cell.role === "responsable" && cell.text);
+  const fallbackName = prepared.find((cell) => cell.role === "full" && looksLikePersonName(cell.text));
+  const names = responsable && looksLikePersonName(responsable.text)
+    ? splitEcuadorianFullName(responsable.text)
+    : fallbackName
+      ? splitEcuadorianFullName(fallbackName.text)
+      : mapNameCells(nameCells.filter((cell) => cell.role !== "responsable" || looksLikePersonName(cell.text)));
   const out: InterpretedImport = { first_names: names.first_names, last_names: names.last_names, national_id: nationalId, outreach_email: outreachEmail };
   if (outreachPhone) out.outreach_phone = outreachPhone;
+  if (comunidad) out.comunidad = comunidad;
   return out;
 }
 

@@ -18,7 +18,7 @@ import { maskAccount, maskCedulaTail } from "@/lib/security/masking";
 import { cn } from "@/lib/utils";
 
 export interface WizardProps {
-  registered: { firstNames: string; lastNames: string; cedulaMasked: string; cedulaLast2: string; email?: string };
+  registered: { firstNames: string; lastNames: string; cedulaMasked: string; cedulaLast2: string; email?: string; phoneNumber?: string };
   privacy: {
     version: string;
     summary: string;
@@ -108,7 +108,7 @@ export function UpdateWizard({ registered, privacy, supportContact }: WizardProp
     defaultValues: {
       names: { namesConfirmed: true, firstNames: registered.firstNames, lastNames: registered.lastNames },
       contact: {
-        primaryEmail: registered.email ?? "", primaryEmailConfirm: registered.email ?? "", secondaryEmail: "", phoneCountryCode: "+593", phoneNumber: "",
+        primaryEmail: registered.email ?? "", primaryEmailConfirm: registered.email ?? "", secondaryEmail: "", phoneCountryCode: "+593", phoneNumber: registered.phoneNumber ?? "",
         addressLine1: "", addressLine2: "", city: "", province: "", country: "Ecuador", postalCode: "",
       },
       bank: {

@@ -17,6 +17,8 @@ data/
 !tests/fixtures/agrupacion-marista-base-datos-1.xlsx
 # Copia anonimizada (teléfonos, sin cédula). Ningún dato real.
 !tests/fixtures/marista-telefonos-sin-cedula.xlsx
+# Lista anonimizada de correos y teléfonos. Ningún dato real.
+!tests/fixtures/import-email-phone-list.xlsx
 *.tsbuildinfo
 /test-results/
 /playwright-report/

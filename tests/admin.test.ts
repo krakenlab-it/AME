@@ -105,7 +105,8 @@ describe("importación inicial", () => {
     expect(v.valid.map((r) => r.row)).toEqual([2, 3, 6]);
     expect(v.valid[1]!.national_id).toBe(C2);
     expect(v.valid[2]!.first_names).toBe("Sin nombre");
-    expect(v.errors.map((e) => e.row)).toEqual([4, 5]);
+    expect(v.errors.map((e) => e.row)).toEqual([4]);
+    expect(v.notes.map((note) => note.row)).toContain(5);
     expect(v.errors[0]!.reason).toContain("duplicada");
     expect(JSON.stringify(v.errors)).not.toContain(C1); // el reporte enmascara la cédula
   });
@@ -121,18 +122,17 @@ describe("importación inicial", () => {
     ];
     const v = validateImportRows(rows);
     expect(v.valid.map((row) => row.national_id)).toEqual(["BH823158", "BA086520"]);
-    expect(v.errors.map((error) => error.row)).toEqual([4, 5, 6, 7]);
-    expect(v.errors[0]!.reason).toMatch(/Documento no válido/);
-    expect(v.errors[1]!.reason).toMatch(/Cédula inválida/);
-    expect(v.errors[2]!.reason).toMatch(/Documento no válido/);
-    expect(v.errors[3]!.reason).toMatch(/duplicado/);
+    expect(v.errors.map((error) => error.row)).toEqual([7]);
+    expect(v.notes.map((note) => note.row).sort()).toEqual([4, 5, 6]);
+    expect(v.notes[0]!.text).toMatch(/Documento no válido|Cédula inválida|no es válido/);
+    expect(v.errors[0]!.reason).toMatch(/duplicado/);
     expect(JSON.stringify(v.errors)).not.toContain("BH823158");
     expect(JSON.stringify(v.errors)).not.toContain("BA086520");
 
     const repo = new MemoryRepo();
     const out = await importPeople(repo, { rows, filename: "pasaportes.csv", adminId: "a", allowPartial: true });
     expect(out.imported).toBe(2);
-    expect(out.rejected).toHaveLength(4);
+    expect(out.rejected).toHaveLength(1);
     expect(out.linksCsv).toMatch(/\/verificar\/[A-Za-z0-9_-]+/);
     const stored = [...repo.people.values()].map((person) => decrypt(person.national_id_encrypted!)).sort();
     expect(stored).toEqual(["BA086520", "BH823158"]);
@@ -152,7 +152,7 @@ describe("importación inicial", () => {
     const repo = new MemoryRepo();
     const out = await importPeople(repo, { rows, filename: "base.csv", adminId: "a", allowPartial: true });
     expect(out.imported).toBe(3);
-    expect(out.rejected).toHaveLength(2);
+    expect(out.rejected).toHaveLength(1);
     expect(repo.tokens.size).toBe(3);
     const urls = out.linksCsv!.match(/https:\/\/portal\.test\/verificar\/[A-Za-z0-9_-]+/g)!;
     expect(urls).toHaveLength(3);
