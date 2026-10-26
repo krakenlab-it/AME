@@ -4,7 +4,7 @@ export function validSubmission(overrides: Partial<SubmissionInput> = {}): Submi
   return {
     names: { namesConfirmed: true, firstNames: "Juan Carlos", lastNames: "Pérez López" },
     contact: {
-      primaryEmail: "juan@correo.com", primaryEmailConfirm: "juan@correo.com", secondaryEmail: "",
+      primaryEmail: "juan@correo.com", secondaryEmail: "",
       phoneCountryCode: "+593", phoneNumber: "0991234567", addressLine1: "Av. 10 de Agosto N12-34",
       addressLine2: "", city: "Quito", province: "Pichincha", country: "Ecuador", postalCode: "",
     },

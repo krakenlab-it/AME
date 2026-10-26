@@ -182,7 +182,6 @@ export const namesSchema = z
 export const contactSchema = z
   .object({
     primaryEmail: emailField,
-    primaryEmailConfirm: z.string().trim().toLowerCase(),
     secondaryEmail: z.union([z.literal(""), emailField]),
     phoneCountryCode: z.string().trim(),
     phoneNumber: z.string().trim().min(6, REQUIRED).max(20, "Número demasiado largo."),
@@ -195,9 +194,6 @@ export const contactSchema = z
   })
   .strict()
   .superRefine((v, ctx) => {
-    if (v.primaryEmail !== v.primaryEmailConfirm) {
-      ctx.addIssue({ code: "custom", path: ["primaryEmailConfirm"], message: "Los correos no coinciden." });
-    }
     if (v.secondaryEmail && v.secondaryEmail === v.primaryEmail) {
       ctx.addIssue({ code: "custom", path: ["secondaryEmail"], message: "Usa un correo distinto al principal o déjalo vacío." });
     }

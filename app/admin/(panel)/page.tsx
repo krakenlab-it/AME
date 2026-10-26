@@ -12,6 +12,7 @@ import { PERSON_STATUSES, STATUS_LABELS, type PersonStatus } from "@/lib/validat
 import { maskCedulaTail, maskEmail } from "@/lib/security/masking";
 import { can } from "@/lib/security/rbac";
 import { requireAdmin } from "@/lib/server/admin-guard";
+import { autoLinkMatchLabel, guayaquilDayStart } from "@/lib/admin/auto-links";
 import { formatDateTime } from "@/lib/utils";
 
 const PAGE_SIZE = 25;
@@ -22,6 +23,7 @@ export default async function AdminDashboard({ searchParams }: { searchParams: P
   const repo = getRepo();
   const counts = await repo.statusCounts();
   const pendingEmailInvites = await repo.pendingEmailInvites();
+  const autoLinks = await repo.listAutoLinksSince(guayaquilDayStart());
   const invited = Object.values(counts).reduce((a, b) => a + b, 0);
 
   const cards: { label: string; value: number; status: PersonStatus | null; Icon: LucideIcon; tone: string }[] = [
@@ -122,6 +124,31 @@ export default async function AdminDashboard({ searchParams }: { searchParams: P
           <AnimatedNumber value={pendingEmailInvites} className="mt-0.5 block font-serif text-3xl font-semibold text-marian" />
           <p className="mt-1 text-sm text-ink-muted">Correos de la lista que todavía no están en una ficha. Un teléfono sin correo sigue contando.</p>
         </div>
+      </section>
+
+      <section aria-label="Vinculados automáticamente hoy" className="sheet max-w-3xl space-y-3 p-4">
+        <div className="flex items-center gap-4">
+          <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-marian-soft text-marian"><Users className="h-5 w-5" aria-hidden /></span>
+          <div>
+            <p className="text-sm font-medium text-ink-muted">Vinculados automáticamente hoy</p>
+            <AnimatedNumber value={autoLinks.length} className="mt-0.5 block font-serif text-3xl font-semibold text-marian" />
+            <p className="mt-1 text-sm text-ink-muted">Si una persona no es quien dice, abre su ficha y restablécela.</p>
+          </div>
+        </div>
+        {autoLinks.length > 0 && (
+          <ul className="space-y-2 text-sm">
+            {autoLinks.map((row) => (
+              <li key={`${row.personId ?? "sin"}-${row.createdAt}`} className="flex flex-wrap items-baseline justify-between gap-2 border-t border-black/10 pt-2">
+                <span>{autoLinkMatchLabel(row.match)} · {row.maskedCedula || "cédula oculta"}</span>
+                {canView && row.personId ? (
+                  <Link className="font-semibold text-marian underline underline-offset-2" href={`/admin/personas/${row.personId}`}>Ver ficha</Link>
+                ) : (
+                  <span className="text-ink-muted">{formatDateTime(row.createdAt)}</span>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
       </section>
 
       {list && (

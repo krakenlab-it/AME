@@ -6,6 +6,10 @@ import {
   type AdminUserRecord,
   type AuditEvent,
   type AuditRow,
+  type AutoLinkRow,
+  type CedulaLinkInput,
+  type CedulaLinkMatch,
+  type CedulaLinkResult,
   type ExportSourceRow,
   type InsuredRecord,
   type NoticeRecord,
@@ -64,10 +68,12 @@ export class MemoryRepo implements Repo {
 
   // ── helpers de prueba ──
   addPerson(firstNames: string, lastNames: string, cedula: string, status: PersonStatus = "PENDING") {
+    const nationalIdHash = keyedHash(cedula, "national_id");
+    this.assertNationalIdAvailable(nationalIdHash);
     const id = randomUUID();
     this.people.set(id, {
       id, first_names: firstNames, last_names: lastNames, national_id_encrypted: encrypt(cedula),
-      national_id_hash: keyedHash(cedula, "national_id"), national_id_last2: cedula.slice(-2), status,
+      national_id_hash: nationalIdHash, national_id_last2: cedula.slice(-2), status,
       confirmation_code: null, submitted_at: null, review_reasons: [], retention_until: null,
     });
     return id;
@@ -221,6 +227,19 @@ export class MemoryRepo implements Repo {
     for (const p of this.people.values()) if (!p.self_registered_at) c[p.status]++;
     return c;
   }
+  async listAutoLinksSince(sinceIso: string): Promise<AutoLinkRow[]> {
+    const since = new Date(sinceIso).getTime();
+    return this.auditLog
+      .filter((entry) => entry.action === "PERSON_AUTO_LINKED" && new Date(entry.created_at ?? 0).getTime() >= since)
+      .slice(-30)
+      .reverse()
+      .map((entry) => ({
+        personId: entry.person_id ?? null,
+        maskedCedula: entry.masked_cedula ?? null,
+        match: typeof entry.metadata?.match === "string" ? entry.metadata.match : "",
+        createdAt: entry.created_at ?? new Date(0).toISOString(),
+      }));
+  }
   async pendingEmailInvites() {
     const linked = new Set<string>();
     for (const person of this.people.values()) {
@@ -279,7 +298,10 @@ export class MemoryRepo implements Repo {
   }
   async createImportBatch() { return randomUUID(); }
   async insertPeople(rows: { first_names: string; last_names: string; national_id_encrypted: string; national_id_hash: string; national_id_last2: string; outreach_email?: string | null; outreach_phone?: string | null }[]) {
+    const seen = new Set([...this.people.values()].map((person) => person.national_id_hash).filter((hash): hash is string => Boolean(hash)));
     return rows.map((r) => {
+      if (seen.has(r.national_id_hash)) throw new RepoError("UNKNOWN", "Error de base de datos (insertPeople)", "23505");
+      seen.add(r.national_id_hash);
       const id = randomUUID();
       const { outreach_email: outreach, outreach_phone: phone, ...person } = r;
       this.people.set(id, { id, ...person, status: "PENDING", confirmation_code: null, submitted_at: null, review_reasons: [], retention_until: null });
@@ -783,6 +805,7 @@ export class MemoryRepo implements Repo {
   async bindAllowlistedIdentity(personId: string, identity: { nationalIdEncrypted: string; nationalIdHash: string; nationalIdLast2: string; firstNames: string; lastNames: string; phone: string | null }): Promise<boolean> {
     const person = this.people.get(personId);
     if (!person) return false;
+    this.assertNationalIdAvailable(identity.nationalIdHash, personId);
     person.national_id_encrypted = identity.nationalIdEncrypted;
     person.national_id_hash = identity.nationalIdHash;
     person.national_id_last2 = identity.nationalIdLast2;
@@ -794,6 +817,107 @@ export class MemoryRepo implements Repo {
       this.outreachPhones.set(personId, identity.phone);
     }
     return true;
+  }
+
+  async commitCedulaLink(input: CedulaLinkInput): Promise<CedulaLinkResult> {
+    const holder = this.people.get(input.holderId);
+    const holderAuth = holder ? this.generalAuth.get(holder.id) : undefined;
+    if (!holder || holder.anonymized_at || !holderAuth?.challenge_hash || holderAuth.challenge_purpose !== "cedula" || holderAuth.challenge_email !== input.email) {
+      return { status: "missing" };
+    }
+    if (!safeEqual(holderAuth.challenge_hash, input.challengeHash)) return { status: "missing" };
+    if (holder.national_id_hash && !safeEqual(holder.national_id_hash, input.nationalIdHash)) {
+      return { status: "cedula_mismatch", personId: holder.id };
+    }
+
+    const existing = [...this.people.values()].find((person) => person.national_id_hash && safeEqual(person.national_id_hash, input.nationalIdHash) && !person.anonymized_at);
+    const target = holder.national_id_hash ? holder : existing ?? holder;
+    const targetAuth = this.ensureGeneral(target.id);
+    if (targetAuth.locked_until && new Date(targetAuth.locked_until).getTime() > Date.now()) {
+      return { status: "locked", personId: target.id, lockedUntil: targetAuth.locked_until };
+    }
+    const boundEmail = target.login_email?.trim().toLowerCase() ?? null;
+    if ((targetAuth.auth_user_id && targetAuth.auth_user_id !== input.authUserId) || (boundEmail && boundEmail !== input.email)) {
+      return { status: "auth_conflict", personId: target.id, loginEmail: target.login_email ?? null };
+    }
+    if (targetAuth.fingerprint_code_hash && !safeEqual(targetAuth.fingerprint_code_hash, input.fingerprintHash)) {
+      return { status: "fingerprint_mismatch", personId: target.id };
+    }
+    if (input.authUserId) {
+      for (const [otherId, other] of this.generalAuth) {
+        if (otherId !== target.id && other.auth_user_id === input.authUserId) {
+          return { status: "auth_conflict", personId: otherId, loginEmail: this.people.get(otherId)?.login_email ?? null };
+        }
+      }
+    }
+
+    const linkingExisting = target.id !== holder.id || Boolean(holder.national_id_hash);
+    const match: CedulaLinkMatch = linkingExisting
+      ? (targetAuth.fingerprint_code_hash ? "dactilar_match" : "dactilar_first_use")
+      : (input.preload ? "preload" : "new");
+    const audited = match === "preload" || match === "new" || !target.login_email || !targetAuth.fingerprint_code_hash;
+
+    if (!target.national_id_hash) {
+      if (this.nationalIdTaken(input.nationalIdHash, target.id)) return { status: "duplicate" };
+      target.national_id_encrypted = input.nationalIdEncrypted;
+      target.national_id_hash = input.nationalIdHash;
+      target.national_id_last2 = input.nationalIdLast2;
+    }
+    if (match === "preload" && input.preload) {
+      target.first_names = input.preload.firstNames;
+      target.last_names = input.preload.lastNames;
+      target.self_registered_at = null;
+      if (input.preload.phone) {
+        target.outreach_phone = input.preload.phone;
+        this.outreachPhones.set(target.id, input.preload.phone);
+      }
+    }
+    if (!targetAuth.fingerprint_code_hash) {
+      targetAuth.fingerprint_code_hash = input.fingerprintHash;
+      targetAuth.fingerprint_claimed_at = new Date().toISOString();
+    }
+    if (holder.id !== target.id) {
+      targetAuth.challenge_hash = holderAuth.challenge_hash;
+      targetAuth.challenge_expires_at = holderAuth.challenge_expires_at;
+      targetAuth.challenge_purpose = "cedula";
+      targetAuth.challenge_email = holderAuth.challenge_email;
+      targetAuth.challenge_sent_at = holderAuth.challenge_sent_at ?? null;
+      targetAuth.challenge_auth_user_id = holderAuth.challenge_auth_user_id ?? null;
+      for (const entry of this.auditLog) if (entry.person_id === holder.id) entry.person_id = target.id;
+      this.deletePerson(holder.id);
+    }
+    target.login_email = input.email;
+    if (input.authUserId) targetAuth.auth_user_id = input.authUserId;
+    targetAuth.challenge_hash = null;
+    targetAuth.challenge_expires_at = null;
+    targetAuth.challenge_purpose = null;
+    targetAuth.challenge_email = null;
+    targetAuth.challenge_sent_at = null;
+    targetAuth.challenge_auth_user_id = null;
+    targetAuth.failed_attempts = 0;
+    targetAuth.locked_until = null;
+    this.linkRequests.delete(target.id);
+    this.releaseSelfAccount(input.email, input.authUserId, target.id);
+    if (audited) {
+      await this.audit({
+        person_id: target.id,
+        actor_type: "respondent",
+        action: "PERSON_AUTO_LINKED",
+        changed_fields: ["login_email", "auth_user_id", "fingerprint_code_hash"],
+        metadata: { match, entry: "general" },
+        recorded_person_id: target.id,
+        masked_cedula: input.maskedCedula,
+      });
+    }
+    return { status: "linked", personId: target.id, match, audited };
+  }
+
+  private nationalIdTaken(hash: string, exceptId?: string): boolean {
+    return [...this.people.values()].some((person) => person.id !== exceptId && person.national_id_hash === hash);
+  }
+
+  private assertNationalIdAvailable(hash: string, exceptId?: string) {
+    if (this.nationalIdTaken(hash, exceptId)) throw new RepoError("UNKNOWN", "Error de base de datos (national_id_hash)", "23505");
   }
 
   async getPersonLifecycle(personId: string) {

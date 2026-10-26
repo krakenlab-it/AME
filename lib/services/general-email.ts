@@ -1,21 +1,43 @@
 import { encrypt, keyedHash, randomToken, safeEqual, sha256 } from "@/lib/encryption/crypto";
-import type { AccessTokenRecord, EntryMethod, GeneralAuthRecord, GeneralChallengeRecord, LinkRequest, RespondentRepo } from "@/lib/database/types";
+import type { AccessTokenRecord, CedulaLinkMatch, EntryMethod, GeneralAuthRecord, GeneralChallengeRecord, RespondentRepo } from "@/lib/database/types";
 import { RESPONDENT_SESSION_MINUTES } from "@/lib/security/cookies";
-import { maskEmail } from "@/lib/security/masking";
+import { maskCedula, maskEmail } from "@/lib/security/masking";
 import { isAccessLinkToken, normalizeAccessLinkToken } from "@/lib/validation/access-link-token";
 import { GENERIC_GENERAL_ERROR } from "@/lib/validation/constants";
 import { flattenIssues, generalCedulaStepSchema, generalEmailCodeSchema, generalEmailIdentifySchema, personalLinkDocumentStepSchema } from "@/lib/validation/schemas";
 import { sanitizeDeep } from "@/lib/validation/sanitize";
 import type { EmailOtpProvider } from "./email-otp";
 import { storedDocumentIsPassport } from "./passport-document";
-import { failFingerprint, isLocked, limitIp, needsCaptcha, RATE_LIMIT_ERROR, type GeneralDeps, type GeneralFailure } from "./general-link";
+import { isLocked, limitIp, needsCaptcha, RATE_LIMIT_ERROR, type GeneralDeps, type GeneralFailure } from "./general-link";
 import { canContinueForm } from "./insured-home";
 import { linkStateMessage, type LinkState } from "./respondent";
 import { settings } from "./settings";
 
 export const EMAIL_CODE_MISMATCH = "El código no es correcto o ya venció. Revisa el último correo que te enviamos.";
 export const EMAIL_SEND_FAILED = "No pudimos enviar el código en este momento. Intenta nuevamente en unos minutos.";
-export const CHALLENGE_EXPIRED = "Esta verificación venció. Vuelve a escribir tu correo.";
+export const CHALLENGE_EXPIRED = "Esta verificación venció. Vuelve a empezar en /ingresar.";
+export const WRONG_CEDULA_ERROR = "La cédula no coincide. Revisa que sean los 10 números de tu cédula, sin espacios ni guiones.";
+export const WRONG_FINGERPRINT_ERROR = "El código dactilar no coincide. Lo encuentras al reverso de tu cédula: una letra, 4 números, una letra y 4 números (ej. V1234V1234).";
+export const LINK_RETRY_ERROR = "No pudimos completar el vínculo en este intento. Volver a intentar suele resolverlo: empieza de nuevo en /ingresar.";
+
+export function lockoutError(minutes: number): string {
+  const wait = Math.max(1, Math.ceil(minutes));
+  return `Por seguridad pausamos este ingreso durante ${wait} minutos. Cuando pase ese tiempo, vuelve a empezar en /ingresar.`;
+}
+
+function minutesUntil(until: string | null | undefined): number {
+  if (!until) return settings.generalLockMinutes;
+  const left = new Date(until).getTime() - Date.now();
+  if (!Number.isFinite(left) || left <= 0) return 1;
+  return Math.max(1, Math.ceil(left / 60_000));
+}
+
+export function alreadyLinkedError(loginEmail: string | null, typedEmail: string): string {
+  const bound = loginEmail?.trim().toLowerCase() ?? "";
+  if (bound && bound !== typedEmail) return emailBoundError(maskEmail(bound));
+  if (bound) return `Esta cédula ya está vinculada a la cuenta ${maskEmail(bound)}. Pide al administrador que restablezca el ingreso.`;
+  return "Esta cédula ya está vinculada a otra cuenta. Pide al administrador que restablezca el ingreso.";
+}
 export const EMAIL_SEND_LIMIT = "Ya enviamos varios códigos a este correo. Espera unos minutos antes de pedir otro.";
 /** La cédula ya tiene un correo verificado: el código solo se envía a ese correo. */
 export function emailBoundError(maskedBound: string): string {
@@ -90,7 +112,7 @@ async function resolveEmailTarget(
 ): Promise<{ ok: true; target: StartTarget } | GeneralFailure> {
   const emailOwner = await repo.findGeneralAuthByLoginEmail(email);
   if (emailOwner && !emailOwner.self_registered_at) {
-    if (isLocked(emailOwner.general_locked_until)) return { ok: false, error: GENERIC_GENERAL_ERROR };
+    if (isLocked(emailOwner.general_locked_until)) return { ok: false, error: lockoutError(minutesUntil(emailOwner.general_locked_until)) };
     return { ok: true, target: { person: emailOwner } };
   }
   const imported = await repo.findUnboundByOutreachEmail(email);
@@ -102,7 +124,7 @@ async function selfTarget(repo: RespondentRepo, email: string, emailOwner: Gener
   if (emailOwner?.self_registered_at) return { ok: true, target: { person: emailOwner } };
   const pending = await repo.ensurePendingSelfAccount(email);
   if (!pending) return { ok: false, error: GENERIC_GENERAL_ERROR };
-  if (isLocked(pending.general_locked_until)) return { ok: false, error: GENERIC_GENERAL_ERROR };
+  if (isLocked(pending.general_locked_until)) return { ok: false, error: lockoutError(minutesUntil(pending.general_locked_until)) };
   return { ok: true, target: { person: pending } };
 }
 
@@ -114,7 +136,7 @@ async function resolveTokenTarget(repo: RespondentRepo, token: AccessTokenRecord
   if (isLocked(auth.general_locked_until)) {
     await repo.audit({ person_id: auth.id, actor_type: "respondent", action: "GENERAL_IDENTIFY_FAILED", metadata: { outcome: "locked" } });
     await repo.logSecurityEvent({ event_type: "GENERAL_LOCKED", ip_hash: deps.ipHash, detail: { outcome: "locked" } });
-    return { ok: false, error: GENERIC_GENERAL_ERROR, requireCaptcha };
+    return { ok: false, error: lockoutError(minutesUntil(auth.general_locked_until)), requireCaptcha };
   }
   const bound = auth.login_email?.trim().toLowerCase();
   const outreach = auth.outreach_email?.trim().toLowerCase();
@@ -196,7 +218,7 @@ export async function resendGeneralEmailCode(repo: RespondentRepo, challengeToke
   if (!challenge || challenge.purpose !== "email" || !challenge.pending_email || new Date(challenge.expires_at).getTime() <= Date.now()) {
     return { ok: false, error: CHALLENGE_EXPIRED, challengeExpired: true };
   }
-  if (isLocked(challenge.general_locked_until)) return { ok: false, error: GENERIC_GENERAL_ERROR };
+  if (isLocked(challenge.general_locked_until)) return { ok: false, error: lockoutError(minutesUntil(challenge.general_locked_until)) };
 
   const wait = secondsLeft(challenge.sent_at);
   if (wait > 0) return { ok: false, error: `Espera ${wait} segundos para pedir otro código.`, resendAfterSeconds: wait };
@@ -241,7 +263,7 @@ export async function confirmGeneralEmailCode(
   if (isLocked(challenge.general_locked_until)) {
     await repo.audit({ person_id: challenge.person_id, actor_type: "respondent", action: "GENERAL_IDENTIFY_FAILED", metadata: { outcome: "locked" } });
     await repo.logSecurityEvent({ event_type: "GENERAL_LOCKED", ip_hash: deps.ipHash, detail: { outcome: "locked" } });
-    return { ok: false, error: GENERIC_GENERAL_ERROR };
+    return { ok: false, error: lockoutError(minutesUntil(challenge.general_locked_until)) };
   }
 
   const verified = await deps.otp.verify(challenge.pending_email, parsed.data.code);
@@ -258,7 +280,7 @@ export async function confirmGeneralEmailCode(
     });
     if (failure.locked) {
       await repo.logSecurityEvent({ event_type: "GENERAL_LOCKED", ip_hash: deps.ipHash, detail: { outcome: "locked" } });
-      return { ok: false, error: GENERIC_GENERAL_ERROR };
+      return { ok: false, error: lockoutError(settings.generalLockMinutes) };
     }
     await repo.logSecurityEvent({ event_type: "GENERAL_EMAIL_CODE_FAILED", ip_hash: deps.ipHash, detail: { outcome: "email_code" } });
     return { ok: false, error: EMAIL_CODE_MISMATCH, requireCaptcha: needsCaptcha(deps, ipLimit.hits) };
@@ -269,20 +291,20 @@ export async function confirmGeneralEmailCode(
   return { ok: true, phase: "cedula" };
 }
 
-async function failCedula(repo: RespondentRepo, personId: string, deps: GeneralDeps, requireCaptcha: boolean): Promise<GeneralFailure> {
+async function failDocument(repo: RespondentRepo, personId: string, deps: GeneralDeps, requireCaptcha: boolean, kind: "cedula" | "fingerprint"): Promise<GeneralFailure> {
   const failure = await repo.registerGeneralFailure(personId, settings.generalLockThreshold, settings.generalLockMinutes);
   await repo.audit({
     person_id: personId,
     actor_type: "respondent",
     action: "GENERAL_IDENTIFY_FAILED",
-    metadata: { outcome: failure.locked ? "locked" : "cedula", attempt: failure.failed_attempts },
+    metadata: { outcome: failure.locked ? "locked" : kind, attempt: failure.failed_attempts },
   });
   if (failure.locked) {
     await repo.logSecurityEvent({ event_type: "GENERAL_LOCKED", ip_hash: deps.ipHash, detail: { outcome: "locked" } });
-  } else {
-    await repo.logSecurityEvent({ event_type: "GENERAL_IDENTIFY_FAILED", ip_hash: deps.ipHash, detail: { outcome: "cedula" } });
+    return { ok: false, error: lockoutError(settings.generalLockMinutes), requireCaptcha };
   }
-  return { ok: false, error: GENERIC_GENERAL_ERROR, requireCaptcha };
+  await repo.logSecurityEvent({ event_type: "GENERAL_IDENTIFY_FAILED", ip_hash: deps.ipHash, detail: { outcome: kind } });
+  return { ok: false, error: kind === "cedula" ? WRONG_CEDULA_ERROR : WRONG_FINGERPRINT_ERROR, requireCaptcha };
 }
 
 /** Primera vez: se guarda. Si ya había uno y no coincide, se rechaza. Vacío solo en un pasaporte. */
@@ -294,7 +316,7 @@ async function applyFingerprint(repo: RespondentRepo, personId: string, code: st
     return null;
   }
   if (claim === "matched") return null;
-  return failFingerprint(repo, personId, deps, requireCaptcha);
+  return failDocument(repo, personId, deps, requireCaptcha, "fingerprint");
 }
 
 async function openVerifiedSession(
@@ -304,26 +326,31 @@ async function openVerifiedSession(
   challengeHash: string,
   deps: GeneralEmailDeps,
   accessTokenId: string | null,
+  linked?: { match: CedulaLinkMatch },
 ): Promise<GeneralCedulaResult> {
   const before = await repo.getPerson(personId);
   if (!before || !challenge.pending_email) return { ok: false, error: GENERIC_GENERAL_ERROR, challengeExpired: true };
-  const isSelf = Boolean(before.self_registered_at);
-  const firstVerification = !before.login_email;
-  if (!isSelf) {
-    await repo.releaseSelfAccount(challenge.pending_email, challenge.auth_user_id ?? null, personId);
-  }
-  const completed = await repo.completeGeneralChallenge(personId, challengeHash, "cedula", {
-    email: challenge.pending_email,
-    authUserId: challenge.auth_user_id ?? null,
-  });
-  if (!completed) {
-    await repo.logSecurityEvent({ event_type: "GENERAL_EMAIL_LINK_REJECTED", ip_hash: deps.ipHash, detail: {} });
-    return { ok: false, error: GENERIC_GENERAL_ERROR, challengeExpired: true };
-  }
-  await repo.audit({ person_id: personId, actor_type: "respondent", action: "EMAIL_VERIFIED", changed_fields: ["login_email"], metadata: { entry: accessTokenId ? "personal_link" : "general" } });
-  if (isSelf && firstVerification) {
+  if (!linked) {
+    const isSelf = Boolean(before.self_registered_at);
+    const firstVerification = !before.login_email;
+    if (!isSelf) {
+      await repo.releaseSelfAccount(challenge.pending_email, challenge.auth_user_id ?? null, personId);
+    }
+    const completed = await repo.completeGeneralChallenge(personId, challengeHash, "cedula", {
+      email: challenge.pending_email,
+      authUserId: challenge.auth_user_id ?? null,
+    });
+    if (!completed) {
+      await repo.logSecurityEvent({ event_type: "GENERAL_EMAIL_LINK_REJECTED", ip_hash: deps.ipHash, detail: {} });
+      return { ok: false, error: GENERIC_GENERAL_ERROR, challengeExpired: true };
+    }
+    if (isSelf && firstVerification) {
+      await repo.audit({ person_id: personId, actor_type: "respondent", action: "ACCOUNT_CREATED", metadata: { entry: "general_email" } });
+    }
+  } else if (linked.match === "new") {
     await repo.audit({ person_id: personId, actor_type: "respondent", action: "ACCOUNT_CREATED", metadata: { entry: "general_email" } });
   }
+  await repo.audit({ person_id: personId, actor_type: "respondent", action: "EMAIL_VERIFIED", changed_fields: ["login_email"], metadata: { entry: accessTokenId ? "personal_link" : "general" } });
 
   const person = await repo.getPerson(personId);
   if (!person) return { ok: false, error: GENERIC_GENERAL_ERROR };
@@ -368,7 +395,7 @@ export async function confirmGeneralCedula(
   if (!challenge || challenge.purpose !== "cedula" || !challenge.pending_email || new Date(challenge.expires_at).getTime() <= Date.now()) {
     return { ok: false, error: CHALLENGE_EXPIRED, challengeExpired: true };
   }
-  if (isLocked(challenge.general_locked_until)) return { ok: false, error: GENERIC_GENERAL_ERROR };
+  if (isLocked(challenge.general_locked_until)) return { ok: false, error: lockoutError(minutesUntil(challenge.general_locked_until)) };
 
   const link = await readPersonalLink(repo, accessToken);
   if (!link.ok) return { ...link, challengeExpired: false };
@@ -380,7 +407,10 @@ export async function confirmGeneralCedula(
     cedula: bag.cedula ?? "",
     codigoDactilar: bag.codigoDactilar ?? "",
   });
-  if (!parsed.success) return { ok: false, error: "Revisa los campos marcados.", fieldErrors: flattenIssues(parsed.error) };
+  if (!parsed.success) {
+    const fieldErrors = flattenIssues(parsed.error);
+    return { ok: false, error: fieldErrors.cedula ?? fieldErrors.codigoDactilar ?? "Revisa los campos marcados.", fieldErrors };
+  }
 
   const requireCaptcha = needsCaptcha(deps, ipLimit.hits);
   const email = challenge.pending_email;
@@ -392,59 +422,54 @@ export async function confirmGeneralCedula(
     return { ok: false, error: RATE_LIMIT_ERROR };
   }
 
-  let personId = holder.id;
-  const preload = await repo.findPreloadedContactByEmail(email);
-  const onImported = Boolean(holder.national_id_hash) && !holder.self_registered_at;
-  if (onImported) {
-    if (!holder.national_id_hash || !safeEqual(cedulaHash, holder.national_id_hash)) return failCedula(repo, holder.id, deps, requireCaptcha);
+  if (passportExempt) {
+    if (!holder.national_id_hash || !safeEqual(cedulaHash, holder.national_id_hash)) return failDocument(repo, holder.id, deps, requireCaptcha, "cedula");
     const fingerprint = await applyFingerprint(repo, holder.id, code, deps, requireCaptcha);
     if (fingerprint) return fingerprint;
-  } else {
-    const imported = await repo.findGeneralAuthByNationalIdHash(cedulaHash);
-    const bound = imported?.login_email?.trim().toLowerCase();
-    const outreachMatches = imported?.outreach_email?.trim().toLowerCase() === email;
-    const fingerprintMatches = Boolean(code && imported?.fingerprint_code_hash && safeEqual(keyedHash(code, "fingerprint_code"), imported.fingerprint_code_hash));
-    if (imported && imported.id !== holder.id && code && imported.fingerprint_code_hash && !fingerprintMatches) {
-      return failFingerprint(repo, imported.id, deps, requireCaptcha);
-    }
-    if (imported && imported.id !== holder.id && (bound === email || (!bound && (outreachMatches || fingerprintMatches)))) {
-      if (isLocked(imported.general_locked_until)) return { ok: false, error: GENERIC_GENERAL_ERROR, requireCaptcha };
-      if (code && imported.fingerprint_code_hash && !fingerprintMatches) return failFingerprint(repo, imported.id, deps, requireCaptcha);
-      const moved = await repo.promoteEmailChallenge(holder.id, imported.id, challengeHash);
-      if (!moved) return { ok: false, error: GENERIC_GENERAL_ERROR };
-      const fingerprint = await applyFingerprint(repo, imported.id, code, deps, requireCaptcha);
-      if (fingerprint) return fingerprint;
-      personId = imported.id;
-    } else if (imported && bound && bound !== email) {
-      await repo.audit({ person_id: imported.id, actor_type: "respondent", action: "GENERAL_IDENTIFY_FAILED", metadata: { outcome: "email_mismatch" } });
-      await repo.logSecurityEvent({ event_type: "GENERAL_EMAIL_MISMATCH", ip_hash: deps.ipHash, detail: {} });
-      return { ok: false, error: emailBoundError(maskEmail(bound)), fieldErrors: { cedula: "Usa el correo con el que ingresaste antes." } };
-    } else if (preload) {
-      const bound = await repo.bindAllowlistedIdentity(holder.id, {
-        nationalIdEncrypted: encrypt(parsed.data.cedula),
-        nationalIdHash: cedulaHash,
-        nationalIdLast2: parsed.data.cedula.slice(-2),
-        firstNames: preload.firstNames,
-        lastNames: preload.lastNames,
-        phone: preload.phone,
-      });
-      if (!bound) return { ok: false, error: GENERIC_GENERAL_ERROR };
-      const fingerprint = await applyFingerprint(repo, holder.id, code, deps, requireCaptcha);
-      if (fingerprint) return fingerprint;
-      await repo.audit({ person_id: holder.id, actor_type: "respondent", action: "ACCOUNT_LINKED", metadata: { entry: "allowlist" } });
-    } else {
-      const request: LinkRequest = {
-        national_id_hash: cedulaHash,
-        national_id_encrypted: encrypt(parsed.data.cedula),
-        national_id_last2: parsed.data.cedula.slice(-2),
-      };
-      await repo.setLinkRequest(holder.id, request);
-      await repo.audit({ person_id: holder.id, actor_type: "respondent", action: "ACCOUNT_LINK_REQUESTED", metadata: { entry: "general" } });
-    }
+    const fresh = await repo.findGeneralChallenge(challengeHash);
+    if (!fresh?.pending_email) return { ok: false, error: CHALLENGE_EXPIRED, challengeExpired: true };
+    const accessTokenId = link.token && link.token.person_id === holder.id ? link.token.id : null;
+    return openVerifiedSession(repo, holder.id, fresh, challengeHash, deps, accessTokenId);
   }
 
-  const accessTokenId = link.token && link.token.person_id === personId ? link.token.id : null;
-  const fresh = await repo.findGeneralChallenge(challengeHash);
-  if (!fresh?.pending_email) return { ok: false, error: CHALLENGE_EXPIRED, challengeExpired: true };
-  return openVerifiedSession(repo, personId, fresh, challengeHash, deps, accessTokenId);
+  const preload = await repo.findPreloadedContactByEmail(email);
+  const linked = await repo.commitCedulaLink({
+    holderId: holder.id,
+    challengeHash,
+    email,
+    authUserId: challenge.auth_user_id ?? null,
+    nationalIdEncrypted: encrypt(parsed.data.cedula),
+    nationalIdHash: cedulaHash,
+    nationalIdLast2: parsed.data.cedula.slice(-2),
+    fingerprintHash: keyedHash(code, "fingerprint_code"),
+    maskedCedula: maskCedula(parsed.data.cedula),
+    preload: preload ? { firstNames: preload.firstNames, lastNames: preload.lastNames, phone: preload.phone } : null,
+  });
+  switch (linked.status) {
+    case "cedula_mismatch":
+      return failDocument(repo, linked.personId, deps, requireCaptcha, "cedula");
+    case "fingerprint_mismatch":
+      return failDocument(repo, linked.personId, deps, requireCaptcha, "fingerprint");
+    case "auth_conflict":
+      await repo.audit({ person_id: linked.personId, actor_type: "respondent", action: "GENERAL_IDENTIFY_FAILED", metadata: { outcome: "email_mismatch" } });
+      await repo.logSecurityEvent({ event_type: "GENERAL_EMAIL_MISMATCH", ip_hash: deps.ipHash, detail: {} });
+      return { ok: false, error: alreadyLinkedError(linked.loginEmail, email), fieldErrors: { cedula: "Esta cédula ya está vinculada. Escribe al administrador." } };
+    case "locked":
+      return { ok: false, error: lockoutError(minutesUntil(linked.lockedUntil)), requireCaptcha };
+    case "duplicate":
+      return { ok: false, error: LINK_RETRY_ERROR };
+    case "missing":
+      return { ok: false, error: CHALLENGE_EXPIRED, challengeExpired: true };
+    case "linked":
+      break;
+    default: {
+      const unexpected: never = linked;
+      return unexpected;
+    }
+  }
+  if (linked.match === "dactilar_first_use" || linked.match === "new" || linked.match === "preload") {
+    await repo.audit({ person_id: linked.personId, actor_type: "respondent", action: "FINGERPRINT_CLAIMED", metadata: { entry: "general" } });
+  }
+  const accessTokenId = link.token && link.token.person_id === linked.personId ? link.token.id : null;
+  return openVerifiedSession(repo, linked.personId, challenge, challengeHash, deps, accessTokenId, { match: linked.match });
 }

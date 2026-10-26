@@ -39,7 +39,7 @@ type Path = FieldPath<SubmissionInput>;
 const STEP_FIELDS: Record<number, Path[]> = {
   2: ["names.firstNames", "names.lastNames"],
   3: [
-    "contact.primaryEmail", "contact.primaryEmailConfirm", "contact.secondaryEmail", "contact.phoneCountryCode",
+    "contact.primaryEmail", "contact.secondaryEmail", "contact.phoneCountryCode",
     "contact.phoneNumber", "contact.addressLine1", "contact.addressLine2", "contact.city", "contact.province",
     "contact.country", "contact.postalCode",
   ],
@@ -54,7 +54,6 @@ const FIELD_LABELS: Partial<Record<Path, string>> = {
   "names.firstNames": "Nombres",
   "names.lastNames": "Apellidos",
   "contact.primaryEmail": "Correo principal",
-  "contact.primaryEmailConfirm": "Confirmar correo",
   "contact.secondaryEmail": "Correo alternativo",
   "contact.phoneCountryCode": "Código de país",
   "contact.phoneNumber": "Teléfono celular",
@@ -108,7 +107,7 @@ export function UpdateWizard({ registered, privacy, supportContact }: WizardProp
     defaultValues: {
       names: { namesConfirmed: true, firstNames: registered.firstNames, lastNames: registered.lastNames },
       contact: {
-        primaryEmail: registered.email ?? "", primaryEmailConfirm: registered.email ?? "", secondaryEmail: "", phoneCountryCode: "+593", phoneNumber: registered.phoneNumber ?? "",
+        primaryEmail: registered.email ?? "", secondaryEmail: "", phoneCountryCode: "+593", phoneNumber: registered.phoneNumber ?? "",
         addressLine1: "", addressLine2: "", city: "", province: "", country: "Ecuador", postalCode: "",
       },
       bank: {
@@ -290,11 +289,8 @@ export function UpdateWizard({ registered, privacy, supportContact }: WizardProp
             <ErrorSummary items={summaryItems} onSelect={focusField} />
             <RequiredLegend />
             <div className="grid gap-5">
-              <Field id="contact.primaryEmail" label="Correo electrónico principal" required error={err("contact.primaryEmail")}>
-                <input {...input("contact.primaryEmail")} type="email" inputMode="email" autoComplete="email" {...register("contact.primaryEmail")} />
-              </Field>
-              <Field id="contact.primaryEmailConfirm" label="Confirmar correo electrónico" hint="Escríbelo otra vez para evitar errores." required error={err("contact.primaryEmailConfirm")}>
-                <input {...input("contact.primaryEmailConfirm", "hint")} type="email" inputMode="email" autoComplete="off" {...register("contact.primaryEmailConfirm")} />
+              <Field id="contact.primaryEmail" label="Correo electrónico principal" hint={registered.email ? "Es el correo con el que ingresaste." : undefined} required error={err("contact.primaryEmail")}>
+                <input {...input("contact.primaryEmail")} type="email" inputMode="email" autoComplete="email" {...register("contact.primaryEmail")} readOnly={Boolean(registered.email)} aria-readonly={registered.email ? true : undefined} />
               </Field>
               <Field id="contact.secondaryEmail" label="Correo electrónico alternativo" error={err("contact.secondaryEmail")}>
                 <input {...input("contact.secondaryEmail")} type="email" inputMode="email" autoComplete="off" {...register("contact.secondaryEmail")} />

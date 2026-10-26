@@ -4,7 +4,7 @@ import { keyedHash, randomToken, sha256 } from "@/lib/encryption/crypto";
 import { identityTermsGate, TERMINOS_IDENTIFICACION_TEXTO } from "@/lib/content/terminos-identificacion";
 import { demoEmailOtpProvider, DEMO_EMAIL_OTP_CODE, type EmailOtpProvider } from "@/lib/services/email-otp";
 import { confirmGeneralCedula, confirmGeneralEmailCode, startGeneralEmailAccess, type GeneralEmailDeps } from "@/lib/services/general-email";
-import { GENERIC_GENERAL_ERROR } from "@/lib/validation/constants";
+import { WRONG_CEDULA_ERROR, WRONG_FINGERPRINT_ERROR } from "@/lib/services/general-email";
 
 const JUAN = "1710034065";
 const EMAIL = "juan.perez@example.com";
@@ -74,7 +74,7 @@ describe("cédula y código dactilar obligatorios", () => {
     expect(repo.sessions.size).toBe(0);
 
     const wrong = await confirmGeneralCedula(repo, started.challengeToken, { cedula: "0926687856", codigoDactilar: CODE }, deps(otp));
-    expect(wrong).toMatchObject({ ok: false, error: GENERIC_GENERAL_ERROR });
+    expect(wrong).toMatchObject({ ok: false, error: WRONG_CEDULA_ERROR });
     expect((await repo.getPerson(personId))?.login_email).toBeFalsy();
 
     const again = await startGeneralEmailAccess(repo, { email: EMAIL, termsAccepted: true }, deps(otp, "ip-2"));
@@ -111,7 +111,7 @@ describe("cédula y código dactilar obligatorios", () => {
     if (!mismatch.ok) throw new Error(mismatch.error);
     await confirmGeneralEmailCode(repo, mismatch.challengeToken, { code: DEMO_EMAIL_OTP_CODE }, deps(otp, "ip-3"));
     const rejected = await confirmGeneralCedula(repo, mismatch.challengeToken, { cedula: JUAN, codigoDactilar: "A9876B4321" }, deps(otp, "ip-3"));
-    expect(rejected).toMatchObject({ ok: false, error: GENERIC_GENERAL_ERROR });
+    expect(rejected).toMatchObject({ ok: false, error: WRONG_FINGERPRINT_ERROR });
     expect(repo.generalAuth.get(personId)?.fingerprint_code_hash).toBe(keyedHash(CODE, "fingerprint_code"));
   });
 });

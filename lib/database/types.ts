@@ -16,7 +16,8 @@ export type AuditAction =
   | "EMAIL_CODE_SENT" | "EMAIL_VERIFIED"
   | "ACCOUNT_CREATED" | "ACCOUNT_LINKED" | "ACCOUNT_LINK_REQUESTED"
   | "IDENTITY_TERMS_ACCEPTED"
-  | "PERSON_RESET_TO_GUEST" | "PERSON_DELETED";
+  | "PERSON_RESET_TO_GUEST" | "PERSON_DELETED"
+  | "PERSON_AUTO_LINKED";
 
 export interface AuditEvent {
   person_id?: string | null;
@@ -192,6 +193,43 @@ export interface RespondentRepo {
   findPreloadedContactByEmail(email: string): Promise<PreloadedContact | null>;
   /** La lista precargada aprueba la cédula sin un administrador. Borra la marca de cuenta propia. */
   bindAllowlistedIdentity(personId: string, identity: { nationalIdEncrypted: string; nationalIdHash: string; nationalIdLast2: string; firstNames: string; lastNames: string; phone: string | null }): Promise<boolean>;
+  /**
+   * Vincula la cédula y el código dactilar en una sola operación: guarda el dactilar,
+   * escribe el correo verificado, mueve el reto y borra la cuenta propia vacía.
+   * No deja una solicitud de revisión manual.
+   */
+  commitCedulaLink(input: CedulaLinkInput): Promise<CedulaLinkResult>;
+}
+
+export type CedulaLinkMatch = "dactilar_first_use" | "dactilar_match" | "preload" | "new";
+
+export interface CedulaLinkInput {
+  holderId: string;
+  challengeHash: string;
+  email: string;
+  authUserId: string | null;
+  nationalIdEncrypted: string;
+  nationalIdHash: string;
+  nationalIdLast2: string;
+  fingerprintHash: string;
+  maskedCedula: string;
+  preload: { firstNames: string; lastNames: string; phone: string | null } | null;
+}
+
+export type CedulaLinkResult =
+  | { status: "linked"; personId: string; match: CedulaLinkMatch; audited: boolean }
+  | { status: "cedula_mismatch"; personId: string }
+  | { status: "fingerprint_mismatch"; personId: string }
+  | { status: "auth_conflict"; personId: string; loginEmail: string | null }
+  | { status: "locked"; personId: string; lockedUntil: string | null }
+  | { status: "missing" }
+  | { status: "duplicate" };
+
+export interface AutoLinkRow {
+  personId: string | null;
+  maskedCedula: string | null;
+  match: string;
+  createdAt: string;
 }
 
 export interface PreloadedContact {
@@ -467,6 +505,8 @@ export interface AdminRepo {
   statusCounts(): Promise<Record<PersonStatus, number>>;
   /** Filas de la lista de correos que todavía no coinciden con login_email ni outreach_email. */
   pendingEmailInvites(): Promise<number>;
+  /** Vinculaciones automáticas desde `sinceIso` (máximo 30, las más recientes primero). */
+  listAutoLinksSince(sinceIso: string): Promise<AutoLinkRow[]>;
   existingPreloadedEmails(emails: string[]): Promise<Set<string>>;
   listPeople(q: { status?: PersonStatus; search?: string; nationalIdHash?: string; page: number; pageSize: number }): Promise<{ rows: PersonListRow[]; total: number }>;
   getPersonDetail(id: string): Promise<PersonDetail | null>;

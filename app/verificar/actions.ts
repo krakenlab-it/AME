@@ -11,6 +11,7 @@ import { sendConfirmationEmail } from "@/lib/services/email";
 import { openInsuredHome, submitResponse, type LinkState } from "@/lib/services/respondent";
 import { endRespondentSession } from "@/lib/server/end-respondent-session";
 import { readRespondentToken } from "@/lib/server/respondent-session";
+import { unavailableMessage } from "@/lib/services/unavailable";
 
 export interface IdentifyState {
   error?: string;
@@ -47,7 +48,7 @@ export async function reopenAccountAction(_prev: IdentifyState, formData: FormDa
     }
     sessionToken = result.sessionToken;
   } catch {
-    return { error: "El servicio no está disponible en este momento. Intenta nuevamente en unos minutos." };
+    return { error: unavailableMessage("retry") };
   }
   (await cookies()).set(RESPONDENT_COOKIE(), sessionToken, cookieOptions(RESPONDENT_SESSION_MINUTES * 60));
   redirect("/mi-cuenta");

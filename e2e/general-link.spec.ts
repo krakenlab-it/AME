@@ -67,24 +67,47 @@ test("el correo cargado no abre el formulario hasta la cédula y el código dact
   await expect(page.getByText(started!.currentFirstNames, { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Sí, es correcta" }).click();
   await expect(page.getByLabel(/^Correo electrónico principal/)).toHaveValue(EMAIL);
+  await expect(page.getByLabel(/^Correo electrónico principal/)).toHaveJSProperty("readOnly", true);
+  await expect(page.getByLabel("Confirmar correo electrónico")).toHaveCount(0);
+  await expect(page.getByLabel("Correo electrónico alternativo")).toBeVisible();
 });
 
-test("un correo nuevo crea una cuenta sin vincular que no abre el formulario", async ({ page }) => {
+test("un correo nuevo con cédula y código dactilar abre el formulario", async ({ page }) => {
+  const email = `nuevo.${Date.now()}@example.invalid`;
   await page.goto("/ingresar");
   await acceptTerms(page);
-  await page.getByLabel("Correo electrónico").fill(`nuevo.${Date.now()}@example.invalid`);
+  await page.getByLabel("Correo electrónico").fill(email);
   await page.getByRole("button", { name: "Enviarme el código" }).click();
   await expect(page.getByRole("heading", { name: "Revisa tu correo" })).toBeVisible();
   await page.getByLabel("Código de acceso").fill(DEMO_EMAIL_OTP_CODE);
   await page.getByRole("button", { name: "Confirmar y continuar" }).click();
   await expect(page.getByRole("heading", { name: "Tu cédula" })).toBeVisible();
-  await page.getByLabel("Número de cédula").fill("1710034065");
+  await page.getByLabel("Número de cédula").fill("0926687856");
   await page.getByLabel(/Código dactilar/).fill("V1234V1234");
   await page.getByRole("button", { name: "Continuar" }).click();
-  await expect(page).toHaveURL(/\/mi-cuenta$/);
-  await expect(page.getByText("Cuenta pendiente de vínculo")).toBeVisible();
-  await page.goto("/verificar/formulario");
-  await expect(page).not.toHaveURL(/\/verificar\/formulario$/);
+  await expect(page).toHaveURL(/\/verificar\/formulario$/);
+  await expect(page.getByRole("heading", { name: "Hola, Sin" })).toHaveCount(0);
+  await expect(page.getByText("Cuenta pendiente de vínculo")).toHaveCount(0);
+  await page.getByRole("button", { name: "Sí, es correcta" }).click();
+  await expect(page.getByLabel("Confirmar correo electrónico")).toHaveCount(0);
+  await expect(page.getByLabel(/^Correo electrónico principal/)).toHaveValue(email);
+  await expect(page.getByLabel(/^Correo electrónico principal/)).toHaveJSProperty("readOnly", true);
+});
+
+test("un código dactilar distinto explica dónde está y el formato", async ({ page }) => {
+  expect(started).toBeTruthy();
+  await page.goto("/ingresar");
+  await acceptTerms(page);
+  await page.getByLabel("Correo electrónico").fill(EMAIL);
+  await page.getByRole("button", { name: "Enviarme el código" }).click();
+  await page.getByLabel("Código de acceso").fill(DEMO_EMAIL_OTP_CODE);
+  await page.getByRole("button", { name: "Confirmar y continuar" }).click();
+  await page.getByLabel("Número de cédula").fill(started!.cedula);
+  await page.getByLabel(/Código dactilar/).fill("A9876B4321");
+  await page.getByRole("button", { name: "Continuar" }).click();
+  const alert = page.getByRole("alert").filter({ hasText: "reverso de tu cédula" });
+  await expect(alert).toBeVisible();
+  await expect(alert).toContainText("V1234V1234");
 });
 
 test("el enlace personal sigue vigente y entra por correo y cédula", async ({ page }) => {
