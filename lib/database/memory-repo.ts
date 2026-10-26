@@ -48,7 +48,7 @@ export class MemoryRepo implements Repo {
   sessions = new Map<string, RespondentSessionRecord>();
   submissions = new Map<string, SubmissionRecord>();
   auditLog: (AuditEvent & { created_at?: string })[] = [];
-  securityEvents: { event_type: string; ip_hash: string | null }[] = [];
+  securityEvents: { event_type: string; ip_hash: string | null; detail?: Record<string, unknown> }[] = [];
   buckets = new Map<string, number>();
   admins = new Map<string, AdminUserRecord>();
   exports: { admin_id: string; record_count: number; fields: string[]; purpose: string }[] = [];
@@ -95,7 +95,9 @@ export class MemoryRepo implements Repo {
     this.buckets.set(bucket, hits);
     return { allowed: hits <= limit, hits };
   }
-  async logSecurityEvent(e: { event_type: string; ip_hash: string | null }) { this.securityEvents.push(e); }
+  async logSecurityEvent(e: { event_type: string; ip_hash: string | null; detail?: Record<string, unknown> }) {
+    this.securityEvents.push(e);
+  }
   async audit(e: AuditEvent) { this.auditLog.push({ ...e, created_at: new Date().toISOString() }); }
 
   // ── titular ──
@@ -442,7 +444,7 @@ export class MemoryRepo implements Repo {
     return { rows: all.slice((q.page - 1) * q.pageSize, q.page * q.pageSize), total: all.length };
   }
   async recentSecurityEvents(limit: number) {
-    return this.securityEvents.slice(-limit).reverse().map((e) => ({ event_type: e.event_type, created_at: new Date().toISOString(), detail: {} }));
+    return this.securityEvents.slice(-limit).reverse().map((e) => ({ event_type: e.event_type, created_at: new Date().toISOString(), detail: e.detail ?? {} }));
   }
   async anonymizeExpired() { return 0; }
   async purgeExpiredSessions() {}

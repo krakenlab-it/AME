@@ -5,30 +5,30 @@ import { assessNationalId, identityDocumentMessage } from "./document";
 import { FINGERPRINT_CODE_RE, FINGERPRINT_FORMAT_MESSAGE, normalizeFingerprintCode } from "./fingerprint";
 import { ACCOUNT_TYPES, BANKS, BANKS_REQUIRING_NAME, PASSPORT_GENERAL_MESSAGE } from "./constants";
 import { normalizePhone } from "./phone";
+import { cleanText } from "./sanitize";
 
 const REQUIRED = "Este campo es obligatorio.";
 const NAME_RE = /^[\p{L}][\p{L}\p{M}' .-]*$/u;
 const SAFE_TEXT_RE = /^[^<>{}\\`]*$/;
 const EMAIL_RE = /^[A-Za-z0-9.!#$%&'*+/=?^_~-]+@[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+$/;
 
-const nameField = z
-  .string()
-  .trim()
-  .min(2, REQUIRED)
-  .max(80, "Máximo 80 caracteres.")
-  .regex(NAME_RE, "Usa solo letras, espacios, apóstrofes o guiones.");
+const cleanedString = z.string().transform(cleanText);
+
+const nameField = cleanedString.pipe(
+  z.string().min(2, REQUIRED).max(80, "Máximo 80 caracteres.").regex(NAME_RE, "Usa solo letras, espacios, apóstrofes o guiones."),
+);
 
 const safeText = (max: number) =>
-  z.string().trim().max(max, `Máximo ${max} caracteres.`).regex(SAFE_TEXT_RE, "Contiene caracteres no permitidos.");
+  cleanedString.pipe(z.string().max(max, `Máximo ${max} caracteres.`).regex(SAFE_TEXT_RE, "Contiene caracteres no permitidos."));
 
-const requiredSafeText = (max: number) => safeText(max).min(2, REQUIRED);
+const requiredSafeText = (max: number) =>
+  cleanedString.pipe(
+    z.string().min(2, REQUIRED).max(max, `Máximo ${max} caracteres.`).regex(SAFE_TEXT_RE, "Contiene caracteres no permitidos."),
+  );
 
-export const emailField = z
-  .string()
-  .trim()
-  .toLowerCase()
-  .max(254, "Correo demasiado largo.")
-  .regex(EMAIL_RE, "Ingresa un correo válido, por ejemplo nombre@correo.com.");
+export const emailField = cleanedString.pipe(
+  z.string().toLowerCase().max(254, "Correo demasiado largo.").regex(EMAIL_RE, "Ingresa un correo válido, por ejemplo nombre@correo.com."),
+);
 
 export const cedulaField = z
   .string()
@@ -183,16 +183,15 @@ export const contactSchema = z
   .object({
     primaryEmail: emailField,
     secondaryEmail: z.union([z.literal(""), emailField]),
-    phoneCountryCode: z.string().trim(),
-    phoneNumber: z.string().trim().min(6, REQUIRED).max(20, "Número demasiado largo."),
+    phoneCountryCode: cleanedString,
+    phoneNumber: cleanedString.pipe(z.string().min(6, "Ingresa el celular completo, por ejemplo 099 123 4567.").max(20, "Número demasiado largo.")),
     addressLine1: requiredSafeText(200),
     addressLine2: safeText(200),
     city: requiredSafeText(80),
     province: requiredSafeText(80),
     country: requiredSafeText(80),
-    postalCode: z.string().trim().max(12).regex(/^[A-Za-z0-9 -]*$/, "Código postal no válido."),
+    postalCode: cleanedString.pipe(z.string().max(12).regex(/^[A-Za-z0-9 -]*$/, "Código postal no válido.")),
   })
-  .strict()
   .superRefine((v, ctx) => {
     if (v.secondaryEmail && v.secondaryEmail === v.primaryEmail) {
       ctx.addIssue({ code: "custom", path: ["secondaryEmail"], message: "Usa un correo distinto al principal o déjalo vacío." });
