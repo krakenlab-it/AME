@@ -221,6 +221,24 @@ export class MemoryRepo implements Repo {
     for (const p of this.people.values()) if (!p.self_registered_at) c[p.status]++;
     return c;
   }
+  async pendingEmailInvites() {
+    const linked = new Set<string>();
+    for (const person of this.people.values()) {
+      const login = person.login_email?.trim().toLowerCase();
+      const outreach = this.outreachEmails.get(person.id)?.trim().toLowerCase();
+      if (login) linked.add(login);
+      if (outreach) linked.add(outreach);
+    }
+    return this.preloadedContacts.filter((contact) => {
+      const email = contact.email?.trim().toLowerCase() ?? "";
+      if (!email) return true;
+      return !linked.has(email);
+    }).length;
+  }
+  async existingPreloadedEmails(emails: string[]) {
+    const wanted = new Set(emails.map((email) => email.trim().toLowerCase()).filter(Boolean));
+    return new Set(this.preloadedContacts.flatMap((contact) => (contact.email && wanted.has(contact.email) ? [contact.email] : [])));
+  }
   async listPeople(q: { status?: PersonStatus; search?: string; nationalIdHash?: string; page: number; pageSize: number }) {
     const term = q.search?.toLowerCase();
     const all = [...this.people.values()].filter((p) =>
@@ -738,10 +756,14 @@ export class MemoryRepo implements Repo {
     return true;
   }
 
-  async insertPreloadedContacts(rows: NewPreloadedContact[]): Promise<number> {
+  async insertPreloadedContacts(rows: NewPreloadedContact[], batchId: string, adminId: string): Promise<number> {
+    void batchId;
+    void adminId;
     for (const row of rows) {
       const email = row.email?.trim().toLowerCase() || null;
-      if (email && this.preloadedContacts.some((item) => item.email === email)) continue;
+      if (email && this.preloadedContacts.some((item) => item.email === email)) {
+        throw new RepoError("UNKNOWN", "Error de base de datos (insertPreloadedContacts)", "23505");
+      }
       this.preloadedContacts.push({
         email,
         phone: row.phone,

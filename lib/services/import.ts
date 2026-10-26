@@ -7,7 +7,10 @@ import { cleanText } from "@/lib/validation/sanitize";
 import { maskCedula } from "@/lib/security/masking";
 import {
   classifyImportColumns,
+  FILE_UNREADABLE,
+  HEADER_NOT_RECOGNIZED,
   HEADER_SCAN_ROWS,
+  headerRowScore,
   interpretImportCells,
   isNumericJunk,
   looksLikeEmail,
@@ -163,6 +166,7 @@ function buildTable(grid: GridRow[]): ImportTable {
   const headerIndex = pickHeaderRow(grid.slice(0, HEADER_SCAN_ROWS).map((row) => row.values));
   const headerRow = grid[headerIndex];
   if (!headerRow || !headerRow.values.some((value) => value.trim())) throw new ImportFileError(TEMPLATE_HINT);
+  if (headerRowScore(headerRow.values) === 0) throw new ImportFileError(HEADER_NOT_RECOGNIZED);
   const data = grid.slice(headerIndex + 1).filter((entry) => entry.values.some((value) => value.trim()));
   const width = Math.max(headerRow.values.length, ...data.map((entry) => entry.values.length));
   const headers = Array.from({ length: width }, (_, column) => String(headerRow.values[column] ?? "").trim());
@@ -179,7 +183,13 @@ function buildTable(grid: GridRow[]): ImportTable {
 }
 
 function parseCsvGrid(bytes: ArrayBuffer): GridRow[] {
-  const text = new TextDecoder("utf-8").decode(bytes).replace(/^\uFEFF/, "");
+  let text: string;
+  try {
+    text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  } catch {
+    throw new ImportFileError(FILE_UNREADABLE);
+  }
+  text = text.replace(/^\uFEFF/, "");
   const parsed = Papa.parse<string[]>(text, { header: false, skipEmptyLines: false });
   return parsed.data
     .map((record, index) => ({ row: index + 1, values: (record ?? []).map((value) => String(value ?? "")) }))
@@ -189,7 +199,11 @@ function parseCsvGrid(bytes: ArrayBuffer): GridRow[] {
 /** Lee cada hoja. La fila de títulos puede no ser la primera: pickHeaderRow recorre las primeras filas de cada hoja. */
 export async function parseXlsxGrid(bytes: ArrayBuffer): Promise<GridRow[][]> {
   const wb = new ExcelJS.Workbook();
-  await wb.xlsx.load(bytes);
+  try {
+    await wb.xlsx.load(bytes);
+  } catch {
+    throw new ImportFileError(FILE_UNREADABLE);
+  }
   if (wb.worksheets.length === 0) throw new ImportFileError("El archivo no tiene hojas.");
   return wb.worksheets.map((ws) => {
     const grid: GridRow[] = [];
@@ -355,19 +369,50 @@ export async function importPeople(repo: AdminRepo, input: { rows: RawImportRow[
     return true;
   });
   errors.sort((a, b) => a.row - b.row);
-  const withEmail = contacts.filter((row) => Boolean(row.outreach_email)).length;
+  const knownEmails = [...new Set(contacts.map((row) => row.outreach_email).filter((email): email is string => Boolean(email)))];
+  const alreadyEmails = knownEmails.length ? await repo.existingPreloadedEmails(knownEmails) : new Set<string>();
+  const freshContacts = contacts.filter((row) => {
+    const email = row.outreach_email?.trim().toLowerCase() ?? "";
+    if (email && alreadyEmails.has(email)) {
+      notes.push({ row: row.row, cedula: "—", text: `Correo ya importado (fila ${row.row})` });
+      return false;
+    }
+    return true;
+  });
+  const withEmail = freshContacts.filter((row) => Boolean(row.outreach_email)).length;
   const blocked = errors.length > 0 && !input.allowPartial;
   if (input.dryRun) {
     const note = importNovedades({ committed: false, imported: 0, rejected: errors.length, notes: notes.length });
-    return { imported: toInsert.length, contacts: contacts.length, withEmail, rejected: errors, notes, total, linksCsv: null, committed: false, preview: true, ...note };
+    return { imported: toInsert.length, contacts: freshContacts.length, withEmail, rejected: errors, notes, total, linksCsv: null, committed: false, preview: true, ...note };
   }
-  if (blocked || (toInsert.length === 0 && contacts.length === 0)) {
+  if (blocked) {
     const note = importNovedades({ committed: false, imported: 0, rejected: errors.length, notes: notes.length });
     return { imported: 0, contacts: 0, withEmail: 0, rejected: errors, notes, total, linksCsv: null, committed: false, preview: false, ...note };
   }
+  if (toInsert.length === 0 && freshContacts.length === 0) {
+    return {
+      imported: 0,
+      contacts: 0,
+      withEmail: 0,
+      rejected: errors,
+      notes,
+      total,
+      linksCsv: null,
+      committed: false,
+      preview: false,
+      noteTitle: "Nota de novedades",
+      noteBody: "No hay contactos nuevos: todos ya importados.",
+    };
+  }
 
-  const batchId = await repo.createImportBatch({ admin_id: input.adminId, filename: input.filename.slice(0, 200), total_rows: total, imported_rows: toInsert.length, rejected_rows: errors.length });
-  const inserted = await repo.insertPeople(
+  const batchId = await repo.createImportBatch({
+    admin_id: input.adminId,
+    filename: input.filename.slice(0, 200),
+    total_rows: total,
+    imported_rows: toInsert.length + freshContacts.length,
+    rejected_rows: errors.length,
+  });
+  const inserted = toInsert.length === 0 ? [] : await repo.insertPeople(
     toInsert.map((r) => ({
       first_names: r.first_names,
       last_names: r.last_names,
@@ -380,17 +425,19 @@ export async function importPeople(repo: AdminRepo, input: { rows: RawImportRow[
     batchId,
   );
   const byHash = new Map(toInsert.map((r) => [keyedHash(r.national_id, "national_id"), r]));
-  await repo.insertPreloadedContacts(
-    contacts.map((row) => ({
-      email: row.outreach_email || null,
-      phone: row.outreach_phone || null,
-      firstNames: row.first_names,
-      lastNames: row.last_names,
-      comunidad: row.comunidad || null,
-    })),
-    batchId,
-    input.adminId,
-  );
+  if (freshContacts.length > 0) {
+    await repo.insertPreloadedContacts(
+      freshContacts.map((row) => ({
+        email: row.outreach_email || null,
+        phone: row.outreach_phone || null,
+        firstNames: row.first_names,
+        lastNames: row.last_names,
+        comunidad: row.comunidad || null,
+      })),
+      batchId,
+      input.adminId,
+    );
+  }
   const links = inserted.length ? await issueLinks(repo, inserted.map((p) => p.id), input.adminId) : [];
   const linkByPerson = new Map(links.map((l) => [l.person_id, l]));
   const csvRows = inserted.map((p) => {
@@ -399,10 +446,10 @@ export async function importPeople(repo: AdminRepo, input: { rows: RawImportRow[
     return { row: r.row, first_names: r.first_names, last_names: r.last_names, cedula_masked: maskCedula(r.national_id), url: link.url, expires_at: link.expires_at };
   });
   await repo.audit({ actor_type: "admin", actor_id: input.adminId, action: "IMPORT_CREATED", metadata: { batch_id: batchId, imported: inserted.length, rejected: errors.length, notes: notes.length } });
-  const note = importNovedades({ committed: true, imported: inserted.length + contacts.length, rejected: errors.length, notes: notes.length });
+  const note = importNovedades({ committed: true, imported: inserted.length + freshContacts.length, rejected: errors.length, notes: notes.length });
   return {
     imported: inserted.length,
-    contacts: contacts.length,
+    contacts: freshContacts.length,
     withEmail,
     rejected: errors,
     notes,

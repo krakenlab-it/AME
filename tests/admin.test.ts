@@ -177,6 +177,6 @@ describe("importación inicial", () => {
     const csv = new TextEncoder().encode(`first_names,last_names,national_id\nJuan Carlos,Pérez López,${C1}\n`);
     expect(await parseImportFile(csv.buffer as ArrayBuffer, "x.csv")).toEqual([{ row: 2, first_names: "Juan Carlos", last_names: "Pérez López", national_id: C1, outreach_email: "" }]);
     const bad = new TextEncoder().encode("foo,bar\n1,2\n");
-    await expect(parseImportFile(bad.buffer as ArrayBuffer, "x.csv")).rejects.toThrow(/cédula/);
+    await expect(parseImportFile(bad.buffer as ArrayBuffer, "x.csv")).rejects.toThrow(/No reconocemos los títulos/);
   });
 });
