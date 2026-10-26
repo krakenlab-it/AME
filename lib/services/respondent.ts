@@ -203,26 +203,48 @@ export type SubmitResult =
   | { ok: true; confirmationCode: string; email: string }
   | { ok: false; error: string; fieldErrors?: Record<string, string>; sessionExpired?: boolean };
 
+async function rejectSubmit(repo: RespondentRepo, keys: string[], codes: string[]) {
+  await repo.logSecurityEvent({
+    event_type: "FORM_SUBMIT_REJECTED",
+    ip_hash: null,
+    detail: { keys, codes },
+  });
+}
+
 const CONTACT_FIELDS = ["primary_email", "secondary_email", "mobile_phone", "address_line_1", "address_line_2", "city", "province", "country", "postal_code"];
 const BANK_FIELDS = ["bank_name", "account_type", "account_number", "account_holder_name", "account_holder_national_id"];
 
 export async function submitResponse(repo: RespondentRepo, sessionToken: string | undefined, rawInput: unknown, deps: SubmitDeps): Promise<SubmitResult> {
-  if (deps.portalBlocked) return { ok: false, error: "El portal no está habilitado todavía. Intenta más tarde." };
+  if (deps.portalBlocked) {
+    await rejectSubmit(repo, [], ["portal"]);
+    return { ok: false, error: "El portal no está habilitado todavía. Intenta más tarde." };
+  }
 
   const ctx = await getRespondentContext(repo, sessionToken);
-  if (!ctx) return { ok: false, error: sessionEndedMessage(undefined), sessionExpired: true };
+  if (!ctx) {
+    await rejectSubmit(repo, [], ["session"]);
+    return { ok: false, error: sessionEndedMessage(undefined), sessionExpired: true };
+  }
 
   const parsed = submissionSchema.safeParse(sanitizeDeep(rawInput));
-  if (!parsed.success) return { ok: false, error: "Revisa los campos marcados.", fieldErrors: flattenIssues(parsed.error) };
+  if (!parsed.success) {
+    const fieldErrors = flattenIssues(parsed.error);
+    await rejectSubmit(repo, parsed.error.issues.map((issue) => issue.path.join(".") || "form"), parsed.error.issues.map((issue) => issue.code));
+    return { ok: false, error: "Revisa los campos marcados.", fieldErrors };
+  }
   const data = parsed.data;
 
   if (data.noticeVersion !== deps.activeNoticeVersion) {
+    await rejectSubmit(repo, ["consents.privacyAccepted"], ["notice"]);
     return { ok: false, error: "El Aviso de Privacidad se actualizó. Vuelve a leerlo y acepta la nueva versión.", fieldErrors: { "consents.privacyAccepted": "Acepta la versión vigente del aviso." } };
   }
 
   const { person, session } = ctx;
   const phone = normalizePhone(data.contact.phoneCountryCode, data.contact.phoneNumber);
-  if (!phone.ok || !phone.e164) return { ok: false, error: "Revisa los campos marcados.", fieldErrors: { "contact.phoneNumber": phone.message ?? "Teléfono no válido." } };
+  if (!phone.ok || !phone.e164) {
+    await rejectSubmit(repo, ["contact.phoneNumber"], ["phone"]);
+    return { ok: false, error: "Revisa los campos marcados.", fieldErrors: { "contact.phoneNumber": phone.message ?? "Teléfono no válido." } };
+  }
 
   // Nombres: si el titular confirmó, se conservan los registrados (no se aceptan cambios ocultos).
   const newFirst = data.names.namesConfirmed ? person.first_names : cleanText(data.names.firstNames);
@@ -238,7 +260,8 @@ export async function submitResponse(repo: RespondentRepo, sessionToken: string 
     verifiedCedula = null;
   }
   if (!verifiedCedula) {
-    return { ok: false, error: "No pudimos confirmar su cédula. Vuelva a abrir el enlace que recibió." };
+    await rejectSubmit(repo, [], ["cedula"]);
+    return { ok: false, error: "No pudimos confirmar su cédula. Vuelva a entrar en /ingresar." };
   }
   const holderName = cleanText(data.bank.accountHolderName);
   const holderIsTitular =
@@ -296,14 +319,20 @@ export async function submitResponse(repo: RespondentRepo, sessionToken: string 
     } catch (err) {
       if (err instanceof RepoError) {
         if (err.code === "DUPLICATE_CODE") continue;
-        if (err.code === "ALREADY_SUBMITTED") return { ok: false, error: "Esta información ya fue enviada anteriormente.", sessionExpired: true };
+        if (err.code === "ALREADY_SUBMITTED") {
+          await rejectSubmit(repo, [], ["already_submitted"]);
+          return { ok: false, error: "Esta información ya fue enviada anteriormente.", sessionExpired: true };
+        }
         if (err.code === "SESSION_INVALID" || err.code === "TOKEN_INVALID") {
+          await rejectSubmit(repo, [], [err.code.toLowerCase()]);
           return { ok: false, error: sessionEndedMessage(ctx.session.entry_method), sessionExpired: true };
         }
       }
       console.error("[submit] error al guardar el formulario");
+      await rejectSubmit(repo, [], ["save"]);
       return { ok: false, error: "No pudimos guardar tu información. Intenta nuevamente en unos minutos." };
     }
   }
+  await rejectSubmit(repo, [], ["save"]);
   return { ok: false, error: "No pudimos guardar tu información. Intenta nuevamente en unos minutos." };
 }

@@ -3,7 +3,7 @@
 import * as m from "motion/react-m";
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { useForm, type FieldPath, type UseFormRegisterReturn } from "react-hook-form";
+import { useForm, type FieldErrors, type FieldPath, type UseFormRegisterReturn } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Building2, Check, CheckCircle2, Lock, Mail, Pencil, ShieldCheck, UserRound } from "lucide-react";
 import { submitAction } from "@/app/verificar/actions";
@@ -13,6 +13,7 @@ import { ErrorSummary, type SummaryItem } from "@/components/ui/error-summary";
 import { describedBy, Field, RequiredLegend } from "@/components/ui/field";
 import { Notice } from "@/components/ui/notice";
 import { ACCOUNT_TYPES, BANKS, BANKS_REQUIRING_NAME, EC_PROVINCES, PHONE_COUNTRY_CODES, type BankOption } from "@/lib/validation/constants";
+import { describeFieldErrors, flattenFormErrors, stepForField, type FieldErrorItem } from "@/lib/services/submit-errors";
 import { submissionSchema, type Submission, type SubmissionInput } from "@/lib/validation/schemas";
 import { maskAccount, maskCedulaTail } from "@/lib/security/masking";
 import { cn } from "@/lib/utils";
@@ -75,13 +76,6 @@ const FIELD_LABELS: Partial<Record<Path, string>> = {
   "consents.accuracyDeclared": "Declaración de veracidad",
 };
 
-function stepForPath(path: string): number {
-  if (path.startsWith("names")) return 2;
-  if (path.startsWith("contact")) return 3;
-  if (path.startsWith("bank")) return 4;
-  return 5;
-}
-
 function getError(errors: unknown, path: string): string | undefined {
   let node: unknown = errors;
   for (const part of path.split(".")) {
@@ -96,6 +90,8 @@ export function UpdateWizard({ registered, privacy, supportContact }: WizardProp
   const router = useRouter();
   const [step, setStep] = useState(2);
   const [serverError, setServerError] = useState<string | null>(null);
+  const [serverIssues, setServerIssues] = useState<FieldErrorItem[]>([]);
+  const [focusPath, setFocusPath] = useState<string | null>(null);
   const [expired, setExpired] = useState(false);
   const headingRef = useRef<HTMLHeadingElement>(null);
 
@@ -121,7 +117,7 @@ export function UpdateWizard({ registered, privacy, supportContact }: WizardProp
   });
   const { register, watch, setValue, trigger, formState, handleSubmit, setError, getValues } = form;
   const errors = formState.errors;
-  const err = (p: Path) => getError(errors, p);
+  const err = (p: Path) => getError(errors, p) ?? serverIssues.find((item) => item.id === p)?.message;
 
   const namesConfirmed = watch("names.namesConfirmed");
   const [namesDecision, setNamesDecision] = useState<"pending" | "confirmed" | "editing">("pending");
@@ -134,9 +130,36 @@ export function UpdateWizard({ registered, privacy, supportContact }: WizardProp
     window.scrollTo({ top: 0, behavior: reduce ? "auto" : "smooth" });
   }, [step]);
 
+  useEffect(() => {
+    if (!focusPath || stepForField(focusPath) !== step) return;
+    const el = document.getElementById(focusPath);
+    if (el) {
+      el.focus();
+      return;
+    }
+    try {
+      form.setFocus(focusPath as Path);
+    } catch {
+      /* La clave no tiene un campo en pantalla. El aviso de arriba sigue siendo visible. */
+    }
+  }, [focusPath, form, step]);
+
+  function showIssues(fieldErrors: Record<string, string>, banner: string) {
+    const items = describeFieldErrors(fieldErrors);
+    setServerIssues(items);
+    setServerError(items.length ? null : banner);
+    for (const [path, message] of Object.entries(fieldErrors)) setError(path as Path, { type: "server", message });
+    const first = items[0];
+    if (!first) return;
+    setFocusPath(first.id);
+    setStep(first.step);
+  }
+
   async function next() {
     const ok = await trigger(STEP_FIELDS[step] ?? [], { shouldFocus: true });
-    if (ok) setStep((s) => Math.min(s + 1, 6));
+    if (!ok) return;
+    setServerIssues((current) => current.filter((item) => item.step !== step));
+    setStep((s) => Math.min(s + 1, 6));
   }
 
   const summaryItems: SummaryItem[] = (STEP_FIELDS[step] ?? []).flatMap((p) => {
@@ -177,16 +200,16 @@ export function UpdateWizard({ registered, privacy, supportContact }: WizardProp
 
   const onSubmit = handleSubmit(async (values) => {
     setServerError(null);
+    setServerIssues([]);
     const res = await submitAction(values);
     if (res.ok) {
       router.replace("/confirmacion");
       return;
     }
     if (res.sessionExpired) setExpired(true);
-    setServerError(res.error);
-    const entries = Object.entries(res.fieldErrors ?? {});
-    for (const [path, message] of entries) setError(path as Path, { type: "server", message });
-    if (entries[0]) setStep(stepForPath(entries[0][0]));
+    showIssues(res.fieldErrors ?? {}, res.error);
+  }, (formErrors: FieldErrors<SubmissionInput>) => {
+    showIssues(flattenFormErrors(formErrors), "Revisa los campos marcados.");
   });
 
   /** Selects controlados: evita que el valor se pierda al re-renderizar tras una validación fallida. */
@@ -220,7 +243,25 @@ export function UpdateWizard({ registered, privacy, supportContact }: WizardProp
     <form onSubmit={onSubmit} onKeyDown={onFormKeyDown} noValidate className="mx-auto max-w-2xl space-y-6 px-5 py-8 md:py-12">
       <StepCrown current={step} />
 
-      {serverError && <Notice tone="error" live title="No se pudo enviar">{serverError}</Notice>}
+      {(serverError || serverIssues.length > 0) && (
+        <Notice tone="error" live title="No se pudo enviar">
+          {serverIssues.length > 0 ? (
+            <ul className="space-y-1">
+              {serverIssues.map((item) => (
+                <li key={item.id}>
+                  <button
+                    type="button"
+                    className="text-left font-medium underline underline-offset-4"
+                    onClick={() => { setFocusPath(item.id); setStep(item.step); }}
+                  >
+                    {item.label}: {item.message}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          ) : serverError}
+        </Notice>
+      )}
 
       <m.section
         key={step}
