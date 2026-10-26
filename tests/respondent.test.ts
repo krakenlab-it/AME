@@ -149,13 +149,13 @@ describe("envío del formulario", () => {
     expect(repo.people.get(juanId)!.submitted_at).toBeNull();
   });
 
-  it("rechaza correos y cuentas que no coinciden", async () => {
+  it("rechaza un correo alternativo igual al principal y cuentas que no coinciden", async () => {
     const session = await login();
     const base = validSubmission();
-    const r = await submitResponse(repo, session, { ...base, contact: { ...base.contact, primaryEmailConfirm: "x@y.com" }, bank: { ...base.bank, accountNumberConfirm: "1" } }, submitDeps);
+    const r = await submitResponse(repo, session, { ...base, contact: { ...base.contact, secondaryEmail: base.contact.primaryEmail }, bank: { ...base.bank, accountNumberConfirm: "1" } }, submitDeps);
     expect(r.ok).toBe(false);
     if (!r.ok) {
-      expect(r.fieldErrors?.["contact.primaryEmailConfirm"]).toBeDefined();
+      expect(r.fieldErrors?.["contact.secondaryEmail"]).toBeDefined();
       expect(r.fieldErrors?.["bank.accountNumberConfirm"]).toBeDefined();
     }
   });

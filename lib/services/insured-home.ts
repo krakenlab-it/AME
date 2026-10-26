@@ -30,9 +30,9 @@ export interface InsuredHomeView {
 }
 
 /** El formulario sigue abierto solo antes del envío. Completado y en revisión son de lectura. */
-export function canContinueForm(person: { status: PersonStatus; submitted_at: string | null; self_registered_at?: string | null }): boolean {
-  // Una cuenta propia (sin cédula) no tiene formulario hasta que la vinculen.
-  if (person.self_registered_at) return false;
+export function canContinueForm(person: { status: PersonStatus; submitted_at: string | null; self_registered_at?: string | null; national_id_hash?: string | null }): boolean {
+  // Una cuenta que solo tiene correo, sin cédula, no tiene formulario.
+  if (person.self_registered_at && !person.national_id_hash) return false;
   if (person.submitted_at) return false;
   switch (person.status) {
     case "PENDING":
@@ -91,9 +91,20 @@ function statusNotification(status: PersonStatus, reviewReasons: string[]): Insu
 export const PENDING_LINK_NOTICE: InsuredNotification = {
   id: "pending-link",
   tone: "warning",
-  title: "Tu cuenta todavía no está vinculada",
-  body: "Entraste con tu correo, pero no lo encontramos en la base de asegurados. Si te escribieron desde otro correo, entra con ese. Si no, el equipo revisará tu cuenta y la vinculará con tu registro; no hace falta crear otra.",
+  title: "Falta tu cédula",
+  body: "Esta cuenta todavía no tiene una cédula. Entra de nuevo en /ingresar y escribe tu cédula y el código dactilar del reverso. No hace falta esperar una revisión.",
 };
+
+/** Saludo de Mi cuenta. Nunca usa el marcador «Sin nombre». */
+export function insuredGreeting(firstNames: string): string {
+  const first = firstNames.trim().split(/\s+/)[0] ?? "";
+  if (!first || /^sin$/i.test(first)) return "Hola";
+  return `Hola, ${first}`;
+}
+
+export function isPlaceholderIdentity(firstNames: string, lastNames: string): boolean {
+  return /^sin nombre$/i.test(firstNames.trim()) && /^registrado$/i.test(lastNames.trim());
+}
 
 export function buildInsuredNotifications(input: {
   status: PersonStatus;
@@ -156,7 +167,7 @@ export function composeInsuredHome(record: InsuredRecord, activeNotice: Pick<Not
     confirmationCode: person.confirmation_code,
     submittedAt: person.submitted_at,
     editable: canContinueForm(person),
-    pendingLink: Boolean(person.self_registered_at),
+    pendingLink: Boolean(person.self_registered_at && !person.national_id_hash),
     contact: contact
       ? {
           email: maskEmail(contact.primary_email),
@@ -178,7 +189,7 @@ export function composeInsuredHome(record: InsuredRecord, activeNotice: Pick<Not
       reviewReasons: person.review_reasons,
       activeNotice,
       acceptedNoticeVersion: record.notice_version,
-      pendingLink: Boolean(person.self_registered_at),
+      pendingLink: Boolean(person.self_registered_at && !person.national_id_hash),
     }),
   };
 }

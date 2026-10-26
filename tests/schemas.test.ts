@@ -9,11 +9,11 @@ describe("validaciones del formulario", () => {
     expect(submissionSchema.safeParse(validSubmission()).success).toBe(true);
   });
 
-  it("rechaza correos que no coinciden", () => {
-    const c = { ...validSubmission().contact, primaryEmailConfirm: "otro@correo.com" };
+  it("rechaza un correo alternativo igual al principal", () => {
+    const c = { ...validSubmission().contact, secondaryEmail: validSubmission().contact.primaryEmail };
     const r = contactSchema.safeParse(c);
     expect(r.success).toBe(false);
-    expect(r.error?.issues.some((i) => i.path.join(".") === "primaryEmailConfirm")).toBe(true);
+    expect(r.error?.issues.some((i) => i.path.join(".") === "secondaryEmail")).toBe(true);
   });
 
   it("rechaza números de cuenta que no coinciden", () => {

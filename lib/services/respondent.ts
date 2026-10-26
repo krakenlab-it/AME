@@ -130,8 +130,8 @@ export function openInsuredHome(repo: RespondentRepo, rawInput: unknown, deps: I
 }
 
 function sessionEndedMessage(entry: "token" | "general" | undefined): string {
-  if (entry === "general") return "Tu sesión terminó por seguridad. Vuelve a entrar con tu cédula.";
-  return "Tu sesión terminó por seguridad. Vuelve a abrir el enlace que recibiste.";
+  if (entry === "token") return "Tu sesión terminó por seguridad. Vuelve a abrir el enlace que recibiste.";
+  return "Tu sesión terminó por seguridad. Vuelve a entrar en /ingresar.";
 }
 
 export function linkStateMessage(state: LinkState): string {

@@ -13,7 +13,7 @@ import {
 } from "@/lib/services/general-email";
 import { registeredView, submitResponse } from "@/lib/services/respondent";
 import { settings } from "@/lib/services/settings";
-import { GENERIC_GENERAL_ERROR } from "@/lib/validation/constants";
+import { WRONG_CEDULA_ERROR, WRONG_FINGERPRINT_ERROR, lockoutError } from "@/lib/services/general-email";
 import { validSubmission } from "./helpers/fixtures";
 
 const JUAN = "1710034065";
@@ -140,7 +140,7 @@ describe("ingreso con código por correo", () => {
     const coded = await confirmGeneralEmailCode(repo, started.challengeToken, { code: DEMO_EMAIL_OTP_CODE }, deps(otp));
     expect(coded).toMatchObject({ ok: true, phase: "cedula" });
     const mismatch = await confirmGeneralCedula(repo, started.challengeToken, { cedula: ANA, codigoDactilar: "A9876B4321" }, deps(otp));
-    expect(mismatch).toMatchObject({ ok: false, error: GENERIC_GENERAL_ERROR });
+    expect(mismatch).toMatchObject({ ok: false, error: WRONG_FINGERPRINT_ERROR });
     expect((await repo.getPerson(personId))?.login_email).toBeFalsy();
     expect(repo.generalAuth.get(personId)?.failed_attempts).toBe(1);
     expect(repo.generalAuth.get(personId)?.fingerprint_code_hash).toBe(keyedHash(CODE, "fingerprint_code"));
@@ -171,7 +171,7 @@ describe("ingreso con código por correo", () => {
     expect(repo.generalAuth.get(personId)?.locked_until).toBeTruthy();
     const calls = vi.mocked(otp.verify).mock.calls.length;
     const locked = await confirmGeneralEmailCode(repo, started.challengeToken, { code: DEMO_EMAIL_OTP_CODE }, deps(otp, "ip-99"));
-    expect(locked).toMatchObject({ ok: false, error: GENERIC_GENERAL_ERROR });
+    expect(locked).toMatchObject({ ok: false, error: lockoutError(settings.generalLockMinutes) });
     expect(vi.mocked(otp.verify).mock.calls.length).toBe(calls);
     expect((await repo.getPerson(personId))?.login_email).toBeUndefined();
   });
@@ -240,7 +240,7 @@ describe("ingreso con código por correo", () => {
     const second = await startGeneralEmailAccess(repo, emailInput(EMAIL), deps(otp, "ip-2"));
     if (!second.ok) throw new Error("segundo inicio");
     const otherDocument = await finishWithCedula(repo, second.challengeToken, ANA, otp, "ip-2");
-    expect(otherDocument).toMatchObject({ ok: false, error: GENERIC_GENERAL_ERROR });
+    expect(otherDocument).toMatchObject({ ok: false, error: WRONG_CEDULA_ERROR });
     expect((await repo.getPerson(anaId))?.login_email).toBeUndefined();
 
     // Aunque el reto llegue a abrirse para Ana (carrera), el usuario de Auth ya es de Juan.
@@ -308,12 +308,9 @@ describe("correo de ingreso ya verificado", () => {
 
     const next = await startGeneralEmailAccess(repo, emailInput("nuevo@example.com"), deps(otp, "ip-5"));
     if (!next.ok) throw new Error(next.error);
-    expect(await finishWithCedula(repo, next.challengeToken, JUAN, otp, "ip-5")).toMatchObject({ ok: true, destination: "home" });
-    expect((await repo.getPerson(personId))?.login_email).toBeFalsy();
-    const [account] = await repo.listUnlinkedAccounts(10);
-    expect(account).toMatchObject({ login_email: "nuevo@example.com", link_request_national_id_last2: JUAN.slice(-2) });
-    expect(account!.link_request_national_id_hash).toBe(keyedHash(JUAN, "national_id"));
-    expect(await repo.linkSelfAccount(account!.id, personId, "admin-1")).toBe("linked");
+    expect(await finishWithCedula(repo, next.challengeToken, JUAN, otp, "ip-5")).toMatchObject({ ok: true, destination: "form" });
     expect((await repo.getPerson(personId))?.login_email).toBe("nuevo@example.com");
+    expect(await repo.listUnlinkedAccounts(10)).toHaveLength(0);
+    expect(repo.auditLog.some((entry) => entry.action === "PERSON_AUTO_LINKED" && entry.metadata?.match === "dactilar_first_use")).toBe(true);
   });
 });

@@ -55,7 +55,6 @@ describe("fichas sintéticas KAN-106", () => {
         },
         contact: {
           primaryEmail: persona.contact!.primary_email,
-          primaryEmailConfirm: persona.contact!.primary_email,
           secondaryEmail: persona.contact!.secondary_email ?? "",
           phoneCountryCode: "+593",
           phoneNumber: persona.contact!.mobile_phone.replace("+593", "0"),

@@ -8,6 +8,10 @@ import {
   type AccessTokenRecord,
   type AdminUserRecord,
   type AuditRow,
+  type AutoLinkRow,
+  type CedulaLinkInput,
+  type CedulaLinkMatch,
+  type CedulaLinkResult,
   type EntryMethod,
   type ExportSourceRow,
   type FingerprintAssignResult,
@@ -281,6 +285,25 @@ export class SupabaseRepo implements Repo {
     return counts;
   }
 
+  async listAutoLinksSince(sinceIso: string): Promise<AutoLinkRow[]> {
+    const data = check(
+      await this.db
+        .from("audit_logs")
+        .select("person_id, masked_cedula, metadata, created_at")
+        .eq("action", "PERSON_AUTO_LINKED")
+        .gte("created_at", sinceIso)
+        .order("created_at", { ascending: false })
+        .limit(30),
+      "listAutoLinksSince",
+    ) as { person_id: string | null; masked_cedula: string | null; metadata: { match?: unknown } | null; created_at: string }[] | null;
+    return (data ?? []).map((row) => ({
+      personId: row.person_id,
+      maskedCedula: row.masked_cedula,
+      match: typeof row.metadata?.match === "string" ? row.metadata.match : "",
+      createdAt: row.created_at,
+    }));
+  }
+
   async pendingEmailInvites() {
     const contacts = check(await this.db.from("ame_preloaded_contacts").select("email"), "pendingEmailInvites.contacts") as { email: string | null }[] | null;
     const people = check(
@@ -447,6 +470,27 @@ export class SupabaseRepo implements Repo {
       "bindAllowlistedIdentity",
     ) as { id: string }[] | null;
     return Boolean(updated && updated.length > 0);
+  }
+
+  async commitCedulaLink(input: CedulaLinkInput): Promise<CedulaLinkResult> {
+    const data = check(
+      await this.db.rpc("commit_cedula_link", {
+        p_holder_id: input.holderId,
+        p_challenge_hash: input.challengeHash,
+        p_email: input.email,
+        p_auth_user_id: input.authUserId,
+        p_national_id_encrypted: input.nationalIdEncrypted,
+        p_national_id_hash: input.nationalIdHash,
+        p_national_id_last2: input.nationalIdLast2,
+        p_fingerprint_hash: input.fingerprintHash,
+        p_masked_cedula: input.maskedCedula,
+        p_preload_first: input.preload?.firstNames ?? null,
+        p_preload_last: input.preload?.lastNames ?? null,
+        p_preload_phone: input.preload?.phone ?? null,
+      }),
+      "commit_cedula_link",
+    );
+    return parseCedulaLink(data);
   }
 
   async createAccessTokens(items: Parameters<Repo["createAccessTokens"]>[0]) {
@@ -1185,5 +1229,32 @@ export class SupabaseRepo implements Repo {
       "deletePerson",
     ) as { id: string }[] | null;
     return Boolean(updated && updated.length > 0);
+  }
+}
+
+const CEDULA_LINK_MATCHES: readonly CedulaLinkMatch[] = ["dactilar_first_use", "dactilar_match", "preload", "new"];
+
+function parseCedulaLink(data: unknown): CedulaLinkResult {
+  const row = (typeof data === "string" ? JSON.parse(data) as unknown : data) as Record<string, unknown> | null;
+  const status = typeof row?.status === "string" ? row.status : "";
+  switch (status) {
+    case "linked": {
+      const match = CEDULA_LINK_MATCHES.find((item) => item === row?.match);
+      if (!match) throw new Error("commit_cedula_link: respuesta inesperada");
+      return { status, personId: String(row?.person_id ?? ""), match, audited: row?.audited === true };
+    }
+    case "cedula_mismatch":
+    case "fingerprint_mismatch":
+      return { status, personId: String(row?.person_id ?? "") };
+    case "auth_conflict":
+      return { status, personId: String(row?.person_id ?? ""), loginEmail: typeof row?.login_email === "string" ? row.login_email : null };
+    case "locked":
+      return { status, personId: String(row?.person_id ?? ""), lockedUntil: typeof row?.locked_until === "string" ? row.locked_until : null };
+    case "missing":
+    case "duplicate":
+      return { status };
+    default: {
+      throw new Error("commit_cedula_link: respuesta inesperada");
+    }
   }
 }

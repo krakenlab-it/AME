@@ -11,6 +11,7 @@ import { getEmailOtpProvider } from "@/lib/server/email-otp-provider";
 import { confirmGeneralCedula, confirmGeneralEmailCode, resendGeneralEmailCode, startGeneralEmailAccess } from "@/lib/services/general-email";
 import { confirmGeneralTotp, startGeneralAccess } from "@/lib/services/general-link";
 import { settings } from "@/lib/services/settings";
+import { unavailableMessage } from "@/lib/services/unavailable";
 
 export interface GeneralAccessState {
   error?: string;
@@ -37,8 +38,6 @@ function deps(h: Headers) {
   return { ipHash: ipHash(h), captchaEnabled: captchaEnabled(), verifyCaptcha: (token: string | undefined) => verifyCaptcha(token, ip) };
 }
 
-const UNAVAILABLE = "El servicio no está disponible en este momento. Intenta nuevamente en unos minutos.";
-
 function emailDeps(h: Headers) {
   const otp = getEmailOtpProvider();
   return otp ? { ...deps(h), otp } : null;
@@ -53,7 +52,7 @@ export async function startGeneralAction(_prev: GeneralAccessState, formData: Fo
     const captchaToken = formData.get("cf-turnstile-response") ? String(formData.get("cf-turnstile-response")) : undefined;
     if (settings.generalAuthMethod() === "email") {
       const d = emailDeps(h);
-      if (!d) return { error: UNAVAILABLE };
+      if (!d) return { error: unavailableMessage("config") };
       const result = await startGeneralEmailAccess(
         repo,
         {
@@ -91,7 +90,7 @@ export async function startGeneralAction(_prev: GeneralAccessState, formData: Fo
     }
     return { phase: "totp" };
   } catch {
-    return { error: "El servicio no está disponible en este momento. Intenta nuevamente en unos minutos." };
+    return { error: unavailableMessage("retry") };
   }
 }
 
@@ -107,7 +106,7 @@ export async function confirmGeneralAction(_prev: GeneralAccessState, formData: 
     if (privacy.readiness.blockPortal) return { error: "El portal no está habilitado todavía. Intenta más tarde.", phase: postedPhase };
     if (postedPhase === "email") {
       const d = emailDeps(h);
-      if (!d) return { error: UNAVAILABLE, phase: "email" };
+      if (!d) return { error: unavailableMessage("config"), phase: "email" };
       const result = await confirmGeneralEmailCode(repo, jar.get(GENERAL_CHALLENGE_COOKIE())?.value, { code: String(formData.get("code") ?? "") }, d);
       if (!result.ok) {
         return { error: result.error, fieldErrors: result.fieldErrors, requireCaptcha: result.requireCaptcha, phase: result.challengeExpired ? "identify" : "email" };
@@ -116,7 +115,7 @@ export async function confirmGeneralAction(_prev: GeneralAccessState, formData: 
     }
     if (postedPhase === "cedula") {
       const d = emailDeps(h);
-      if (!d) return { error: UNAVAILABLE, phase: "cedula" };
+      if (!d) return { error: unavailableMessage("config"), phase: "cedula" };
       const result = await confirmGeneralCedula(
         repo,
         jar.get(GENERAL_CHALLENGE_COOKIE())?.value,
@@ -154,7 +153,7 @@ export async function confirmGeneralAction(_prev: GeneralAccessState, formData: 
     }
   } catch {
     const failedPhase = formData.get("phase") === "email" ? "email" : formData.get("phase") === "cedula" ? "cedula" : "totp";
-    return { error: UNAVAILABLE, phase: failedPhase };
+    return { error: unavailableMessage("retry"), phase: failedPhase };
   }
   jar.set(RESPONDENT_COOKIE(), sessionToken, cookieOptions(RESPONDENT_SESSION_MINUTES * 60));
   jar.set(GENERAL_CHALLENGE_COOKIE(), "", cookieOptions(0));
@@ -171,13 +170,13 @@ export async function resendGeneralAction(_prev: GeneralAccessState, _formData: 
     const privacy = await getActivePrivacy(repo);
     if (privacy.readiness.blockPortal) return { error: "El portal no está habilitado todavía. Intenta más tarde.", phase: "email" };
     const d = emailDeps(h);
-    if (!d) return { error: UNAVAILABLE, phase: "email" };
+    if (!d) return { error: unavailableMessage("config"), phase: "email" };
     const result = await resendGeneralEmailCode(repo, jar.get(GENERAL_CHALLENGE_COOKIE())?.value, d);
     if (!result.ok) {
       return { error: result.error, phase: result.challengeExpired ? "identify" : "email", resendAfterSeconds: result.resendAfterSeconds, sentStamp: Date.now() };
     }
     return { phase: "email", maskedEmail: result.maskedEmail, resendAfterSeconds: result.resendAfterSeconds, info: "Te enviamos un código nuevo. Usa el más reciente.", sentStamp: Date.now() };
   } catch {
-    return { error: UNAVAILABLE, phase: "email" };
+    return { error: unavailableMessage("retry"), phase: "email" };
   }
 }

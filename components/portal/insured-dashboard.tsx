@@ -4,7 +4,7 @@ import { leaveAccountAction } from "@/app/mi-cuenta/actions";
 import { StatusBadge } from "@/components/admin/status-badge";
 import { Button } from "@/components/ui/button";
 import { Notice } from "@/components/ui/notice";
-import type { InsuredHomeView } from "@/lib/services/insured-home";
+import { insuredGreeting, isPlaceholderIdentity, type InsuredHomeView } from "@/lib/services/insured-home";
 import { formatDateTime } from "@/lib/utils";
 
 export function InsuredLocked({ supportContact }: { supportContact: string }) {
@@ -20,14 +20,15 @@ export function InsuredLocked({ supportContact }: { supportContact: string }) {
 }
 
 export function InsuredDashboard({ home, supportContact }: { home: InsuredHomeView; supportContact: string }) {
-  const greeting = home.firstNames.split(" ")[0] ?? home.firstNames;
+  const greeting = insuredGreeting(home.firstNames);
+  const showName = !isPlaceholderIdentity(home.firstNames, home.lastNames);
   return (
     <div className="mx-auto max-w-3xl space-y-8 px-5 py-8 md:py-12">
       <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div className="space-y-2">
           <p className="text-sm font-medium text-marian">Mi cuenta</p>
-          <h1 className="text-3xl md:text-4xl">Hola, {greeting}</h1>
-          <p className="text-ink-muted">{home.firstNames} {home.lastNames}</p>
+          <h1 className="text-3xl md:text-4xl">{greeting}</h1>
+          {showName ? <p className="text-ink-muted">{home.firstNames} {home.lastNames}</p> : null}
         </div>
         <StatusBadge status={home.status} />
       </header>
@@ -58,8 +59,8 @@ export function InsuredDashboard({ home, supportContact }: { home: InsuredHomeVi
           </Link>
         </div>
       ) : home.pendingLink ? (
-        <Notice tone="warning" title="Cuenta pendiente de vínculo">
-          Todavía no hay un registro de asegurado asociado a tu correo. Cuando el equipo lo vincule, aquí verás tu formulario.
+        <Notice tone="warning" title="Falta tu cédula">
+          Entra de nuevo en /ingresar y escribe tu cédula y el código dactilar del reverso. Con eso se abre el formulario.
         </Notice>
       ) : (
         <Notice tone="info" title="Registro en consulta">
@@ -148,7 +149,7 @@ export function InsuredMissingRecord({ supportContact }: { supportContact: strin
   return (
     <div className="mx-auto max-w-xl space-y-4 px-5 py-16">
       <h1 className="text-3xl">No encontramos tu registro</h1>
-      <Notice tone="warning">La sesión no corresponde a un registro activo. Vuelve a abrir tu enlace personal.</Notice>
+      <Notice tone="warning">La sesión no corresponde a un registro activo. Vuelve a entrar en /ingresar.</Notice>
       <p className="text-ink-muted">Puedes escribir a {supportContact}.</p>
       <form action={leaveAccountAction}>
         <Button type="submit" variant="secondary">Cerrar sesión</Button>

@@ -39,6 +39,7 @@ export const AUDIT_LABELS: Record<AuditAction, string> = {
   IDENTITY_TERMS_ACCEPTED: "Aceptó el mecanismo de identificación",
   PERSON_RESET_TO_GUEST: "Restableció la ficha para que la persona vuelva a ingresar",
   PERSON_DELETED: "Eliminó la ficha de la persona",
+  PERSON_AUTO_LINKED: "Se vinculó sola con su cédula y código dactilar",
 };
 
 export const AUDIT_ACTIONS = Object.keys(AUDIT_LABELS) as AuditAction[];
