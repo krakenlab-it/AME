@@ -93,12 +93,21 @@ function rowFromCells(row: number, cells: ImportCell[]): RawImportRow {
   return entry;
 }
 
-/** Misma persona si comparte correo. Si no hay correo, si comparte teléfono. Correos distintos no se funden aunque el teléfono se repita. */
+function contactName(row: RawImportRow): string {
+  return `${row.first_names} ${row.last_names}`.trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+/**
+ * Primero el correo: un correo repetido es la misma persona.
+ * Un teléfono repetido no borra una fila posterior que sí trae correo.
+ * Si el teléfono coincide y los nombres son distintos, se guardan los dos contactos.
+ * Si el teléfono y el nombre coinciden, se queda uno solo y se le copia el correo si el primero no lo tenía.
+ */
 export function dedupeImportRows(rows: RawImportRow[]): RawImportRow[] {
   const people: RawImportRow[] = [];
   const contacts: RawImportRow[] = [];
-  const byEmail = new Map<string, RawImportRow>();
-  const byPhone = new Map<string, RawImportRow>();
+  const byEmail = new Set<string>();
+  const byPhone = new Map<string, number[]>();
   for (const row of rows) {
     if (row.national_id) {
       people.push(row);
@@ -108,14 +117,19 @@ export function dedupeImportRows(rows: RawImportRow[]): RawImportRow[] {
     const phone = row.outreach_phone ?? "";
     if (!email && !phone) continue;
     if (email && byEmail.has(email)) continue;
-    const samePhone = phone ? byPhone.get(phone) : undefined;
+    const name = contactName(row);
+    const samePhone = (phone ? byPhone.get(phone) ?? [] : []).map((index) => contacts[index]!).find((existing) => contactName(existing) === name);
     if (samePhone) {
-      const previous = (samePhone.outreach_email ?? "").trim().toLowerCase();
-      if (!email || !previous || previous === email) continue;
+      if (email && !(samePhone.outreach_email ?? "").trim()) {
+        samePhone.outreach_email = email;
+        byEmail.add(email);
+      }
+      continue;
     }
-    if (email) byEmail.set(email, row);
-    if (phone && !byPhone.has(phone)) byPhone.set(phone, row);
-    contacts.push(row);
+    const index = contacts.length;
+    contacts.push({ ...row, outreach_email: email });
+    if (email) byEmail.add(email);
+    if (phone) byPhone.set(phone, [...(byPhone.get(phone) ?? []), index]);
   }
   return [...people, ...contacts];
 }

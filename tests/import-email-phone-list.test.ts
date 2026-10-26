@@ -1,10 +1,11 @@
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import ExcelJS from "exceljs";
 import { describe, expect, it } from "vitest";
 import { MemoryRepo } from "@/lib/database/memory-repo";
 import { keyedHash } from "@/lib/encryption/crypto";
-import { importPeople, parseImportFile } from "@/lib/services/import";
+import { dedupeImportRows, importPeople, parseImportFile } from "@/lib/services/import";
 import { confirmGeneralCedula, confirmGeneralEmailCode, startGeneralEmailAccess, type GeneralEmailDeps } from "@/lib/services/general-email";
 import { demoEmailOtpProvider, DEMO_EMAIL_OTP_CODE } from "@/lib/services/email-otp";
 import { makeCedula } from "./helpers/cedula";
@@ -57,6 +58,26 @@ describe("lista de correos y teléfonos", () => {
     expect(person?.first_names).toBe(contact?.firstNames);
     expect(person?.outreach_phone).toMatch(/^\+5939/);
     expect(repo.auditLog.some((entry) => entry.action === "ACCOUNT_LINK_REQUESTED")).toBe(false);
+  });
+
+  it("el mismo teléfono con otro nombre no se come el correo de la fila posterior", async () => {
+    const phone = "0991112233";
+    const wb = new ExcelJS.Workbook();
+    const sheet = wb.addWorksheet("Hoja1");
+    sheet.getRow(1).values = ["TELÉFONO", "RESPONSABLE", "CORREO"];
+    sheet.getRow(2).values = [phone, "PEREZ LOPEZ ANA MARIA", ""];
+    sheet.getRow(3).values = [phone, "MORA ANDRADE LUIS ENRIQUE", "luis.distinto@fmsnor.org"];
+    const bytes = Buffer.from(await wb.xlsx.writeBuffer());
+    const rows = await parseImportFile(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer, "telefono-repetido.xlsx");
+    const unique = dedupeImportRows(rows);
+    expect(unique).toHaveLength(2);
+    expect(unique.filter((row) => row.outreach_email)).toHaveLength(1);
+    const repo = new MemoryRepo();
+    const preview = await importPeople(repo, { rows, filename: "telefono-repetido.xlsx", adminId: "admin-1", allowPartial: false, dryRun: true });
+    expect(preview.contacts).toBe(2);
+    expect(preview.withEmail).toBe(1);
+    expect(preview.rejected).toHaveLength(0);
+    expect(repo.preloadedContacts).toHaveLength(0);
   });
 
   it("una carga con cédula sigue creando personas", async () => {
