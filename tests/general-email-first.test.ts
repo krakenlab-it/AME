@@ -149,7 +149,7 @@ describe("vinculación automática por cédula", () => {
       portalBlocked: false,
     });
     expect(submitted.ok).toBe(true);
-    expect(Object.values(await repo.statusCounts()).reduce((a, b) => a + b, 0)).toBe(0);
+    expect(Object.values(await repo.statusCounts()).reduce((a, b) => a + b, 0)).toBe(1);
     await signIn(repo, { email: "nadie@example.com", cedula: ANA }, fakeOtp(), "ip-2");
     expect(selfAccounts(repo)).toHaveLength(1);
   });

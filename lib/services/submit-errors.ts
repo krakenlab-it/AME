@@ -1,6 +1,9 @@
+import { namesSchema } from "@/lib/validation/schemas";
+
 const FIELD_LABELS: Record<string, string> = {
   "names.firstNames": "Nombres",
   "names.lastNames": "Apellidos",
+  "names.namesConfirmed": "Nombre registrado",
   "contact.primaryEmail": "Correo principal",
   "contact.primaryEmailConfirm": "Confirmar correo",
   "contact.secondaryEmail": "Correo alternativo",
@@ -33,6 +36,30 @@ export interface FieldErrorItem {
   step: number;
   label: string;
   message: string;
+}
+
+/** Paso del asistente. Fuera de 2–6, o un texto, vuelve al paso de nombres. */
+export function wizardStepFromQuery(raw: string | null | undefined): number {
+  const n = Number(raw);
+  if (!Number.isInteger(n) || n < 2 || n > 6) return 2;
+  return n;
+}
+
+export function sessionFollowUp(entry: "token" | "general" | undefined): string {
+  if (entry === "token") return "Para continuar, abre otra vez el enlace personal que recibiste.";
+  if (entry === "general") return "Para continuar, vuelve a empezar en /ingresar.";
+  return "Si entraste con tu correo, vuelve a empezar en /ingresar. Si usaste un enlace personal, ábrelo otra vez.";
+}
+
+/** El titular de la cuenta no puede pasar de 80 caracteres: se recorta el nombre compuesto. */
+export function holderNamePrefill(firstNames: string, lastNames: string): string {
+  const full = `${firstNames} ${lastNames}`.trim().replace(/\s+/g, " ");
+  if (full.length <= 80) return full;
+  return full.slice(0, 80).trim();
+}
+
+export function registeredNamesNeedEdit(firstNames: string, lastNames: string): boolean {
+  return !namesSchema.safeParse({ namesConfirmed: true, firstNames, lastNames }).success;
 }
 
 export function stepForField(path: string): number {

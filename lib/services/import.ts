@@ -256,6 +256,13 @@ function duplicateDocumentLabel(kind: "cedula" | "foreign"): string {
 }
 
 /** Valida formato, cédula y duplicados dentro del archivo. Nada se descarta en silencio. */
+/** Misma regla que la cédula: un nombre que el formulario no acepta queda en el marcador. No toca filas ya guardadas. */
+export function sanitizeImportedName(value: string, fallback: string): string {
+  const clean = cleanText(value);
+  if (clean.length < 2 || clean.length > 80 || !NAME_RE.test(clean) || isNumericJunk(clean)) return fallback;
+  return clean;
+}
+
 function asContact(raw: RawImportRow, first: string, last: string): RawImportRow {
   const entry: RawImportRow = {
     row: raw.row,
@@ -296,10 +303,8 @@ export function validateImportRows(rows: RawImportRow[]): ValidatedImport {
       continue;
     }
     seen.set(id, raw.row);
-    let resolvedFirst = first;
-    let resolvedLast = last;
-    if (resolvedFirst.length < 2 || !NAME_RE.test(resolvedFirst) || isNumericJunk(resolvedFirst)) resolvedFirst = "Sin nombre";
-    if (resolvedLast.length < 2 || !NAME_RE.test(resolvedLast) || isNumericJunk(resolvedLast)) resolvedLast = "Registrado";
+    const resolvedFirst = sanitizeImportedName(first, "Sin nombre");
+    const resolvedLast = sanitizeImportedName(last, "Registrado");
     if (resolvedFirst === "Sin nombre" || resolvedLast === "Registrado") {
       notes.push({
         row: raw.row,
@@ -317,7 +322,12 @@ export function validateImportRows(rows: RawImportRow[]): ValidatedImport {
     if (raw.comunidad) entry.comunidad = raw.comunidad;
     valid.push(entry);
   }
-  return { valid, contacts: dedupeImportRows(contacts), errors, notes, total: rows.length };
+  const contactsDeduped = dedupeImportRows(contacts).map((row) => ({
+    ...row,
+    first_names: sanitizeImportedName(row.first_names, "Sin nombre"),
+    last_names: sanitizeImportedName(row.last_names, "Registrado"),
+  }));
+  return { valid, contacts: contactsDeduped, errors, notes, total: rows.length };
 }
 
 export interface ImportOutcome {

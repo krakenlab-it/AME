@@ -40,6 +40,12 @@ import type { PersonStatus } from "@/lib/validation/constants";
  * Implementación en memoria que replica las reglas de la base (incluida submit_person_data).
  * Se usa en las pruebas y en el modo demostración local (DEMO_MODE=true, nunca en producción).
  */
+
+/** Una cuenta solo con correo no entra al resumen. Con cédula sí, aunque se haya registrado sola. */
+function visibleInResumen(person: { self_registered_at?: string | null; national_id_hash?: string | null }): boolean {
+  return !person.self_registered_at || Boolean(person.national_id_hash);
+}
+
 export class MemoryRepo implements Repo {
   /** Marca estructural: `instanceof` falla si Next carga el módulo en dos bundles distintos. */
   readonly isMemoryRepo = true as const;
@@ -226,7 +232,7 @@ export class MemoryRepo implements Repo {
   }
   async statusCounts() {
     const c: Record<PersonStatus, number> = { PENDING: 0, STARTED: 0, COMPLETED: 0, NEEDS_REVIEW: 0 };
-    for (const p of this.people.values()) if (!p.self_registered_at) c[p.status]++;
+    for (const p of this.people.values()) if (visibleInResumen(p)) c[p.status]++;
     return c;
   }
   async listAutoLinksSince(sinceIso: string): Promise<AutoLinkRow[]> {
@@ -263,7 +269,7 @@ export class MemoryRepo implements Repo {
   async listPeople(q: { status?: PersonStatus; search?: string; nationalIdHash?: string; page: number; pageSize: number }) {
     const term = q.search?.toLowerCase();
     const all = [...this.people.values()].filter((p) =>
-      !p.self_registered_at &&
+      visibleInResumen(p) &&
       (!q.status || p.status === q.status) &&
       (!q.nationalIdHash || p.national_id_hash === q.nationalIdHash) &&
       (!term || `${p.first_names} ${p.last_names} ${p.confirmation_code ?? ""}`.toLowerCase().includes(term)));

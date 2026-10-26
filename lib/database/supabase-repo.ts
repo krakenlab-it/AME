@@ -279,9 +279,15 @@ export class SupabaseRepo implements Repo {
 
   // ── Administración: personas ──────────────────────────────────────────────
   async statusCounts() {
-    const data = check(await this.db.rpc("people_status_counts"), "people_status_counts") as { status: PersonStatus; total: number }[] | null;
+    const data = check(
+      await this.db.from("people").select("status, self_registered_at, national_id_hash").is("anonymized_at", null),
+      "statusCounts",
+    ) as { status: PersonStatus; self_registered_at: string | null; national_id_hash: string | null }[] | null;
     const counts = Object.fromEntries(PERSON_STATUSES.map((s) => [s, 0])) as Record<PersonStatus, number>;
-    for (const row of data ?? []) counts[row.status] = Number(row.total);
+    for (const row of data ?? []) {
+      if (row.self_registered_at && !row.national_id_hash) continue;
+      counts[row.status] += 1;
+    }
     return counts;
   }
 
@@ -340,8 +346,8 @@ export class SupabaseRepo implements Repo {
       .from("people")
       .select("id, first_names, last_names, national_id_last2, status, confirmation_code, submitted_at, updated_at", { count: "exact" })
       .is("anonymized_at", null)
-      // Las cuentas propias (solo correo, sin cédula) se listan aparte.
-      .is("self_registered_at", null);
+      // Una cuenta solo con correo sigue fuera. Con cédula entra, aunque se haya registrado sola.
+      .or("self_registered_at.is.null,national_id_hash.not.is.null");
     if (q.status) query = query.eq("status", q.status);
     if (q.nationalIdHash) query = query.eq("national_id_hash", q.nationalIdHash);
     if (q.search) {

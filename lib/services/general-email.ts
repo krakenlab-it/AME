@@ -157,6 +157,14 @@ async function resolveTokenTarget(repo: RespondentRepo, token: AccessTokenRecord
  * La cédula no se pide aquí. Si llega un enlace personal vigente, el código sale para esa ficha
  * y el enlace no se marca como usado.
  */
+async function limitEmail(repo: RespondentRepo, email: string, deps: GeneralDeps): Promise<{ allowed: boolean; hits: number }> {
+  const limit = await repo.rateLimitHit(`general-email-id:${email}`, settings.generalIdentifyLimitPerEmail, settings.generalIdentifyWindowSeconds);
+  if (!limit.allowed) {
+    await repo.logSecurityEvent({ event_type: "GENERAL_RATE_LIMITED", ip_hash: deps.ipHash, detail: { scope: "email", hits: limit.hits } });
+  }
+  return limit;
+}
+
 export async function startGeneralEmailAccess(repo: RespondentRepo, rawInput: unknown, deps: GeneralEmailDeps): Promise<GeneralEmailStartResult> {
   const ipLimit = await limitIp(repo, deps);
   if (!ipLimit.allowed) return { ok: false, error: RATE_LIMIT_ERROR };
@@ -176,6 +184,8 @@ export async function startGeneralEmailAccess(repo: RespondentRepo, rawInput: un
   const link = await readPersonalLink(repo, parsed.data.accessToken);
   if (!link.ok) return link;
   const email = parsed.data.email;
+  const emailLimit = await limitEmail(repo, email, deps);
+  if (!emailLimit.allowed) return { ok: false, error: RATE_LIMIT_ERROR };
   const resolved = link.token
     ? await resolveTokenTarget(repo, link.token, email, deps, requireCaptcha)
     : await resolveEmailTarget(repo, email);
@@ -219,6 +229,8 @@ export async function resendGeneralEmailCode(repo: RespondentRepo, challengeToke
     return { ok: false, error: CHALLENGE_EXPIRED, challengeExpired: true };
   }
   if (isLocked(challenge.general_locked_until)) return { ok: false, error: lockoutError(minutesUntil(challenge.general_locked_until)) };
+  const resendEmailLimit = await limitEmail(repo, challenge.pending_email, deps);
+  if (!resendEmailLimit.allowed) return { ok: false, error: RATE_LIMIT_ERROR };
 
   const wait = secondsLeft(challenge.sent_at);
   if (wait > 0) return { ok: false, error: `Espera ${wait} segundos para pedir otro código.`, resendAfterSeconds: wait };
@@ -259,6 +271,9 @@ export async function confirmGeneralEmailCode(
   if (!challenge || challenge.purpose !== "email" || !challenge.pending_email || new Date(challenge.expires_at).getTime() <= Date.now()) {
     return { ok: false, error: CHALLENGE_EXPIRED, challengeExpired: true };
   }
+
+  const codeEmailLimit = await limitEmail(repo, challenge.pending_email, deps);
+  if (!codeEmailLimit.allowed) return { ok: false, error: RATE_LIMIT_ERROR };
 
   if (isLocked(challenge.general_locked_until)) {
     await repo.audit({ person_id: challenge.person_id, actor_type: "respondent", action: "GENERAL_IDENTIFY_FAILED", metadata: { outcome: "locked" } });
@@ -396,6 +411,8 @@ export async function confirmGeneralCedula(
     return { ok: false, error: CHALLENGE_EXPIRED, challengeExpired: true };
   }
   if (isLocked(challenge.general_locked_until)) return { ok: false, error: lockoutError(minutesUntil(challenge.general_locked_until)) };
+  const cedulaEmailLimit = await limitEmail(repo, challenge.pending_email, deps);
+  if (!cedulaEmailLimit.allowed) return { ok: false, error: RATE_LIMIT_ERROR };
 
   const link = await readPersonalLink(repo, accessToken);
   if (!link.ok) return { ...link, challengeExpired: false };
