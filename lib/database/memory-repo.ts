@@ -20,6 +20,8 @@ import {
   type GeneralEmailLink,
   type LinkAccountResult,
   type LinkRequest,
+  type NewPreloadedContact,
+  type PreloadedContact,
   type PersonDetail,
   type PersonRecord,
   type UnibrokersSourceRow,
@@ -58,6 +60,7 @@ export class MemoryRepo implements Repo {
   nameChanges = new Map<string, PersonDetail["nameChanges"]>();
   /** Código dactilar solo hasheado y TOTP solo cifrado. No se mezcla con la ficha visible. */
   generalAuth = new Map<string, GeneralAuthState>();
+  preloadedContacts: PreloadedContact[] = [];
 
   // ── helpers de prueba ──
   addPerson(firstNames: string, lastNames: string, cedula: string, status: PersonStatus = "PENDING") {
@@ -731,6 +734,42 @@ export class MemoryRepo implements Repo {
     const now = new Date().toISOString();
     for (const session of this.sessions.values()) {
       if (session.person_id === personId && !session.revoked_at) session.revoked_at = now;
+    }
+    return true;
+  }
+
+  async insertPreloadedContacts(rows: NewPreloadedContact[]): Promise<number> {
+    for (const row of rows) {
+      const email = row.email?.trim().toLowerCase() || null;
+      if (email && this.preloadedContacts.some((item) => item.email === email)) continue;
+      this.preloadedContacts.push({
+        email,
+        phone: row.phone,
+        firstNames: row.firstNames || "Sin nombre",
+        lastNames: row.lastNames || "Registrado",
+        comunidad: row.comunidad,
+      });
+    }
+    return rows.length;
+  }
+
+  async findPreloadedContactByEmail(email: string): Promise<PreloadedContact | null> {
+    const wanted = email.trim().toLowerCase();
+    return this.preloadedContacts.find((item) => item.email === wanted) ?? null;
+  }
+
+  async bindAllowlistedIdentity(personId: string, identity: { nationalIdEncrypted: string; nationalIdHash: string; nationalIdLast2: string; firstNames: string; lastNames: string; phone: string | null }): Promise<boolean> {
+    const person = this.people.get(personId);
+    if (!person) return false;
+    person.national_id_encrypted = identity.nationalIdEncrypted;
+    person.national_id_hash = identity.nationalIdHash;
+    person.national_id_last2 = identity.nationalIdLast2;
+    person.first_names = identity.firstNames;
+    person.last_names = identity.lastNames;
+    person.self_registered_at = null;
+    if (identity.phone) {
+      person.outreach_phone = identity.phone;
+      this.outreachPhones.set(personId, identity.phone);
     }
     return true;
   }

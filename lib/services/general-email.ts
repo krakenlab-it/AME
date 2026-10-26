@@ -393,6 +393,7 @@ export async function confirmGeneralCedula(
   }
 
   let personId = holder.id;
+  const preload = await repo.findPreloadedContactByEmail(email);
   const onImported = Boolean(holder.national_id_hash) && !holder.self_registered_at;
   if (onImported) {
     if (!holder.national_id_hash || !safeEqual(cedulaHash, holder.national_id_hash)) return failCedula(repo, holder.id, deps, requireCaptcha);
@@ -418,6 +419,19 @@ export async function confirmGeneralCedula(
       await repo.audit({ person_id: imported.id, actor_type: "respondent", action: "GENERAL_IDENTIFY_FAILED", metadata: { outcome: "email_mismatch" } });
       await repo.logSecurityEvent({ event_type: "GENERAL_EMAIL_MISMATCH", ip_hash: deps.ipHash, detail: {} });
       return { ok: false, error: emailBoundError(maskEmail(bound)), fieldErrors: { cedula: "Usa el correo con el que ingresaste antes." } };
+    } else if (preload) {
+      const bound = await repo.bindAllowlistedIdentity(holder.id, {
+        nationalIdEncrypted: encrypt(parsed.data.cedula),
+        nationalIdHash: cedulaHash,
+        nationalIdLast2: parsed.data.cedula.slice(-2),
+        firstNames: preload.firstNames,
+        lastNames: preload.lastNames,
+        phone: preload.phone,
+      });
+      if (!bound) return { ok: false, error: GENERIC_GENERAL_ERROR };
+      const fingerprint = await applyFingerprint(repo, holder.id, code, deps, requireCaptcha);
+      if (fingerprint) return fingerprint;
+      await repo.audit({ person_id: holder.id, actor_type: "respondent", action: "ACCOUNT_LINKED", metadata: { entry: "allowlist" } });
     } else {
       const request: LinkRequest = {
         national_id_hash: cedulaHash,

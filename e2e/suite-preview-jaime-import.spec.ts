@@ -22,7 +22,9 @@ test("Preview: import válido y paso 3 descarga enlace /verificar/", async ({ pa
 
   await page.goto("/admin/importar");
   await page.locator("#import-file").setInputFiles(csvPath);
-  await page.getByRole("button", { name: "Validar e importar" }).click();
+  await page.getByRole("button", { name: "Vista previa" }).click();
+  await expect(page.getByText("No se escribió nada.")).toBeVisible({ timeout: 30_000 });
+  await page.getByRole("button", { name: "Confirmar importación" }).click();
   await expect(page.getByText("La carga fue exitosa")).toBeVisible({ timeout: 30_000 });
 
   const downloadPromise = page.waitForEvent("download");

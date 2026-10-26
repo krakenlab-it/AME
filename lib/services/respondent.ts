@@ -184,6 +184,8 @@ export function registeredView(person: PersonRecord) {
     cedulaLast2: person.national_id_last2 ?? "**",
     /** Correo confirmado con el código de /ingresar. Solo rellena el campo; la persona puede cambiarlo. */
     email: person.login_email ?? "",
+    /** Celular de la lista precargada, en formato nacional. Vacío si no había uno. */
+    phoneNumber: person.outreach_phone?.replace(/^\+593/, "0") ?? "",
   };
 }
 

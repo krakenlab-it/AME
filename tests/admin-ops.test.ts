@@ -36,10 +36,11 @@ describe("nota de novedades de la carga", () => {
       { row: 2, first_names: "Ana", last_names: "Paz", national_id: "123", outreach_email: "" },
       { row: 3, first_names: "Luis", last_names: "Paz", national_id: cedula, outreach_email: "sin-arroba" },
     ]);
-    expect(checked.errors[0]?.reason).toMatch(/10 dígitos/);
+    expect(checked.notes.some((note) => /10 dígitos|no es válido|Cédula inválida/.test(note.text))).toBe(true);
+    expect(checked.errors).toHaveLength(0);
     expect(checked.valid).toHaveLength(1);
     expect(checked.valid[0]?.outreach_email).toBe("");
-    expect(checked.notes[0]?.text).toMatch(/correo/i);
+    expect(checked.notes.some((note) => /correo/i.test(note.text))).toBe(true);
   });
 
   it("lee la plantilla en español y guarda el correo para el enlace", async () => {
