@@ -66,23 +66,33 @@ export const fingerprintCodeField = z
   .transform((value) => normalizeFingerprintCode(value))
   .refine((value) => FINGERPRINT_CODE_RE.test(value), FINGERPRINT_FORMAT_MESSAGE);
 
-/** Cédula ecuatoriana. Un pasaporte se rechaza con un mensaje fijo, sin consultar la base. */
-const generalCedulaField = z
-  .string()
-  .trim()
-  .superRefine((value, ctx) => {
-    const assessed = assessNationalId(value);
-    if (assessed.ok && assessed.kind === "foreign") {
-      ctx.addIssue({ code: "custom", message: PASSPORT_GENERAL_MESSAGE });
-      return;
-    }
-    const message = identityDocumentMessage(value);
-    if (message) ctx.addIssue({ code: "custom", message });
-  })
-  .transform((value) => {
-    const assessed = assessNationalId(value);
-    return assessed.ok && assessed.kind === "cedula" ? assessed.value : normalizeCedula(value);
-  });
+/**
+ * Documento del ingreso general. Con allowPassport=false un pasaporte se rechaza con un mensaje fijo, sin consultar la base.
+ * Con allowPassport=true acepta el pasaporte normalizado igual que la importación (mayúsculas, sin espacios);
+ * la cédula se valida y transforma exactamente igual en los dos casos.
+ */
+function generalDocumentField(allowPassport: boolean) {
+  return z
+    .string()
+    .trim()
+    .superRefine((value, ctx) => {
+      const assessed = assessNationalId(value);
+      if (assessed.ok && assessed.kind === "foreign") {
+        if (!allowPassport) ctx.addIssue({ code: "custom", message: PASSPORT_GENERAL_MESSAGE });
+        return;
+      }
+      const message = identityDocumentMessage(value);
+      if (message) ctx.addIssue({ code: "custom", message });
+    })
+    .transform((value) => {
+      const assessed = assessNationalId(value);
+      if (allowPassport && assessed.ok && assessed.kind === "foreign") return assessed.value;
+      return assessed.ok && assessed.kind === "cedula" ? assessed.value : normalizeCedula(value);
+    });
+}
+
+const generalCedulaField = generalDocumentField(false);
+const generalCedulaOrPassportField = generalDocumentField(true);
 
 /** Vacío si no lo escriben. Si escriben algo, tiene que cumplir el formato. */
 export const optionalFingerprintField = z
@@ -118,10 +128,10 @@ export const generalEmailIdentifySchema = z
   })
   .strict();
 
-/** Después del código de correo: cédula ecuatoriana y código dactilar obligatorios. */
+/** Después del código de correo: cédula (o pasaporte ya importado) y código dactilar obligatorios. */
 export const generalCedulaStepSchema = z
   .object({
-    cedula: generalCedulaField,
+    cedula: generalCedulaOrPassportField,
     codigoDactilar: fingerprintCodeField,
   })
   .strict();

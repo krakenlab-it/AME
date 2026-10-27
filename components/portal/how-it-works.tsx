@@ -4,8 +4,8 @@ const STEPS = [
     body: "Te enviaremos un código de verificación para confirmar que el correo es tuyo.",
   },
   {
-    title: "Confirma tu identidad con tu cédula",
-    body: "Escribe tu número de cédula y el código dactilar del reverso. Formato: letra, 4 números, letra, 4 números (ej. V1234V1234).",
+    title: "Confirma tu identidad con tu cédula o pasaporte",
+    body: "Escribe tu número de cédula o de pasaporte y el código dactilar. Formato: letra, 4 números, letra, 4 números (ej. V1234V1234).",
   },
   {
     title: "Completa tus datos",

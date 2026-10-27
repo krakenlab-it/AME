@@ -5,6 +5,7 @@ import { flattenIssues, identifySchema, submissionSchema } from "@/lib/validatio
 import { cleanText, sanitizeDeep } from "@/lib/validation/sanitize";
 import { normalizePhone } from "@/lib/validation/phone";
 import { maskCedula } from "@/lib/security/masking";
+import { storedDocumentIsPassport } from "./passport-document";
 import { RESPONDENT_SESSION_MINUTES } from "@/lib/security/cookies";
 import { CONSENT_PURPOSE, type ConsentType } from "@/lib/privacy/notice";
 import { generateConfirmationCode } from "./confirmation";
@@ -182,6 +183,8 @@ export function registeredView(person: PersonRecord) {
     lastNames: person.last_names,
     cedulaMasked: masked,
     cedulaLast2: person.national_id_last2 ?? "**",
+    /** Un pasaporte importado se muestra como pasaporte; la cédula no cambia. */
+    documentLabel: storedDocumentIsPassport(person.national_id_encrypted) ? ("Pasaporte" as const) : ("Cédula" as const),
     /** Correo con el que ingresó. El formulario lo muestra fijo; otro correo va en el alternativo. */
     email: person.login_email ?? "",
     /** Celular de la lista precargada, en formato nacional. Vacío si no había uno. */

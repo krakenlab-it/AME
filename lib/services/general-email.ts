@@ -17,6 +17,9 @@ export const EMAIL_CODE_MISMATCH = "El código no es correcto o ya venció. Revi
 export const EMAIL_SEND_FAILED = "No pudimos enviar el código en este momento. Intenta nuevamente en unos minutos.";
 export const CHALLENGE_EXPIRED = "Esta verificación venció. Vuelve a empezar en /ingresar.";
 export const WRONG_CEDULA_ERROR = "La cédula no coincide. Revisa que sean los 10 números de tu cédula, sin espacios ni guiones.";
+export const WRONG_PASSPORT_ERROR = "El pasaporte no coincide. Escríbelo tal como aparece en el documento: letras y números, sin espacios.";
+export const PASSPORT_NOT_REGISTERED_ERROR =
+  "No encontramos ese pasaporte entre las personas registradas. Revisa el número tal como aparece en el documento. Si no estás en la lista, escribe al administrador: con pasaporte no se puede crear una cuenta nueva aquí.";
 export const WRONG_FINGERPRINT_ERROR = "El código dactilar no coincide. Lo encuentras al reverso de tu cédula: una letra, 4 números, una letra y 4 números (ej. V1234V1234).";
 export const LINK_RETRY_ERROR = "No pudimos completar el vínculo en este intento. Volver a intentar suele resolverlo: empieza de nuevo en /ingresar.";
 
@@ -32,16 +35,16 @@ function minutesUntil(until: string | null | undefined): number {
   return Math.max(1, Math.ceil(left / 60_000));
 }
 
-export function alreadyLinkedError(loginEmail: string | null, typedEmail: string): string {
+export function alreadyLinkedError(loginEmail: string | null, typedEmail: string, document: "cédula" | "pasaporte" = "cédula"): string {
   const bound = loginEmail?.trim().toLowerCase() ?? "";
-  if (bound && bound !== typedEmail) return emailBoundError(maskEmail(bound));
-  if (bound) return `Esta cédula ya está vinculada a la cuenta ${maskEmail(bound)}. Pide al administrador que restablezca el ingreso.`;
-  return "Esta cédula ya está vinculada a otra cuenta. Pide al administrador que restablezca el ingreso.";
+  if (bound && bound !== typedEmail) return emailBoundError(maskEmail(bound), document);
+  if (bound) return `Esta ${document} ya está vinculada a la cuenta ${maskEmail(bound)}. Pide al administrador que restablezca el ingreso.`;
+  return `Esta ${document} ya está vinculada a otra cuenta. Pide al administrador que restablezca el ingreso.`;
 }
 export const EMAIL_SEND_LIMIT = "Ya enviamos varios códigos a este correo. Espera unos minutos antes de pedir otro.";
 /** La cédula ya tiene un correo verificado: el código solo se envía a ese correo. */
-export function emailBoundError(maskedBound: string): string {
-  return `Esta cédula ya ingresó con otro correo (${maskedBound}). Escribe ese mismo correo. Si ya no tienes acceso a él, pide al administrador que restablezca tu ingreso.`;
+export function emailBoundError(maskedBound: string, document: "cédula" | "pasaporte" = "cédula"): string {
+  return `Esta ${document} ya ingresó con otro correo (${maskedBound}). Escribe ese mismo correo. Si ya no tienes acceso a él, pide al administrador que restablezca tu ingreso.`;
 }
 
 export interface GeneralEmailDeps extends GeneralDeps {
@@ -63,6 +66,10 @@ export type GeneralEmailCodeResult =
 export type GeneralCedulaResult =
   | { ok: true; sessionToken: string; expiresAt: string; destination: "form" | "home" }
   | { ok: false; error: string; fieldErrors?: Record<string, string>; requireCaptcha?: boolean; challengeExpired?: boolean };
+
+function isPassportNumber(document: string): boolean {
+  return /[A-Z]/.test(document);
+}
 
 const CHALLENGE_TOKEN_RE = /^[A-Za-z0-9_-]{32,128}$/;
 
@@ -306,7 +313,7 @@ export async function confirmGeneralEmailCode(
   return { ok: true, phase: "cedula" };
 }
 
-async function failDocument(repo: RespondentRepo, personId: string, deps: GeneralDeps, requireCaptcha: boolean, kind: "cedula" | "fingerprint"): Promise<GeneralFailure> {
+async function failDocument(repo: RespondentRepo, personId: string, deps: GeneralDeps, requireCaptcha: boolean, kind: "cedula" | "fingerprint" | "passport" | "passport_unknown"): Promise<GeneralFailure> {
   const failure = await repo.registerGeneralFailure(personId, settings.generalLockThreshold, settings.generalLockMinutes);
   await repo.audit({
     person_id: personId,
@@ -319,7 +326,24 @@ async function failDocument(repo: RespondentRepo, personId: string, deps: Genera
     return { ok: false, error: lockoutError(settings.generalLockMinutes), requireCaptcha };
   }
   await repo.logSecurityEvent({ event_type: "GENERAL_IDENTIFY_FAILED", ip_hash: deps.ipHash, detail: { outcome: kind } });
-  return { ok: false, error: kind === "cedula" ? WRONG_CEDULA_ERROR : WRONG_FINGERPRINT_ERROR, requireCaptcha };
+  return { ok: false, error: documentFailureMessage(kind), requireCaptcha };
+}
+
+function documentFailureMessage(kind: "cedula" | "fingerprint" | "passport" | "passport_unknown"): string {
+  switch (kind) {
+    case "cedula":
+      return WRONG_CEDULA_ERROR;
+    case "fingerprint":
+      return WRONG_FINGERPRINT_ERROR;
+    case "passport":
+      return WRONG_PASSPORT_ERROR;
+    case "passport_unknown":
+      return PASSPORT_NOT_REGISTERED_ERROR;
+    default: {
+      const unreachable: never = kind;
+      return unreachable;
+    }
+  }
 }
 
 /** Primera vez: se guarda. Si ya había uno y no coincide, se rechaza. Vacío solo en un pasaporte. */
@@ -449,7 +473,13 @@ export async function confirmGeneralCedula(
     return openVerifiedSession(repo, holder.id, fresh, challengeHash, deps, accessTokenId);
   }
 
-  const preload = await repo.findPreloadedContactByEmail(email);
+  const isPassport = isPassportNumber(parsed.data.cedula);
+  if (isPassport) {
+    // El pasaporte solo vincula una ficha ya importada: nunca crea una cuenta nueva (el RPC la crearía como "new").
+    const imported = await repo.findGeneralAuthByNationalIdHash(cedulaHash);
+    if (!imported) return failDocument(repo, holder.id, deps, requireCaptcha, "passport_unknown");
+  }
+  const preload = isPassport ? null : await repo.findPreloadedContactByEmail(email);
   const linked = await repo.commitCedulaLink({
     holderId: holder.id,
     challengeHash,
@@ -464,13 +494,17 @@ export async function confirmGeneralCedula(
   });
   switch (linked.status) {
     case "cedula_mismatch":
-      return failDocument(repo, linked.personId, deps, requireCaptcha, "cedula");
+      return failDocument(repo, linked.personId, deps, requireCaptcha, isPassport ? "passport" : "cedula");
     case "fingerprint_mismatch":
       return failDocument(repo, linked.personId, deps, requireCaptcha, "fingerprint");
     case "auth_conflict":
       await repo.audit({ person_id: linked.personId, actor_type: "respondent", action: "GENERAL_IDENTIFY_FAILED", metadata: { outcome: "email_mismatch" } });
       await repo.logSecurityEvent({ event_type: "GENERAL_EMAIL_MISMATCH", ip_hash: deps.ipHash, detail: {} });
-      return { ok: false, error: alreadyLinkedError(linked.loginEmail, email), fieldErrors: { cedula: "Esta cédula ya está vinculada. Escribe al administrador." } };
+      return {
+        ok: false,
+        error: alreadyLinkedError(linked.loginEmail, email, isPassport ? "pasaporte" : "cédula"),
+        fieldErrors: { cedula: `Esta ${isPassport ? "pasaporte" : "cédula"} ya está vinculada. Escribe al administrador.` },
+      };
     case "locked":
       return { ok: false, error: lockoutError(minutesUntil(linked.lockedUntil)), requireCaptcha };
     case "duplicate":

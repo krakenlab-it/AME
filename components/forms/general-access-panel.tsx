@@ -188,7 +188,7 @@ function IdentifyStep({
         <div className="space-y-2">
           <h2 className="text-2xl">Entra con tu correo</h2>
           <p className="text-ink-muted">
-            Escribe tu correo y te enviamos un código de acceso. Después te pedimos tu número de cédula.
+            Escribe tu correo y te enviamos un código de acceso. Después te pedimos tu número de cédula o pasaporte.
           </p>
         </div>
         {banner && <Notice tone="error" live>{banner}</Notice>}
@@ -465,11 +465,11 @@ function CedulaStep({
   return (
     <>
       <div className="space-y-2">
-        <h2 className="text-2xl">Tu cédula</h2>
+        <h2 className="text-2xl">Tu cédula o pasaporte</h2>
         <p className="text-ink-muted">
           {hideFingerprint
             ? "Escribe el número de tu pasaporte, tal como está en el documento."
-            : "Escribe tu número de cédula y el código dactilar del reverso."}
+            : "Escribe tu número de cédula o de pasaporte y el código dactilar del reverso de tu cédula."}
         </p>
       </div>
       {banner && <Notice tone="error" live>{banner}</Notice>}
@@ -477,15 +477,22 @@ function CedulaStep({
         <input type="hidden" name="phase" value="cedula" />
         {accessToken ? <input type="hidden" name="accessToken" value={accessToken} /> : null}
         <fieldset className="space-y-4 rounded-xl border border-marian-line p-4">
-          <legend className="px-1 text-sm font-semibold">Tu cédula</legend>
-          <Field id="cedula" label="Número de cédula" required hint="10 números, como en tu cédula." error={cedulaError}>
+          <legend className="px-1 text-sm font-semibold">Tu cédula o pasaporte</legend>
+          <Field
+            id="cedula"
+            label="Número de cédula o pasaporte"
+            required
+            hint="Cédula: 10 números. Pasaporte: letras y números, como en el documento."
+            error={cedulaError}
+          >
             <input
               id="cedula"
               name="cedula"
               defaultValue={state.values?.cedula}
-              className="field-input text-xl tracking-[0.12em]"
-              inputMode="numeric"
+              className="field-input text-xl uppercase tracking-[0.12em]"
+              inputMode="text"
               autoComplete="off"
+              autoCapitalize="characters"
               spellCheck={false}
               maxLength={16}
               required
