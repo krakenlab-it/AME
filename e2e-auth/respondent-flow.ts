@@ -9,7 +9,7 @@ export async function acceptTerms(page: Page) {
 }
 
 /** /ingresar con el correo y el código que llega a Mailpit. Termina en el paso de documento. */
-export async function reachDocumentStep(page: Page, email: string) {
+export async function reachDocumentStep(page: Page, email: string, passportCopy = true) {
   await page.goto("/ingresar");
   await acceptTerms(page);
   const before = await mailCount(email);
@@ -17,11 +17,11 @@ export async function reachDocumentStep(page: Page, email: string) {
   await page.getByRole("button", { name: "Enviarme el código" }).click();
   await page.getByLabel("Código de acceso").fill(await waitForMailCode(email, before));
   await page.getByRole("button", { name: "Confirmar y continuar" }).click();
-  await expect(page.getByRole("heading", { name: "Tu cédula o pasaporte" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: passportCopy ? "Tu cédula o pasaporte" : "Tu cédula", exact: true })).toBeVisible();
 }
 
-export async function submitDocument(page: Page, document: string, dactilar: string) {
-  await page.getByLabel("Número de cédula o pasaporte").fill(document);
+export async function submitDocument(page: Page, document: string, dactilar: string, passportCopy = true) {
+  await page.getByLabel(passportCopy ? "Número de cédula o pasaporte" : "Número de cédula").fill(document);
   await page.getByLabel(/Código dactilar/).fill(dactilar);
   await page.getByRole("button", { name: "Continuar" }).click();
 }

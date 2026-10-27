@@ -46,3 +46,14 @@ Importa por el importador del panel (CSV `Nombres,Apellidos,Cédula`) dos pasapo
 - 8. Resumen con documento enmascarado, alerta de vinculación enmascarada y archivo CSV para AIG con las tres personas.
 
 Para recibir el código por correo, `supabase/config.toml` define plantillas `magic_link` y `confirmation` que muestran `{{ .Token }}`. Antes de cada corrida se vacían `people` y `rate_limits` locales (el pepper cambia en cada arranque).
+
+## Interruptor del pasaporte (`passport-kill-switch.spec.ts`)
+
+`AME_PASSPORT_SIGNIN=off` apaga el ingreso con pasaporte en `/ingresar` (se lee en cada petición del servidor). Este spec solo corre con el servidor arrancado así y se omite en la corrida normal:
+
+```bash
+AME_PASSPORT_SIGNIN=off npx playwright test -c playwright.auth.config.ts e2e-auth/passport-kill-switch.spec.ts
+```
+
+Con el interruptor apagado el pasaporte se rechaza con el mensaje de siempre, el texto vuelve a decir solo cédula y la cédula entra y completa igual.
+

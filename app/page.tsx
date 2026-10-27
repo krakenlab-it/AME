@@ -16,6 +16,7 @@ import { getActivePrivacy } from "@/lib/privacy/active";
 import { readAdminGate } from "@/lib/server/admin-guard";
 import { currentRespondent } from "@/lib/server/respondent-session";
 import { landingConsolePath } from "@/lib/services/landing-redirect";
+import { settings } from "@/lib/services/settings";
 
 export default async function HomePage({ searchParams }: { searchParams: Promise<{ fin?: string }> }) {
   const [gate, respondent] = await Promise.all([
@@ -35,6 +36,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
   return (
     <PortalShell readiness={privacy.readiness} organizationName={privacy.config.organizationName}>
       <PortalHero
+        passportSignIn={settings.passportSignInEnabled()}
         action={
           <div className="sheet p-6 md:p-8">
             {fin ? (

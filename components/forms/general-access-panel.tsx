@@ -7,6 +7,7 @@ import { FingerprintHelp } from "@/components/forms/fingerprint-help";
 import { ProtectedNote } from "@/components/portal/hero";
 import { Button } from "@/components/ui/button";
 import { describedBy, Field } from "@/components/ui/field";
+import { documentStepCopy } from "@/components/forms/document-step-copy";
 import { Notice } from "@/components/ui/notice";
 import { TermsDialog } from "@/components/ui/terms-dialog";
 import {
@@ -29,6 +30,8 @@ interface PanelProps {
   method?: AuthMethod;
   /** Enlace personal vigente. No se revoca: solo entra al mismo recorrido de correo y cédula. */
   accessToken?: string;
+  /** Falso con AME_PASSPORT_SIGNIN=off: /ingresar vuelve a los textos de solo cédula. */
+  passportSignIn?: boolean;
 }
 
 /** «Usar otro correo» vuelve a montar el panel para empezar de cero. */
@@ -53,6 +56,7 @@ function AccessFlow({
   hideFingerprint = false,
   method = "email",
   accessToken,
+  passportSignIn = true,
   onRestart,
   restartNotice,
 }: PanelProps & { onRestart: (message?: string) => void; restartNotice?: string }) {
@@ -128,6 +132,7 @@ function AccessFlow({
           siteKey={turnstileSiteKey}
           method={method}
           accessToken={accessToken}
+          passportSignIn={passportSignIn}
         />
       ) : phase === "email" ? (
         <EmailCodeStep
@@ -142,7 +147,7 @@ function AccessFlow({
           accessToken={accessToken}
         />
       ) : phase === "cedula" ? (
-        <CedulaStep state={confirmed} pending={confirmPending} action={confirmAction} accessToken={accessToken} hideFingerprint={hideFingerprint} />
+        <CedulaStep state={confirmed} pending={confirmPending} action={confirmAction} accessToken={accessToken} hideFingerprint={hideFingerprint} passportSignIn={passportSignIn} />
       ) : (
         <TotpStep
           phase={phase}
@@ -167,6 +172,7 @@ function IdentifyStep({
   siteKey,
   method,
   accessToken,
+  passportSignIn,
 }: {
   state: GeneralAccessState;
   pending: boolean;
@@ -175,6 +181,7 @@ function IdentifyStep({
   siteKey: string | null;
   method: AuthMethod;
   accessToken?: string;
+  passportSignIn: boolean;
 }) {
   const emailError = state.fieldErrors?.email;
   const next = "Después configuras la verificación del teléfono.";
@@ -188,7 +195,7 @@ function IdentifyStep({
         <div className="space-y-2">
           <h2 className="text-2xl">Entra con tu correo</h2>
           <p className="text-ink-muted">
-            Escribe tu correo y te enviamos un código de acceso. Después te pedimos tu número de cédula o pasaporte.
+            {documentStepCopy(passportSignIn, false).emailStepBlurb}
           </p>
         </div>
         {banner && <Notice tone="error" live>{banner}</Notice>}
@@ -452,47 +459,46 @@ function CedulaStep({
   action,
   accessToken,
   hideFingerprint,
+  passportSignIn,
 }: {
   state: GeneralAccessState;
   pending: boolean;
   action: (payload: FormData) => void;
   accessToken?: string;
   hideFingerprint: boolean;
+  passportSignIn: boolean;
 }) {
+  const copy = documentStepCopy(passportSignIn, hideFingerprint);
   const cedulaError = state.fieldErrors?.cedula;
   const codeError = state.fieldErrors?.codigoDactilar;
   const banner = state.error && state.error !== "Revisa los campos marcados." ? state.error : undefined;
   return (
     <>
       <div className="space-y-2">
-        <h2 className="text-2xl">Tu cédula o pasaporte</h2>
-        <p className="text-ink-muted">
-          {hideFingerprint
-            ? "Escribe el número de tu pasaporte, tal como está en el documento."
-            : "Escribe tu número de cédula o de pasaporte y el código dactilar del reverso de tu cédula."}
-        </p>
+        <h2 className="text-2xl">{copy.heading}</h2>
+        <p className="text-ink-muted">{copy.intro}</p>
       </div>
       {banner && <Notice tone="error" live>{banner}</Notice>}
       <form action={action} className="space-y-5" noValidate>
         <input type="hidden" name="phase" value="cedula" />
         {accessToken ? <input type="hidden" name="accessToken" value={accessToken} /> : null}
         <fieldset className="space-y-4 rounded-xl border border-marian-line p-4">
-          <legend className="px-1 text-sm font-semibold">Tu cédula o pasaporte</legend>
+          <legend className="px-1 text-sm font-semibold">{copy.legend}</legend>
           <Field
             id="cedula"
-            label="Número de cédula o pasaporte"
+            label={copy.label}
             required
-            hint="Cédula: 10 números. Pasaporte: letras y números, como en el documento."
+            hint={copy.hint}
             error={cedulaError}
           >
             <input
               id="cedula"
               name="cedula"
               defaultValue={state.values?.cedula}
-              className="field-input text-xl uppercase tracking-[0.12em]"
-              inputMode="text"
+              className={copy.inputClassName}
+              inputMode={copy.inputMode}
               autoComplete="off"
-              autoCapitalize="characters"
+              autoCapitalize={copy.autoCapitalize}
               spellCheck={false}
               maxLength={16}
               required

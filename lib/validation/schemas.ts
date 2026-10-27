@@ -136,6 +136,14 @@ export const generalCedulaStepSchema = z
   })
   .strict();
 
+/** Mismo paso con el ingreso por pasaporte apagado (AME_PASSPORT_SIGNIN=off): como antes, un pasaporte se rechaza. */
+export const generalCedulaOnlyStepSchema = z
+  .object({
+    cedula: generalCedulaField,
+    codigoDactilar: fingerprintCodeField,
+  })
+  .strict();
+
 /**
  * Mismo paso cuando el ingreso viene de un enlace personal vigente.
  * Acepta el pasaporte ya importado. En un pasaporte el código dactilar no existe:

@@ -1,25 +1,29 @@
-const STEPS = [
-  {
-    title: "Ingresa tu correo",
-    body: "Te enviaremos un código de verificación para confirmar que el correo es tuyo.",
-  },
-  {
-    title: "Confirma tu identidad con tu cédula o pasaporte",
-    body: "Escribe tu número de cédula o de pasaporte y el código dactilar. Formato: letra, 4 números, letra, 4 números (ej. V1234V1234).",
-  },
-  {
-    title: "Completa tus datos",
-    body: "Actualiza tu correo, teléfono y cuenta bancaria para los depósitos.",
-  },
-] as const;
+function steps(passportSignIn: boolean) {
+  return [
+    {
+      title: "Ingresa tu correo",
+      body: "Te enviaremos un código de verificación para confirmar que el correo es tuyo.",
+    },
+    {
+      title: passportSignIn ? "Confirma tu identidad con tu cédula o pasaporte" : "Confirma tu identidad con tu cédula",
+      body: passportSignIn
+        ? "Escribe tu número de cédula o de pasaporte y el código dactilar. Formato: letra, 4 números, letra, 4 números (ej. V1234V1234)."
+        : "Escribe tu número de cédula y el código dactilar del reverso. Formato: letra, 4 números, letra, 4 números (ej. V1234V1234).",
+    },
+    {
+      title: "Completa tus datos",
+      body: "Actualiza tu correo, teléfono y cuenta bancaria para los depósitos.",
+    },
+  ] as const;
+}
 
-/** Los tres pasos del ingreso. El segundo pide la cédula y el código dactilar. */
-export function HowItWorks() {
+/** Los tres pasos del ingreso. El segundo pide la cédula (o el pasaporte, si está encendido) y el código dactilar. */
+export function HowItWorks({ passportSignIn = true }: { passportSignIn?: boolean }) {
   return (
     <section aria-labelledby="como-funciona" className="mt-8 max-w-md">
       <h2 id="como-funciona" className="text-lg">Cómo funciona</h2>
       <ol className="mt-4 space-y-4">
-        {STEPS.map((step, index) => (
+        {steps(passportSignIn).map((step, index) => (
           <li key={step.title} className="flex gap-3">
             <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-marian-soft text-sm font-semibold text-marian" aria-hidden>
               {index + 1}

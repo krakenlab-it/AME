@@ -4,7 +4,7 @@ import { RESPONDENT_SESSION_MINUTES } from "@/lib/security/cookies";
 import { maskCedula, maskEmail } from "@/lib/security/masking";
 import { isAccessLinkToken, normalizeAccessLinkToken } from "@/lib/validation/access-link-token";
 import { GENERIC_GENERAL_ERROR } from "@/lib/validation/constants";
-import { flattenIssues, generalCedulaStepSchema, generalEmailCodeSchema, generalEmailIdentifySchema, personalLinkDocumentStepSchema } from "@/lib/validation/schemas";
+import { flattenIssues, generalCedulaOnlyStepSchema, generalCedulaStepSchema, generalEmailCodeSchema, generalEmailIdentifySchema, personalLinkDocumentStepSchema } from "@/lib/validation/schemas";
 import { sanitizeDeep } from "@/lib/validation/sanitize";
 import type { EmailOtpProvider } from "./email-otp";
 import { storedDocumentIsPassport } from "./passport-document";
@@ -420,6 +420,12 @@ async function openVerifiedSession(
   return { ok: true, sessionToken, expiresAt, destination: continueForm ? "form" : "home" };
 }
 
+/** Con enlace personal vigente rige el pasaporte de ese enlace; sin él, el interruptor decide si /ingresar acepta pasaportes. */
+function documentStepSchema(personalLink: boolean, passportExempt: boolean) {
+  if (personalLink) return personalLinkDocumentStepSchema(!passportExempt);
+  return settings.passportSignInEnabled() ? generalCedulaStepSchema : generalCedulaOnlyStepSchema;
+}
+
 /**
  * Paso 3: cédula y código dactilar obligatorios.
  * Si el correo ya estaba en una ficha, la cédula tiene que ser la de esa ficha.
@@ -454,7 +460,7 @@ export async function confirmGeneralCedula(
   if (!holder) return { ok: false, error: CHALLENGE_EXPIRED, challengeExpired: true };
   const allowPassport = Boolean(link.token && link.token.person_id === challenge.person_id);
   const passportExempt = allowPassport && storedDocumentIsPassport(holder.national_id_encrypted);
-  const parsed = (allowPassport ? personalLinkDocumentStepSchema(!passportExempt) : generalCedulaStepSchema).safeParse({
+  const parsed = documentStepSchema(allowPassport, passportExempt).safeParse({
     cedula: bag.cedula ?? "",
     codigoDactilar: bag.codigoDactilar ?? "",
   });

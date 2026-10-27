@@ -4,7 +4,7 @@ import { MaristaLogo } from "@/components/brand/logos";
 import { Reveal } from "@/components/motion/primitives";
 import { HowItWorks } from "@/components/portal/how-it-works";
 
-export function PortalHero({ action }: { action: ReactNode }) {
+export function PortalHero({ action, passportSignIn = true }: { action: ReactNode; passportSignIn?: boolean }) {
   return (
     <section className="mx-auto grid max-w-5xl gap-10 px-5 pb-6 pt-8 md:grid-cols-[1.1fr_0.9fr] md:items-start md:pt-14">
       <Reveal>
@@ -26,7 +26,7 @@ export function PortalHero({ action }: { action: ReactNode }) {
             <Clock3 className="h-4 w-4 shrink-0 text-marian" aria-hidden />Toma de 3 a 5 minutos.
           </p>
         </section>
-        <HowItWorks />
+        <HowItWorks passportSignIn={passportSignIn} />
       </Reveal>
       <Reveal className="md:pl-4" delay={0.12}>{action}</Reveal>
     </section>
