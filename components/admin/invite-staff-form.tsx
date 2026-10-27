@@ -32,9 +32,9 @@ export function InviteStaffForm() {
   };
 
   return (
-    <form action={formAction} className="sheet space-y-5 p-6">
+    <form action={formAction} className="admin-card space-y-5">
       <div className="space-y-1">
-        <h2 className="text-xl">Invitar al panel</h2>
+        <h2 className="section-title">Invitar al panel</h2>
         <p className="text-[15px] text-ink-muted">
           La persona recibe un correo, elige su contraseña y luego configura la verificación del teléfono. No hay registro público.
           El rol define qué puede hacer cuando entre.

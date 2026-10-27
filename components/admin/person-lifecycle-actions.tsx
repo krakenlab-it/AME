@@ -24,10 +24,10 @@ export function PersonLifecycleActions({ personId }: { personId: string }) {
   const [deleteState, deleteAction, deletePending] = useActionState(deletePersonAction, {});
 
   return (
-    <div className="grid gap-5 md:grid-cols-2">
-      <form action={resetAction} className="sheet space-y-4 border border-alert/40 p-5">
+    <div className="grid items-start gap-5 xl:grid-cols-2">
+      <form action={resetAction} className="admin-card space-y-4 !border-alert/40 !p-5">
         <div className="space-y-1">
-          <h2 className="text-lg">Restablecer a invitado</h2>
+          <h2 className="section-title">Restablecer a invitado</h2>
           <p className="text-[15px] text-ink-muted">
             Borra respuestas, consentimientos, código dactilar, verificación, sesiones y enlaces. La ficha y el correo de precarga se quedan, para que la persona vuelva a ingresar.
           </p>
@@ -44,9 +44,9 @@ export function PersonLifecycleActions({ personId }: { personId: string }) {
         {resetState.ok && <Notice tone="success" live>Listo. La persona puede volver a hacer el ingreso.</Notice>}
       </form>
 
-      <form action={deleteAction} className="sheet space-y-4 border border-alert/40 p-5">
+      <form action={deleteAction} className="admin-card space-y-4 !border-alert/40 !p-5">
         <div className="space-y-1">
-          <h2 className="text-lg">Eliminar persona</h2>
+          <h2 className="section-title">Eliminar persona</h2>
           <p className="text-[15px] text-ink-muted">
             Borra la ficha y lo que depende de ella. Un registro ya enviado, todavía dentro del plazo de conservación, no se puede eliminar: use restablecer, o espere la anonimización.
           </p>

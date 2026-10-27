@@ -47,9 +47,9 @@ export function ExportPanel({ profiles }: { profiles: { key: string; label: stri
   }
 
   return (
-    <form onSubmit={submit} className="sheet space-y-5 p-6">
+    <form onSubmit={submit} className="admin-card space-y-6">
       <fieldset className="space-y-2">
-        <legend className="mb-1 text-[15px] font-semibold">1. ¿Para qué es el archivo?</legend>
+        <legend className="mb-2 font-semibold text-ink">1. ¿Para qué es el archivo?</legend>
         {profiles.map((p) => (
           <label key={p.key} className="choice">
             <input type="radio" name="profile" value={p.key} checked={profile === p.key} onChange={() => setProfile(p.key)} className="h-5 w-5 shrink-0 accent-marian" />
@@ -57,12 +57,12 @@ export function ExportPanel({ profiles }: { profiles: { key: string; label: stri
           </label>
         ))}
       </fieldset>
-      {current && <p className="text-sm text-ink-muted"><span className="font-semibold">Columnas incluidas:</span> {current.columns.join(", ")}.</p>}
+      {current && <p className="rounded-xl bg-marian-soft/40 px-4 py-3 text-sm text-ink-muted"><span className="font-semibold text-ink">Columnas incluidas:</span> {current.columns.join(", ")}.</p>}
       <Field id="purpose" label="2. Motivo o solicitud que justifica la exportación" required hint="Queda registrado en la auditoría. Ej.: Envío mensual de reembolsos a AIG, solicitud del 30/09.">
         <textarea id="purpose" aria-describedby="purpose-hint" value={purpose} onChange={(e) => setPurpose(e.target.value)} minLength={10} maxLength={300} required rows={3} className="field-input" />
       </Field>
       <fieldset className="space-y-2">
-        <legend className="mb-1 text-[15px] font-semibold">3. Formato</legend>
+        <legend className="mb-2 font-semibold text-ink">3. Formato</legend>
         <div className="grid gap-2 sm:grid-cols-2">
           {([["xlsx", "Excel (.xlsx)"], ["csv", "Texto separado por comas (.csv)"]] as const).map(([f, label]) => (
             <label key={f} className="choice">

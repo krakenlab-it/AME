@@ -27,7 +27,8 @@ export const settings = {
   emailOtpLimitPerPerson: process.env.PORTAL_E2E === "true" && !process.env.VERCEL ? 30 : 5,
   emailOtpWindowSeconds: 60 * 60,
   adminLoginLimitPerIp: 10,
-  adminLoginLimitPerEmail: 5,
+  /** El servidor de pruebas e2e ingresa al panel desde varios archivos con el mismo correo; en Vercel y producción siguen siendo 5. */
+  adminLoginLimitPerEmail: process.env.PORTAL_E2E === "true" && !process.env.VERCEL ? 15 : 5,
   adminLockMinutes: 15,
   adminMaxFailedLogins: 5,
   exportLimitPerHour: 20,

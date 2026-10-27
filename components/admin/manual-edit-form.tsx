@@ -37,9 +37,9 @@ export function ManualEditForm({
   const [state, action, pending] = useActionState<ManualEditState, FormData>(manualEditAction, {});
 
   return (
-    <form action={action} className="sheet space-y-4 p-5">
+    <form action={action} className="admin-card space-y-4">
       <div className="space-y-1">
-        <h2 className="text-lg">Cambio manual</h2>
+        <h2 className="section-title">Cambio manual</h2>
         <p className="text-[15px] text-ink-muted">
           Antes de guardar, confirme su identidad con la misma aplicación autenticadora (código QR) que usa para ingresar al panel. La auditoría registrará su usuario y los campos modificados.
         </p>
