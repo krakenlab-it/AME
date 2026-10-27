@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useEffect, useRef, useState } from "react";
 import type { AuthState } from "@/app/admin/auth-actions";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
@@ -37,16 +37,38 @@ export function ResetRequestForm({ action }: { action: (s: AuthState, f: FormDat
   );
 }
 
-export function SetPasswordForm({ action, submitLabel }: { action: (s: AuthState, f: FormData) => Promise<AuthState>; submitLabel: string }) {
+export function SetPasswordForm({
+  action,
+  submitLabel,
+  requireTotp = false,
+}: {
+  action: (s: AuthState, f: FormData) => Promise<AuthState>;
+  submitLabel: string;
+  requireTotp?: boolean;
+}) {
   const [state, formAction, pending] = useActionState(action, {});
+  // React 19 vacía los campos sin control al terminar la acción. Las contraseñas se guardan solo en
+  // este componente para que, tras un código incorrecto, la persona escriba solo el código.
+  // El servidor nunca las devuelve.
+  const [password, setPassword] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const totpRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (state.error && requireTotp) totpRef.current?.focus();
+  }, [state, requireTotp]);
   return (
     <form action={formAction} className="space-y-5">
       {state.error && <Notice tone="error" live>{state.error}</Notice>}
+      {requireTotp && (
+        <Field id="totp" label="Código de 6 dígitos" hint="De tu aplicación autenticadora (Google Authenticator). Cambia cada 30 segundos." required>
+          <input ref={totpRef} id="totp" name="totp" aria-describedby="totp-hint" inputMode="numeric" pattern="[0-9 ]*" autoComplete="one-time-code" maxLength={7} required autoFocus className="field-input text-center text-2xl tracking-[0.4em]" />
+        </Field>
+      )}
       <Field id="password" label="Contraseña nueva" hint="Mínimo 12 caracteres, con letras y números." required>
-        <PasswordInput id="password" name="password" autoComplete="new-password" aria-describedby="password-hint" required minLength={12} />
+        <PasswordInput id="password" name="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="new-password" aria-describedby="password-hint" required minLength={12} />
       </Field>
       <Field id="confirm" label="Repite la contraseña" required>
-        <PasswordInput id="confirm" name="confirm" autoComplete="new-password" required minLength={12} />
+        <PasswordInput id="confirm" name="confirm" value={confirm} onChange={(event) => setConfirm(event.target.value)} autoComplete="new-password" required minLength={12} />
       </Field>
       <Button type="submit" block loading={pending}>{submitLabel}</Button>
     </form>

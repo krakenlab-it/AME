@@ -9,6 +9,7 @@ export const metadata = { title: "Administración | Nueva contraseña" };
 export default async function ResetPasswordPage() {
   const gate = await readAdminGate();
   const forced = gate.kind === "password_change";
+  const requireTotp = gate.kind === "mfa_verify";
   switch (gate.kind) {
     case "anonymous":
     case "unlinked":
@@ -35,7 +36,7 @@ export default async function ResetPasswordPage() {
           : "Elija una contraseña distinta a la anterior."
       }
     >
-      <SetPasswordForm action={setPasswordAction} submitLabel="Guardar contraseña" />
+      <SetPasswordForm action={setPasswordAction} submitLabel="Guardar contraseña" requireTotp={requireTotp} />
       <p className="text-sm">
         <AdminAuthLink href="/admin/recuperar">Pedir otro enlace</AdminAuthLink>
       </p>

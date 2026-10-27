@@ -1,6 +1,7 @@
 import { ADMIN_ROLES, assertCan, type AdminRole } from "@/lib/security/rbac";
 import { cleanText } from "@/lib/validation/sanitize";
 import { normalizeAdminEmail } from "./admin-gate";
+import { canonicalAdminBase } from "./canonical-base";
 
 const NAME_RE = /^[\p{L}][\p{L}\p{M}' .-]*$/u;
 
@@ -46,7 +47,7 @@ export function portalConfirmUrl(baseUrl: string, hashedToken: string, type: "in
 }
 
 function trimBase(baseUrl: string): string {
-  return baseUrl.replace(/\/$/, "");
+  return canonicalAdminBase(baseUrl);
 }
 
 function parseRole(value: string): AdminRole | null {

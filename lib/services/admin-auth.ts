@@ -1,5 +1,5 @@
 import "server-only";
-import type { SupabaseClient } from "@supabase/supabase-js";
+import { isAuthPKCECodeVerifierMissingError, type SupabaseClient } from "@supabase/supabase-js";
 import { parseAdoptSession, parseMagicLinkVerify } from "@/lib/contracts/magic-link";
 import type { AdminRepo } from "@/lib/database/types";
 import { sha256 } from "@/lib/encryption/crypto";
@@ -13,11 +13,23 @@ import {
   type AuthSnapshot,
 } from "./admin-gate";
 import { settings } from "./settings";
+import { staffConfirmRedirect } from "./staff-invite";
 
 const GENERIC_LOGIN_ERROR = "Correo o contraseña incorrectos.";
 const RATE_LIMIT_ERROR = "Demasiados intentos. Espera 15 minutos.";
 const UNAVAILABLE_ERROR = "El servicio no está disponible. Intenta más tarde.";
 const CONFIG_ERROR = "El acceso administrativo no está configurado.";
+const RESET_RATE_LIMIT_ERROR =
+  "Demasiados intentos. Espera 15 minutos, abre el correo más reciente que te llegó y, si la página lo pide, escribe el código de tu aplicación autenticadora.";
+const TOTP_REQUIRED_ERROR = "Escribe el código de 6 dígitos de tu aplicación autenticadora para guardar la contraseña.";
+const TOTP_WRONG_ERROR = "El código no es correcto o ya venció. Escribe el que muestra ahora tu aplicación autenticadora.";
+const TOTP_PENDING_ERROR =
+  "Tu verificación en dos pasos sigue pendiente. Escribe el código de 6 dígitos de tu aplicación autenticadora y vuelve a guardar la contraseña.";
+const SAME_PASSWORD_ERROR = "La contraseña nueva tiene que ser distinta a la anterior.";
+const SESSION_ENDED_ERROR = "La sesión de este restablecimiento terminó. Pide un enlace nuevo desde “Pedir otro enlace”.";
+const PASSWORD_SAVE_ERROR = "No se pudo guardar la contraseña. Intenta de nuevo; si sigue fallando, avisa al equipo técnico.";
+const OTHER_DEVICE_LINK_ERROR =
+  "Este enlace solo abre en el mismo navegador y dispositivo desde donde pediste el cambio. Pide uno nuevo desde este dispositivo y ábrelo aquí.";
 const LINK_ERROR = "El enlace no es válido o ya venció. Pide una nueva invitación o restablece la contraseña.";
 export const RESET_SENT_MESSAGE = "Si ese correo tiene un acceso de administrador, enviaremos un enlace para elegir una contraseña nueva.";
 
@@ -40,12 +52,12 @@ async function readSnapshot(supabase: SupabaseClient): Promise<AuthSnapshot> {
   };
 }
 
-async function limited(repo: AdminRepo, email: string, ipHash: string): Promise<string | null> {
+async function limited(repo: AdminRepo, email: string, ipHash: string, message: string = RATE_LIMIT_ERROR): Promise<string | null> {
   const ipLimit = await repo.rateLimitHit(`admin-login-ip:${ipHash}`, settings.adminLoginLimitPerIp, 15 * 60);
   const emailLimit = await repo.rateLimitHit(`admin-login-email:${sha256(email)}`, settings.adminLoginLimitPerEmail, 15 * 60);
   if (!ipLimit.allowed || !emailLimit.allowed) {
     await repo.logSecurityEvent({ event_type: "ADMIN_LOGIN_RATE_LIMITED", ip_hash: ipHash });
-    return RATE_LIMIT_ERROR;
+    return message;
   }
   return null;
 }
@@ -85,7 +97,7 @@ export async function requestPasswordReset(
 ): Promise<{ ok: true; message: string } | { ok: false; error: string }> {
   const normalized = normalizeAdminEmail(email);
   if (!normalized) return { ok: false, error: "Ingresa un correo válido." };
-  const blocked = await limited(repo, normalized, ipHash);
+  const blocked = await limited(repo, normalized, ipHash, RESET_RATE_LIMIT_ERROR);
   if (blocked) return { ok: false, error: blocked };
 
   const admin = await repo.findAdminByEmail(normalized);
@@ -93,7 +105,7 @@ export async function requestPasswordReset(
 
   const supabase = await createAuthClient();
   if (!supabase) return { ok: false, error: CONFIG_ERROR };
-  const redirectTo = `${settings.baseUrl()}/admin/auth/confirm?next=${encodeURIComponent("/admin/restablecer")}`;
+  const redirectTo = staffConfirmRedirect(settings.baseUrl(), "/admin/restablecer");
   const { error } = await supabase.auth.resetPasswordForEmail(normalized, { redirectTo });
   if (error) {
     console.error(`[auth] reset: ${error.code ?? ""}`);
@@ -102,11 +114,56 @@ export async function requestPasswordReset(
   return { ok: true, message: RESET_SENT_MESSAGE };
 }
 
+interface PasswordUpdateError {
+  code?: string;
+  message?: string;
+  status?: number;
+}
+
+function passwordUpdateMessage(error: PasswordUpdateError): string {
+  const code = error.code ?? "";
+  const text = (error.message ?? "").toLowerCase();
+  if (code === "insufficient_aal" || text.includes("aal2")) return TOTP_PENDING_ERROR;
+  if (code === "same_password" || text.includes("different from the old password")) return SAME_PASSWORD_ERROR;
+  if (code === "weak_password") return "La contraseña es muy fácil de adivinar. Elige una más larga y menos común.";
+  if (code === "session_expired" || code === "session_not_found" || code === "refresh_token_not_found" || error.status === 403) {
+    return SESSION_ENDED_ERROR;
+  }
+  return PASSWORD_SAVE_ERROR;
+}
+
+/**
+ * Con un factor TOTP verificado, Supabase exige aal2 para cambiar la contraseña y una sesión de
+ * recuperación llega en aal1. Se sube a aal2 con el código antes de updateUser; nunca se omite.
+ * Sin factor verificado (invitación nueva) se actualiza directo.
+ */
+async function reachAal2ForPasswordChange(
+  repo: Pick<AdminRepo, "rateLimitHit">,
+  supabase: SupabaseClient,
+  snapshot: AuthSnapshot & { userId: string },
+  totp: string,
+): Promise<string | null> {
+  if (snapshot.currentLevel === "aal2") return null;
+  const listed = await supabase.auth.mfa.listFactors();
+  if (listed.error || !listed.data) return UNAVAILABLE_ERROR;
+  const factor = listed.data.totp.find((f) => f.status === "verified");
+  if (!factor) return null;
+
+  const code = normalizeTotpCode(totp);
+  if (!code) return TOTP_REQUIRED_ERROR;
+  const limit = await repo.rateLimitHit(`admin-mfa-reset:${snapshot.userId}`, 6, 15 * 60);
+  if (!limit.allowed) return RATE_LIMIT_ERROR;
+  const verified = await supabase.auth.mfa.challengeAndVerify({ factorId: factor.id, code });
+  if (verified.error) return TOTP_WRONG_ERROR;
+  return null;
+}
+
 export async function setAdminPassword(
-  repo: Pick<AdminRepo, "findAdminByAuthUserId" | "updateAdmin">,
+  repo: Pick<AdminRepo, "findAdminByAuthUserId" | "updateAdmin" | "rateLimitHit">,
   password: string,
   confirm: string,
-): Promise<{ ok: true } | { ok: false; error: string }> {
+  totp = "",
+): Promise<{ ok: true; next: "/admin" | "/admin/mfa" } | { ok: false; error: string }> {
   const policy = passwordPolicyError(password);
   if (policy) return { ok: false, error: policy };
   if (password !== confirm) return { ok: false, error: "Las contraseñas no coinciden." };
@@ -114,14 +171,17 @@ export async function setAdminPassword(
   if (!supabase) return { ok: false, error: CONFIG_ERROR };
   const snapshot = await readSnapshot(supabase);
   if (!snapshot.userId) return { ok: false, error: "Abre el enlace de invitación o de restablecimiento que recibiste por correo." };
+  const mfaError = await reachAal2ForPasswordChange(repo, supabase, { ...snapshot, userId: snapshot.userId }, totp);
+  if (mfaError) return { ok: false, error: mfaError };
   const { error } = await supabase.auth.updateUser({ password });
-  if (error) return { ok: false, error: "No se pudo guardar la contraseña. Pide un enlace nuevo." };
+  if (error) return { ok: false, error: passwordUpdateMessage(error) };
   // Solo después de que Auth guardó la contraseña se levanta la obligación de cambiarla.
   const admin = await repo.findAdminByAuthUserId(snapshot.userId);
   if (admin?.must_change_password === true && admin.auth_user_id === snapshot.userId) {
     await repo.updateAdmin(admin.id, { must_change_password: false });
   }
-  return { ok: true };
+  const after = await readSnapshot(supabase);
+  return { ok: true, next: after.currentLevel === "aal2" ? "/admin" : "/admin/mfa" };
 }
 
 export async function confirmEmailLink(input: {
@@ -143,7 +203,7 @@ export async function confirmEmailLink(input: {
     }
     case "code": {
       const { error } = await supabase.auth.exchangeCodeForSession(parsed.verify.code);
-      if (error) return { ok: false, error: LINK_ERROR };
+      if (error) return { ok: false, error: isAuthPKCECodeVerifierMissingError(error) ? OTHER_DEVICE_LINK_ERROR : LINK_ERROR };
       return { ok: true, next: parsed.verify.next };
     }
     default: {

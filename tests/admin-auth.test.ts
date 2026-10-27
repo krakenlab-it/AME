@@ -59,6 +59,9 @@ describe("barrera de Supabase Auth para el panel", () => {
     expect(redirectForAdminRoute("/admin", "mfa_verify")).toBe("/admin/mfa");
     expect(redirectForAdminRoute("/admin/personas/1", "mfa_verify")).toBe("/admin/mfa");
     expect(redirectForAdminRoute("/admin", "panel")).toBeNull();
+    for (const gate of ["anonymous", "unlinked", "mfa_enroll", "mfa_verify", "password_change", "panel"] as const) {
+      expect(redirectForAdminRoute("/admin/auth/confirm", gate)).toBeNull();
+    }
     expect(redirectForAdminRoute("/admin/mfa", "anonymous")).toBe("/admin/login");
     expect(redirectForAdminRoute("/admin/mfa", "mfa_enroll")).toBeNull();
     expect(redirectForAdminRoute("/admin/mfa", "panel")).toBe("/admin");
