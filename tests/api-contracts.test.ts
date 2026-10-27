@@ -178,7 +178,7 @@ describe("límites de acceso", () => {
 
   it("no abre PII a anon ni authenticated y el servidor usa service_role", () => {
     const initial = readFileSync("supabase/migrations/20260929000000_initial_schema.sql", "utf8");
-    const authMigration = readFileSync("supabase/migrations/20260930164720_admin_supabase_auth.sql", "utf8");
+    const authMigration = readFileSync("supabase/migrations/20260930211828_admin_supabase_auth.sql", "utf8");
     for (const table of ["people", "contact_information", "bank_information", "access_tokens", "admin_users"]) {
       expect(initial).toContain(`'${table}'`);
     }
