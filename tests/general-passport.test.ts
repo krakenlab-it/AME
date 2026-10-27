@@ -102,7 +102,10 @@ describe("ingreso general con pasaporte ya importado", () => {
     await attempt(repo, { email: "ana@example.com", cedula: PASSPORT });
     const taken = await attempt(repo, { email: "intruso@example.com", cedula: PASSPORT });
     expect(taken).toMatchObject({ ok: false, error: expect.stringContaining("pasaporte") });
-    if (!taken.ok) expect(taken.error).not.toContain("cédula");
+    if (!taken.ok) {
+      expect(taken.error).toContain("Este pasaporte");
+      expect(taken.error).not.toContain("cédula");
+    }
     expect((await repo.getPerson(person))?.login_email).toBe("ana@example.com");
     expect(repo.generalAuth.get(person)?.auth_user_id).toBe("auth-ana@example.com");
   });

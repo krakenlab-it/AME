@@ -35,16 +35,26 @@ function minutesUntil(until: string | null | undefined): number {
   return Math.max(1, Math.ceil(left / 60_000));
 }
 
-export function alreadyLinkedError(loginEmail: string | null, typedEmail: string, document: "cédula" | "pasaporte" = "cédula"): string {
+type DocumentName = "cédula" | "pasaporte";
+
+function thisDocument(document: DocumentName): string {
+  return document === "pasaporte" ? "Este pasaporte" : "Esta cédula";
+}
+
+function linkedWord(document: DocumentName): string {
+  return document === "pasaporte" ? "vinculado" : "vinculada";
+}
+
+export function alreadyLinkedError(loginEmail: string | null, typedEmail: string, document: DocumentName = "cédula"): string {
   const bound = loginEmail?.trim().toLowerCase() ?? "";
   if (bound && bound !== typedEmail) return emailBoundError(maskEmail(bound), document);
-  if (bound) return `Esta ${document} ya está vinculada a la cuenta ${maskEmail(bound)}. Pide al administrador que restablezca el ingreso.`;
-  return `Esta ${document} ya está vinculada a otra cuenta. Pide al administrador que restablezca el ingreso.`;
+  if (bound) return `${thisDocument(document)} ya está ${linkedWord(document)} a la cuenta ${maskEmail(bound)}. Pide al administrador que restablezca el ingreso.`;
+  return `${thisDocument(document)} ya está ${linkedWord(document)} a otra cuenta. Pide al administrador que restablezca el ingreso.`;
 }
 export const EMAIL_SEND_LIMIT = "Ya enviamos varios códigos a este correo. Espera unos minutos antes de pedir otro.";
 /** La cédula ya tiene un correo verificado: el código solo se envía a ese correo. */
-export function emailBoundError(maskedBound: string, document: "cédula" | "pasaporte" = "cédula"): string {
-  return `Esta ${document} ya ingresó con otro correo (${maskedBound}). Escribe ese mismo correo. Si ya no tienes acceso a él, pide al administrador que restablezca tu ingreso.`;
+export function emailBoundError(maskedBound: string, document: DocumentName = "cédula"): string {
+  return `${thisDocument(document)} ya ingresó con otro correo (${maskedBound}). Escribe ese mismo correo. Si ya no tienes acceso a él, pide al administrador que restablezca tu ingreso.`;
 }
 
 export interface GeneralEmailDeps extends GeneralDeps {
@@ -474,6 +484,7 @@ export async function confirmGeneralCedula(
   }
 
   const isPassport = isPassportNumber(parsed.data.cedula);
+  const documentName: DocumentName = isPassport ? "pasaporte" : "cédula";
   if (isPassport) {
     // El pasaporte solo vincula una ficha ya importada: nunca crea una cuenta nueva (el RPC la crearía como "new").
     const imported = await repo.findGeneralAuthByNationalIdHash(cedulaHash);
@@ -502,8 +513,8 @@ export async function confirmGeneralCedula(
       await repo.logSecurityEvent({ event_type: "GENERAL_EMAIL_MISMATCH", ip_hash: deps.ipHash, detail: {} });
       return {
         ok: false,
-        error: alreadyLinkedError(linked.loginEmail, email, isPassport ? "pasaporte" : "cédula"),
-        fieldErrors: { cedula: `Esta ${isPassport ? "pasaporte" : "cédula"} ya está vinculada. Escribe al administrador.` },
+        error: alreadyLinkedError(linked.loginEmail, email, documentName),
+        fieldErrors: { cedula: `${thisDocument(documentName)} ya está ${linkedWord(documentName)}. Escribe al administrador.` },
       };
     case "locked":
       return { ok: false, error: lockoutError(minutesUntil(linked.lockedUntil)), requireCaptcha };
