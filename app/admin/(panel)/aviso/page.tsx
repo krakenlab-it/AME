@@ -1,4 +1,6 @@
 import dynamic from "next/dynamic";
+import { AdminPage, PageHeader } from "@/components/admin/ui/page-header";
+import { SectionCard } from "@/components/admin/ui/section-card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Notice } from "@/components/ui/notice";
 import { getRepo } from "@/lib/database";
@@ -25,8 +27,11 @@ export default async function NoticePage() {
   })();
 
   return (
-    <div className="max-w-4xl space-y-6">
-      <h1 className="text-3xl">Aviso de privacidad y revisión legal</h1>
+    <AdminPage width="medium">
+      <PageHeader
+        title="Aviso de privacidad"
+        description="El texto que las personas aceptan antes de enviar sus datos, y el estado de la revisión legal."
+      />
       {readiness.ready ? (
         <Notice tone="success" title="Listo para producción">No hay placeholders pendientes y la revisión legal está aprobada.</Notice>
       ) : (
@@ -38,14 +43,16 @@ export default async function NoticePage() {
           <p className="mt-2 text-sm">Los datos del responsable se configuran con variables de entorno en Vercel (ver README).</p>
         </Notice>
       )}
-      <section className="sheet space-y-3 p-6">
-        <h2 className="text-xl">Versión vigente: {privacy.version}</h2>
-        <p className="text-sm text-ink-muted">{active ? `Publicada el ${formatDateTime(active.created_at)}` : "Texto inicial incluido en el código (config/privacy.ts y lib/privacy/notice.ts)."}</p>
-        <div className="max-h-80 space-y-3 overflow-y-auto rounded-xl bg-paper p-4 font-serif text-[15px] leading-relaxed">
+      <SectionCard
+        id="version-vigente"
+        title={`Versión vigente: ${privacy.version}`}
+        description={active ? `Publicada el ${formatDateTime(active.created_at)}` : "Texto inicial incluido en el código (config/privacy.ts y lib/privacy/notice.ts)."}
+      >
+        <div tabIndex={0} role="region" aria-label="Texto de la versión vigente" className="max-h-80 space-y-3 overflow-y-auto rounded-xl bg-paper p-4 font-serif text-[15px] leading-relaxed">
           {privacy.text.split(/\n{2,}/).map((p, i) => <p key={i}>{p}</p>)}
         </div>
-      </section>
+      </SectionCard>
       <NoticeEditor current={active?.body ?? DEFAULT_NOTICE_TEMPLATE} suggestedVersion={next} />
-    </div>
+    </AdminPage>
   );
 }

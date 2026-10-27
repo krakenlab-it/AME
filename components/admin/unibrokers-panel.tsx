@@ -48,13 +48,13 @@ export function UnibrokersPanel({ columns, hold }: { columns: string[]; hold: st
   }
 
   return (
-    <form onSubmit={submit} className="sheet space-y-5 p-6">
-      <p className="text-sm text-ink-muted"><span className="font-semibold">Columnas del paquete:</span> {columns.join(", ")}.</p>
+    <form onSubmit={submit} className="space-y-5">
+      <p className="rounded-xl bg-marian-soft/40 px-4 py-3 text-sm text-ink-muted"><span className="font-semibold text-ink">Columnas del paquete:</span> {columns.join(", ")}.</p>
       <Field id="unibrokers-purpose" label="Motivo de esta carga" required hint="Queda en la auditoría. Ej.: Entrega semanal de contacto a operaciones de Unibrokers.">
         <textarea id="unibrokers-purpose" aria-describedby="unibrokers-purpose-hint" value={purpose} onChange={(event) => setPurpose(event.target.value)} minLength={10} maxLength={300} required rows={3} className="field-input" />
       </Field>
       <fieldset className="space-y-2">
-        <legend className="mb-1 text-[15px] font-semibold">Formato del paquete</legend>
+        <legend className="mb-2 font-semibold text-ink">Formato del paquete</legend>
         <div className="grid gap-2 sm:grid-cols-2">
           {([["xlsx", "Excel (.xlsx)"], ["csv", "Texto separado por comas (.csv)"]] as const).map(([value, label]) => (
             <label key={value} className="choice">

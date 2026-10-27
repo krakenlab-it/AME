@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { markReviewedAction, regenerateLinkAction, revokeLinksAction } from "@/app/admin/panel-actions";
+import { ConfirmDialog } from "@/components/admin/ui/confirm-dialog";
 import { Button } from "@/components/ui/button";
 import { Notice } from "@/components/ui/notice";
 
@@ -10,6 +11,7 @@ export function PersonActions({ personId, canLinks, canReview, needsReview }: { 
   const [message, setMessage] = useState<{ tone: "success" | "error"; text: string } | null>(null);
   const [link, setLink] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [confirming, setConfirming] = useState<"regenerate" | "revoke" | null>(null);
 
   const copyLink = async () => {
     if (!link) return;
@@ -29,18 +31,8 @@ export function PersonActions({ personId, canLinks, canReview, needsReview }: { 
       <div className="flex flex-wrap gap-2">
         {canLinks && (
           <>
-            <Button variant="secondary" disabled={pending} onClick={() => run(async () => {
-              if (!confirm("Se desactivarán los enlaces anteriores y se creará uno nuevo. ¿Continuar?")) return;
-              const r = await regenerateLinkAction(personId);
-              if (r.error) setMessage({ tone: "error", text: r.error });
-              else { setLink(r.url ?? null); setCopied(false); setMessage({ tone: "success", text: "Nuevo enlace generado. Cópialo ahora: no se volverá a mostrar." }); }
-            })}>Generar nuevo enlace</Button>
-            <Button variant="danger" disabled={pending} onClick={() => run(async () => {
-              if (!confirm("¿Revocar todos los enlaces vigentes de esta persona?")) return;
-              const r = await revokeLinksAction(personId);
-              setLink(null);
-              setMessage(r.error ? { tone: "error", text: r.error } : { tone: "success", text: `Enlaces revocados: ${r.revoked ?? 0}.` });
-            })}>Revocar enlaces</Button>
+            <Button variant="secondary" disabled={pending} onClick={() => setConfirming("regenerate")}>Generar nuevo enlace</Button>
+            <Button variant="danger" disabled={pending} onClick={() => setConfirming("revoke")}>Revocar enlaces</Button>
           </>
         )}
         {canReview && needsReview && (
@@ -50,6 +42,39 @@ export function PersonActions({ personId, canLinks, canReview, needsReview }: { 
           })}>Marcar como revisado</Button>
         )}
       </div>
+      <ConfirmDialog
+        open={confirming === "regenerate"}
+        title="¿Generar un nuevo enlace?"
+        tone="primary"
+        confirmLabel="Generar nuevo enlace"
+        onCancel={() => setConfirming(null)}
+        onConfirm={() => {
+          setConfirming(null);
+          run(async () => {
+            const r = await regenerateLinkAction(personId);
+            if (r.error) setMessage({ tone: "error", text: r.error });
+            else { setLink(r.url ?? null); setCopied(false); setMessage({ tone: "success", text: "Nuevo enlace generado. Cópialo ahora: no se volverá a mostrar." }); }
+          });
+        }}
+      >
+        Se desactivarán los enlaces anteriores de esta persona y se creará uno nuevo. El enlace nuevo se muestra una sola vez.
+      </ConfirmDialog>
+      <ConfirmDialog
+        open={confirming === "revoke"}
+        title="¿Revocar los enlaces?"
+        confirmLabel="Revocar enlaces"
+        onCancel={() => setConfirming(null)}
+        onConfirm={() => {
+          setConfirming(null);
+          run(async () => {
+            const r = await revokeLinksAction(personId);
+            setLink(null);
+            setMessage(r.error ? { tone: "error", text: r.error } : { tone: "success", text: `Enlaces revocados: ${r.revoked ?? 0}.` });
+          });
+        }}
+      >
+        Se revocan todos los enlaces vigentes de esta persona. Dejará de poder entrar con ellos hasta que le generes uno nuevo.
+      </ConfirmDialog>
       {message && <Notice tone={message.tone} live>{message.text}</Notice>}
       {link && (
         <div className="flex flex-wrap items-center gap-2 rounded-xl border border-marian-line bg-white p-3">

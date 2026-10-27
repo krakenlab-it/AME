@@ -14,7 +14,7 @@ export function PageSkeleton({ label = "Cargando…", cards = 0, rows = 6 }: { l
         <Skeleton className="h-5 w-full max-w-md" />
       </div>
       {cards > 0 && (
-        <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
           {Array.from({ length: cards }, (_, i) => <Skeleton key={i} className="h-24 rounded-2xl" />)}
         </div>
       )}

@@ -9,8 +9,8 @@ import { Notice } from "@/components/ui/notice";
 export function NoticeEditor({ current, suggestedVersion }: { current: string; suggestedVersion: string }) {
   const [state, action, pending] = useActionState<NoticeState, FormData>(publishNoticeAction, {});
   return (
-    <form action={action} className="sheet space-y-5 p-6">
-      <h2 className="text-xl">Publicar nueva versión</h2>
+    <form action={action} className="admin-card space-y-5">
+      <h2 className="section-title">Publicar nueva versión</h2>
       <p className="text-[15px] text-ink-muted">
         Puedes usar variables que se reemplazan con la configuración legal: {"{{responsibleLegalName}}"}, {"{{recipientLegalName}}"},
         {" {{privacyEmail}}"}, {"{{retentionPeriod}}"}, {"{{retentionReason}}"}. Las personas que ya enviaron su información conservan

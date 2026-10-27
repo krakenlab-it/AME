@@ -236,7 +236,7 @@ export async function verifyMfa(
   code: string,
   ipHash: string,
 ): Promise<{ ok: true; sessionToken: string } | { ok: false; error: string }> {
-  const limit = await repo.rateLimitHit(`admin-mfa:${ctx.admin.id}`, 6, 15 * 60);
+  const limit = await repo.rateLimitHit(`admin-mfa:${ctx.admin.id}`, settings.adminMfaLimitPerAdmin, 15 * 60);
   if (!limit.allowed) {
     await repo.logSecurityEvent({ event_type: "ADMIN_MFA_RATE_LIMITED", ip_hash: ipHash });
     return { ok: false, error: "Demasiados intentos. Espera 15 minutos." };
