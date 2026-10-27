@@ -1,6 +1,6 @@
-# E2E de recuperación de acceso con Supabase Auth real
+# E2E con Supabase Auth real
 
-Prueba el flujo de invitación, restablecimiento de contraseña y TOTP del panel contra un GoTrue local de verdad (no mocks). No toca producción: usa solo el Supabase local de `supabase start` y claves desechables que se generan en cada corrida.
+Prueba el flujo de invitación, restablecimiento de contraseña y TOTP del panel, y el ingreso de pasaportes en `/ingresar`, contra un GoTrue local de verdad (no mocks). No toca producción: usa solo el Supabase local de `supabase start` y claves desechables que se generan en cada corrida.
 
 ## Requisitos
 
@@ -32,3 +32,28 @@ La suite no corre en CI ni con `npm run test:e2e`: tiene su propia config (`play
 - c. enlace usado o vencido muestra el texto real y se puede pedir uno nuevo.
 - d. tope de `/admin/recuperar` con mensaje claro, que se levanta al pasar la ventana.
 - e. el enlace abre en otro navegador distinto del que lo pidió (requiere las plantillas con `token_hash`).
+
+## Ingreso con pasaporte (`passport-signin.spec.ts`)
+
+Importa por el importador del panel (CSV `Nombres,Apellidos,Cédula`) dos pasaportes y una cédula, y recorre `/ingresar` con códigos reales de Mailpit hasta la confirmación. Usa un tercer admin de arranque (`admin-c@ame.test`) para no depender del resto de la suite.
+
+- 1. importación de dos pasaportes y una cédula (se verifican hashes y últimos 2 caracteres en `people`).
+- 2. y 3. ingreso con el pasaporte tal como se escribió y en minúsculas con espacios, onboarding completo.
+- 4. reingreso: mismo dactilar entra, otro dactilar se rechaza.
+- 5. otro correo no puede reclamar un pasaporte ya reclamado.
+- 6. pasaporte desconocido: rechazo en español y sin cuenta nueva.
+- 7. cédula de 10 dígitos: ingreso y onboarding sin cambios.
+- 8. Resumen con documento enmascarado, alerta de vinculación enmascarada y archivo CSV para AIG con las tres personas.
+
+Para recibir el código por correo, `supabase/config.toml` define plantillas `magic_link` y `confirmation` que muestran `{{ .Token }}`. Antes de cada corrida se vacían `people` y `rate_limits` locales (el pepper cambia en cada arranque).
+
+## Interruptor del pasaporte (`passport-kill-switch.spec.ts`)
+
+`AME_PASSPORT_SIGNIN=off` apaga el ingreso con pasaporte en `/ingresar` (se lee en cada petición del servidor). Este spec solo corre con el servidor arrancado así y se omite en la corrida normal:
+
+```bash
+AME_PASSPORT_SIGNIN=off npx playwright test -c playwright.auth.config.ts e2e-auth/passport-kill-switch.spec.ts
+```
+
+Con el interruptor apagado el pasaporte se rechaza con el mensaje de siempre, el texto vuelve a decir solo cédula y la cédula entra y completa igual.
+

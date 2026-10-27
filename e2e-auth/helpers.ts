@@ -6,7 +6,9 @@ import { readLocalStack } from "./local-stack";
 
 export const ADMIN_A = "admin-a@ame.test";
 export const ADMIN_B = "admin-b@ame.test";
-export const ADMIN_EMAILS = [ADMIN_A, ADMIN_B];
+export const ADMIN_C = "admin-c@ame.test";
+export const ADMIN_D = "admin-d@ame.test";
+export const ADMIN_EMAILS = [ADMIN_A, ADMIN_B, ADMIN_C, ADMIN_D];
 export const CANONICAL_BASE = "http://www.ame.test:3000";
 export const APEX_BASE = "http://ame.test:3000";
 
@@ -141,4 +143,32 @@ export async function onboardAdmin(browser: Browser, email: string, password: st
 export async function clearAuthRateLimits(): Promise<void> {
   const { error } = await serviceClient().from("rate_limits").delete().like("bucket", "admin-%");
   if (error) throw new Error(`No se pudieron limpiar los topes: ${error.message}`);
+}
+
+/** Código de 6 números que Supabase Auth manda por correo a /ingresar. */
+export async function waitForMailCode(to: string, previousCount: number): Promise<string> {
+  const deadline = Date.now() + 30_000;
+  while (Date.now() < deadline) {
+    const res = await fetch(`${mailUrl()}/api/v1/search?query=${encodeURIComponent(`to:${to}`)}&limit=100`);
+    const body = (await res.json()) as { messages: MailSummary[] };
+    if (body.messages.length > previousCount) {
+      const newest = [...body.messages].sort((a, b) => b.Created.localeCompare(a.Created))[0]!;
+      const full = (await (await fetch(`${mailUrl()}/api/v1/message/${newest.ID}`)).json()) as { Text: string };
+      const code = /\b(\d{6})\b/.exec(full.Text)?.[1];
+      if (!code) throw new Error("El correo no trae un código de 6 números.");
+      return code;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 400));
+  }
+  throw new Error(`No llegó el código para ${to}.`);
+}
+
+/** Cada spec de respondentes parte con la lista de personas vacía y sin topes acumulados. */
+export function resetPeopleAndLimits(): void {
+  localSql("truncate table people cascade; delete from rate_limits;");
+}
+
+/** Los topes de /ingresar por correo y por cédula son por hora: cada escenario parte de cero (el tope real lo cubren los tests unitarios). */
+export function clearRespondentLimits(): void {
+  localSql("delete from rate_limits where bucket like 'general-%';");
 }

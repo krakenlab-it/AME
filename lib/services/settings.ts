@@ -21,13 +21,18 @@ export const settings = {
    * "email" (por defecto): código de acceso por correo (6 a 10 dígitos) (Supabase Auth). "totp": aplicación autenticadora (flujo anterior).
    */
   generalAuthMethod: (): "email" | "totp" => (process.env.AME_GENERAL_AUTH_METHOD === "totp" ? "totp" : "email"),
+  /**
+   * Interruptor del ingreso con pasaporte en /ingresar. Se lee en cada petición del servidor:
+   * AME_PASSPORT_SIGNIN=off (sin distinguir mayúsculas) lo apaga; sin definir o con cualquier otro valor está encendido.
+   */
+  passportSignInEnabled: (): boolean => (process.env.AME_PASSPORT_SIGNIN ?? "").trim().toLowerCase() !== "off",
   /** Espera mínima entre dos envíos del código. Supabase exige 60 s por usuario. */
   emailOtpCooldownSeconds: 60,
   /** Envíos de código por persona por hora (además del límite de Supabase). */
   emailOtpLimitPerPerson: process.env.PORTAL_E2E === "true" && !process.env.VERCEL ? 30 : 5,
   emailOtpWindowSeconds: 60 * 60,
   adminLoginLimitPerIp: 10,
-  adminLoginLimitPerEmail: 5,
+  adminLoginLimitPerEmail: process.env.PORTAL_E2E === "true" && !process.env.VERCEL ? 30 : 5,
   adminLockMinutes: 15,
   adminMaxFailedLogins: 5,
   exportLimitPerHour: 20,

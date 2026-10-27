@@ -19,7 +19,7 @@ import { maskAccount, maskCedulaTail } from "@/lib/security/masking";
 import { cn } from "@/lib/utils";
 
 export interface WizardProps {
-  registered: { firstNames: string; lastNames: string; cedulaMasked: string; cedulaLast2: string; email?: string; phoneNumber?: string };
+  registered: { firstNames: string; lastNames: string; cedulaMasked: string; cedulaLast2: string; documentLabel?: "Cédula" | "Pasaporte"; email?: string; phoneNumber?: string };
   privacy: {
     version: string;
     summary: string;
@@ -94,6 +94,7 @@ export function UpdateWizard({ registered, privacy, supportContact, entryMethod 
   const [focusPath, setFocusPath] = useState<string | null>(null);
   const [expired, setExpired] = useState(false);
   const headingRef = useRef<HTMLHeadingElement>(null);
+  const documentLabel = registered.documentLabel ?? "Cédula";
 
   const form = useForm<SubmissionInput, unknown, Submission>({
     resolver: zodResolver(submissionSchema),
@@ -314,10 +315,10 @@ export function UpdateWizard({ registered, privacy, supportContact, entryMethod 
               <p className="text-ink-muted">Revisa que tu nombre esté escrito como aparece en tu cédula.</p>
             </header>
             <dl className="divide-y divide-marian-line/70 rounded-xl border border-marian-line/70">
-              {[["Nombres", registered.firstNames], ["Apellidos", registered.lastNames], ["Cédula", registered.cedulaMasked]].map(([k, val]) => (
+              {[["Nombres", registered.firstNames], ["Apellidos", registered.lastNames], [documentLabel, registered.cedulaMasked]].map(([k, val]) => (
                 <div key={k} className="grid grid-cols-[110px_1fr] gap-3 px-4 py-3.5">
                   <dt className="text-ink-muted">{k}</dt>
-                  <dd className={cn("font-semibold", k === "Cédula" && "tracking-[0.14em]")}>{val}</dd>
+                  <dd className={cn("font-semibold", k === documentLabel && "tracking-[0.14em]")}>{val}</dd>
                 </div>
               ))}
             </dl>
@@ -518,7 +519,7 @@ export function UpdateWizard({ registered, privacy, supportContact, entryMethod 
             <ReviewCard icon={UserRound} title="Datos personales" onEdit={() => moveStep(2)}>
               <Row k="Nombres" v={namesConfirmed ? registered.firstNames : v.names.firstNames} />
               <Row k="Apellidos" v={namesConfirmed ? registered.lastNames : v.names.lastNames} />
-              <Row k="Cédula" v={maskCedulaTail(registered.cedulaLast2)} />
+              <Row k={documentLabel} v={maskCedulaTail(registered.cedulaLast2)} />
             </ReviewCard>
             <ReviewCard icon={Mail} title="Contacto" onEdit={() => moveStep(3)}>
               <Row k="Correo" v={v.contact.primaryEmail} />
