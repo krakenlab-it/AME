@@ -25,6 +25,7 @@ import {
   type LinkAccountResult,
   type LinkRequest,
   type NewPreloadedContact,
+  type PeopleListQuery,
   type PreloadedContact,
   type PersonDetail,
   type PersonRecord,
@@ -266,13 +267,23 @@ export class MemoryRepo implements Repo {
     const wanted = new Set(emails.map((email) => email.trim().toLowerCase()).filter(Boolean));
     return new Set(this.preloadedContacts.flatMap((contact) => (contact.email && wanted.has(contact.email) ? [contact.email] : [])));
   }
-  async listPeople(q: { status?: PersonStatus; search?: string; nationalIdHash?: string; page: number; pageSize: number }) {
+  async listPeople(q: PeopleListQuery) {
     const term = q.search?.toLowerCase();
     const all = [...this.people.values()].filter((p) =>
       visibleInResumen(p) &&
       (!q.status || p.status === q.status) &&
       (!q.nationalIdHash || p.national_id_hash === q.nationalIdHash) &&
       (!term || `${p.first_names} ${p.last_names} ${p.confirmation_code ?? ""}`.toLowerCase().includes(term)));
+    const sort = q.sort;
+    if (sort) {
+      const factor = sort.dir === "asc" ? 1 : -1;
+      const key = (p: (typeof all)[number]): string => (sort.by === "submitted_at" ? p.submitted_at ?? "" : sort.by === "first_names" ? p.first_names : p.last_names).toLowerCase();
+      all.sort((a, b) => {
+        // Sin fecha de envío siempre al final, como nullsFirst: false en la base real.
+        if (sort.by === "submitted_at" && Boolean(a.submitted_at) !== Boolean(b.submitted_at)) return a.submitted_at ? -1 : 1;
+        return key(a).localeCompare(key(b), "es") * factor || a.id.localeCompare(b.id);
+      });
+    }
     const rows = all.slice((q.page - 1) * q.pageSize, q.page * q.pageSize).map((p) => ({
       id: p.id, first_names: p.first_names, last_names: p.last_names, national_id_last2: p.national_id_last2,
       status: p.status, confirmation_code: p.confirmation_code, submitted_at: p.submitted_at, updated_at: p.submitted_at ?? "",

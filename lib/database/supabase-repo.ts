@@ -30,6 +30,7 @@ import {
   type NoticeRecord,
   type PersonDetail,
   type UnibrokersSourceRow,
+  type PeopleListQuery,
   type PersonListRow,
   type PersonRecord,
   type Repo,
@@ -341,7 +342,7 @@ export class SupabaseRepo implements Repo {
     return found;
   }
 
-  async listPeople(q: { status?: PersonStatus; search?: string; nationalIdHash?: string; page: number; pageSize: number }) {
+  async listPeople(q: PeopleListQuery) {
     let query = this.db
       .from("people")
       .select("id, first_names, last_names, national_id_last2, status, confirmation_code, submitted_at, updated_at", { count: "exact" })
@@ -356,7 +357,10 @@ export class SupabaseRepo implements Repo {
       else if (term) query = query.or(`first_names.ilike.%${term}%,last_names.ilike.%${term}%`);
     }
     const from = (q.page - 1) * q.pageSize;
-    const res = await query.order("last_names", { ascending: true }).range(from, from + q.pageSize - 1);
+    const ordered = q.sort
+      ? query.order(q.sort.by, { ascending: q.sort.dir === "asc", nullsFirst: false }).order("id", { ascending: true })
+      : query.order("last_names", { ascending: true });
+    const res = await ordered.range(from, from + q.pageSize - 1);
     const data = check(res, "listPeople");
     return { rows: (data ?? []) as PersonListRow[], total: res.count ?? 0 };
   }

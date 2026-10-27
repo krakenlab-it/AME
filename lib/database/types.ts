@@ -323,6 +323,23 @@ export interface PersonListRow {
   updated_at: string;
 }
 
+/** Orden opcional de la lista de personas. Sin él, el orden es el de siempre: apellidos de la A a la Z. */
+export const PEOPLE_SORT_FIELDS = ["last_names", "first_names", "submitted_at"] as const;
+export type PeopleSortField = (typeof PEOPLE_SORT_FIELDS)[number];
+export interface PeopleSort {
+  by: PeopleSortField;
+  dir: "asc" | "desc";
+}
+
+export interface PeopleListQuery {
+  status?: PersonStatus;
+  search?: string;
+  nationalIdHash?: string;
+  page: number;
+  pageSize: number;
+  sort?: PeopleSort;
+}
+
 export interface PersonDetail {
   person: PersonRecord & { created_at: string; updated_at: string; review_reasons: string[]; reviewed_at: string | null; anonymized_at: string | null; retention_until: string | null };
   contact: Record<string, string | null> | null;
@@ -508,7 +525,7 @@ export interface AdminRepo {
   /** Vinculaciones automáticas desde `sinceIso` (máximo 30, las más recientes primero). */
   listAutoLinksSince(sinceIso: string): Promise<AutoLinkRow[]>;
   existingPreloadedEmails(emails: string[]): Promise<Set<string>>;
-  listPeople(q: { status?: PersonStatus; search?: string; nationalIdHash?: string; page: number; pageSize: number }): Promise<{ rows: PersonListRow[]; total: number }>;
+  listPeople(q: PeopleListQuery): Promise<{ rows: PersonListRow[]; total: number }>;
   getPersonDetail(id: string): Promise<PersonDetail | null>;
   markReviewed(personId: string, adminId: string): Promise<void>;
   existingNationalIdHashes(hashes: string[]): Promise<Set<string>>;
