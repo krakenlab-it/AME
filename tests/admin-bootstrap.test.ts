@@ -11,7 +11,7 @@ import { decideAdminGate, gateForAuthUser, redirectForAdminRoute } from "@/lib/s
 import { landingConsolePath } from "@/lib/services/landing-redirect";
 import { changeDemoPassword, createDemoAdmin } from "@/lib/services/demo-admin-auth";
 
-const BASE = "https://portal.test";
+const BASE = "https://www.portal.test";
 
 function fakeAuth(existing: Map<string, string>, opts: { inviteFails?: boolean; sendFails?: boolean } = {}) {
   const calls: { kind: string; email: string; redirectTo: string }[] = [];

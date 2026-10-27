@@ -73,6 +73,7 @@ export async function requestResetAction(_prev: AuthState, formData: FormData): 
 export async function setPasswordAction(_prev: AuthState, formData: FormData): Promise<AuthState> {
   const password = String(formData.get("password") ?? "");
   const confirm = String(formData.get("confirm") ?? "");
+  const totp = String(formData.get("totp") ?? "");
   try {
     if (isDemoMode()) {
       const policy = passwordPolicyError(password);
@@ -84,7 +85,7 @@ export async function setPasswordAction(_prev: AuthState, formData: FormData): P
       if (!ctx) redirect("/admin/login");
       await changeDemoPassword(repo, ctx.admin.id, password);
     } else {
-      const res = await setAdminPassword(getRepo(), password, confirm);
+      const res = await setAdminPassword(getRepo(), password, confirm, totp);
       if (!res.ok) return { error: res.error };
     }
   } catch (error) {

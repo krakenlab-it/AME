@@ -37,11 +37,24 @@ export function ResetRequestForm({ action }: { action: (s: AuthState, f: FormDat
   );
 }
 
-export function SetPasswordForm({ action, submitLabel }: { action: (s: AuthState, f: FormData) => Promise<AuthState>; submitLabel: string }) {
+export function SetPasswordForm({
+  action,
+  submitLabel,
+  requireTotp = false,
+}: {
+  action: (s: AuthState, f: FormData) => Promise<AuthState>;
+  submitLabel: string;
+  requireTotp?: boolean;
+}) {
   const [state, formAction, pending] = useActionState(action, {});
   return (
     <form action={formAction} className="space-y-5">
       {state.error && <Notice tone="error" live>{state.error}</Notice>}
+      {requireTotp && (
+        <Field id="totp" label="Código de 6 dígitos" hint="De tu aplicación autenticadora (Google Authenticator). Cambia cada 30 segundos." required>
+          <input id="totp" name="totp" aria-describedby="totp-hint" inputMode="numeric" pattern="[0-9 ]*" autoComplete="one-time-code" maxLength={7} required autoFocus className="field-input text-center text-2xl tracking-[0.4em]" />
+        </Field>
+      )}
       <Field id="password" label="Contraseña nueva" hint="Mínimo 12 caracteres, con letras y números." required>
         <PasswordInput id="password" name="password" autoComplete="new-password" aria-describedby="password-hint" required minLength={12} />
       </Field>
