@@ -7,7 +7,7 @@ test("la portada lleva al ingreso con correo, sin pedir la cédula", async ({ pa
   await page.goto("/");
   await expect(page.getByText(/Ingrese con su correo para actualizar sus datos/i)).toBeVisible();
   await expect(page.getByRole("heading", { name: "Cómo funciona" })).toBeVisible();
-  await expect(page.getByText("Escribe tu número de cédula y el código dactilar del reverso. Formato: letra, 4 números, letra, 4 números (ej. V1234V1234).")).toBeVisible();
+  await expect(page.getByText("Escribe tu número de cédula o de pasaporte y el código dactilar. Formato: letra, 4 números, letra, 4 números (ej. V1234V1234).")).toBeVisible();
   await expect(page.getByLabel(/Digita su número de cédula para empezar/i)).toHaveCount(0);
   await expect(page.getByText(/Confirme su cédula/i)).toHaveCount(0);
   await expect(page.getByText(/Si forma parte del equipo/i)).toBeVisible();

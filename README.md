@@ -113,6 +113,7 @@ Todas están documentadas en `.env.example`.
 |---|---|
 | `TOKEN_TTL_DAYS` | Vigencia de los enlaces. Por defecto 30 días; rango 1–180. |
 | `AME_GENERAL_AUTH_METHOD` | `/ingresar`: `email` (por defecto) envía un código de 6 números al correo con Supabase Auth (`signInWithOtp` + `verifyOtp`). `totp` vuelve a la aplicación autenticadora. Con `email`, Supabase necesita SMTP propio (Resend) y las plantillas «Magic Link» y «Confirm signup» con `{{ .Token }}`. Usa `NEXT_PUBLIC_SUPABASE_URL` y `NEXT_PUBLIC_SUPABASE_ANON_KEY`. |
+| `AME_PASSPORT_SIGNIN` | `/ingresar`: `off` (sin distinguir mayúsculas) apaga el ingreso con pasaporte: se rechaza con el mensaje de siempre y los textos vuelven a decir solo cédula. Sin definir, o con cualquier otro valor, está encendido. Se lee en cada petición del servidor; en Vercel basta cambiar la variable y redesplegar. La cédula y los enlaces personales no cambian. |
 | `TURNSTILE_SECRET_KEY`, `NEXT_PUBLIC_TURNSTILE_SITE_KEY` | CAPTCHA adaptativo de Cloudflare |
 | `RESEND_API_KEY`, `EMAIL_FROM` | Opcional. Si `RESEND_API_KEY` no está, el paso 3 muestra «RESEND_API_KEY no está configurada» y no envía correos. Importar y generar enlaces no dependen de eso. |
 | `ENCRYPTION_KEY_PREVIOUS` | Solo durante una rotación de llave |

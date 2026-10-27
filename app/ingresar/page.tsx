@@ -26,6 +26,7 @@ export default async function GeneralAccessPage() {
         <GeneralAccessPanel
           turnstileSiteKey={process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY ?? null}
           method={settings.generalAuthMethod()}
+          passportSignIn={settings.passportSignInEnabled()}
         />
         <div className="mt-8">
           <LandingAdminLink />
