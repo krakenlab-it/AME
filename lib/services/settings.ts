@@ -34,6 +34,8 @@ export const settings = {
   adminLoginLimitPerIp: 10,
   /** El servidor de pruebas e2e ingresa al panel desde varios archivos con el mismo correo; en Vercel y producción siguen siendo 5. */
   adminLoginLimitPerEmail: process.env.PORTAL_E2E === "true" && !process.env.VERCEL ? 30 : 5,
+  /** Códigos de verificación en dos pasos por administrador cada 15 min; el servidor e2e reutiliza un solo administrador en muchos archivos. En Vercel y producción siguen siendo 6. */
+  adminMfaLimitPerAdmin: process.env.PORTAL_E2E === "true" && !process.env.VERCEL ? 30 : 6,
   adminLockMinutes: 15,
   adminMaxFailedLogins: 5,
   exportLimitPerHour: 20,
