@@ -77,7 +77,7 @@ Los avisos salen del estado de la persona y del aviso de privacidad vigente (`pr
 ## Supabase: configuración
 
 1. Crea un proyecto en [supabase.com](https://supabase.com). Se recomienda la región **São Paulo (sa-east-1)**, cerca de Ecuador; `vercel.json` usa la región `gru1`, que está en la misma zona.
-2. En **SQL Editor**, pega y ejecuta `supabase/migrations/20260929000000_initial_schema.sql` y después `supabase/migrations/20260930164720_admin_supabase_auth.sql`. Si usas la CLI de Supabase, ejecuta `supabase db push`.
+2. En **SQL Editor**, pega y ejecuta `supabase/migrations/20260929000000_initial_schema.sql` y después `supabase/migrations/20260930211828_admin_supabase_auth.sql`. Si usas la CLI de Supabase, ejecuta `supabase db push`.
 3. En **Project Settings → API**, copia la **Project URL** en `SUPABASE_URL` y en `NEXT_PUBLIC_SUPABASE_URL`. Copia la clave **service_role** en `SUPABASE_SERVICE_ROLE_KEY` y la clave **anon** (o publishable) en `NEXT_PUBLIC_SUPABASE_ANON_KEY`.
    - La clave `service_role` solo va en variables de servidor. Nunca uses el prefijo `NEXT_PUBLIC_` con ella.
    - La clave anon solo inicia la sesión de Supabase Auth del panel. Todas las tablas de datos personales tienen RLS forzado, sin políticas, y se revocan los permisos de `anon` y `authenticated`. El navegador no puede leer `people` ni `access_tokens` aunque alguien obtenga esa clave. Después de comprobar la sesión y el segundo factor, el servidor sigue leyendo con `service_role`.
@@ -125,7 +125,7 @@ Todas están documentadas en `.env.example`.
 Están en `supabase/migrations/`, con nombres por fecha. Cada cambio de esquema debe ir en un archivo nuevo; no se edita uno ya aplicado. La migración inicial crea:
 
 - Tablas: `people`, `contact_information`, `bank_information`, `consents`, `access_tokens`, `audit_logs`, `name_change_history`, `privacy_notices`, `respondent_sessions`, `admin_users`, `exports`, `import_batches`, `security_events`, `rate_limits`.
-- `admin_sessions` se elimina en `20260930164720_admin_supabase_auth.sql`. La sesión del panel es la de Supabase Auth.
+- `admin_sessions` se elimina en `20260930211828_admin_supabase_auth.sql`. La sesión del panel es la de Supabase Auth.
 - RLS forzado en todas. Esa migración no abre `people` ni `access_tokens` a `authenticated`.
 - Funciones transaccionales: `submit_person_data`, `rate_limit_hit`, `register_token_failure`, `anonymize_expired_people`, `purge_expired_sessions`, `people_status_counts`. Solo `service_role` puede ejecutarlas.
 

@@ -314,7 +314,7 @@ describe("importación de códigos", () => {
 });
 
 describe("migración del enlace general", () => {
-  const sql = readFileSync("supabase/migrations/20261008160000_general_onboarding_link.sql", "utf8");
+  const sql = readFileSync("supabase/migrations/20261008163851_general_onboarding_link.sql", "utf8");
 
   it("agrega el hash, el TOTP cifrado, el bloqueo y la sesión sin token", () => {
     expect(sql).toMatch(/fingerprint_code_hash/);

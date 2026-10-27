@@ -91,7 +91,7 @@ describe("barrera de Supabase Auth para el panel", () => {
 });
 
 describe("migración de admin Auth", () => {
-  const sql = readFileSync("supabase/migrations/20260930164720_admin_supabase_auth.sql", "utf8");
+  const sql = readFileSync("supabase/migrations/20260930211828_admin_supabase_auth.sql", "utf8");
 
   it("vincula auth_user_id y deja de guardar contraseña y secreto TOTP", () => {
     expect(sql).toMatch(/auth_user_id/);
