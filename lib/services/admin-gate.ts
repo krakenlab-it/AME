@@ -85,8 +85,10 @@ export function classifyAdminPath(pathname: string): AdminPathClass | null {
 export function redirectForAdminRoute(pathname: string, gate: AdminGateKind): string | null {
   const area = classifyAdminPath(pathname);
   if (area === null) return null;
+  // El enlace del correo se confirma siempre, con o sin sesión previa: verifyOtp la reemplaza.
+  if (matches(pathname, "/admin/auth")) return null;
   if (gate === "password_change") {
-    if (matches(pathname, "/admin/restablecer") || matches(pathname, "/admin/auth")) return null;
+    if (matches(pathname, "/admin/restablecer")) return null;
     return "/admin/restablecer";
   }
   if (area === "public") {

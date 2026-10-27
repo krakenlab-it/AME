@@ -1,5 +1,5 @@
 import "server-only";
-import type { SupabaseClient } from "@supabase/supabase-js";
+import { isAuthPKCECodeVerifierMissingError, type SupabaseClient } from "@supabase/supabase-js";
 import { parseAdoptSession, parseMagicLinkVerify } from "@/lib/contracts/magic-link";
 import type { AdminRepo } from "@/lib/database/types";
 import { sha256 } from "@/lib/encryption/crypto";
@@ -28,6 +28,8 @@ const TOTP_PENDING_ERROR =
 const SAME_PASSWORD_ERROR = "La contraseña nueva tiene que ser distinta a la anterior.";
 const SESSION_ENDED_ERROR = "La sesión de este restablecimiento terminó. Pide un enlace nuevo desde “Pedir otro enlace”.";
 const PASSWORD_SAVE_ERROR = "No se pudo guardar la contraseña. Intenta de nuevo; si sigue fallando, avisa al equipo técnico.";
+const OTHER_DEVICE_LINK_ERROR =
+  "Este enlace solo abre en el mismo navegador y dispositivo desde donde pediste el cambio. Pide uno nuevo desde este dispositivo y ábrelo aquí.";
 const LINK_ERROR = "El enlace no es válido o ya venció. Pide una nueva invitación o restablece la contraseña.";
 export const RESET_SENT_MESSAGE = "Si ese correo tiene un acceso de administrador, enviaremos un enlace para elegir una contraseña nueva.";
 
@@ -161,7 +163,7 @@ export async function setAdminPassword(
   password: string,
   confirm: string,
   totp = "",
-): Promise<{ ok: true } | { ok: false; error: string }> {
+): Promise<{ ok: true; next: "/admin" | "/admin/mfa" } | { ok: false; error: string }> {
   const policy = passwordPolicyError(password);
   if (policy) return { ok: false, error: policy };
   if (password !== confirm) return { ok: false, error: "Las contraseñas no coinciden." };
@@ -178,7 +180,8 @@ export async function setAdminPassword(
   if (admin?.must_change_password === true && admin.auth_user_id === snapshot.userId) {
     await repo.updateAdmin(admin.id, { must_change_password: false });
   }
-  return { ok: true };
+  const after = await readSnapshot(supabase);
+  return { ok: true, next: after.currentLevel === "aal2" ? "/admin" : "/admin/mfa" };
 }
 
 export async function confirmEmailLink(input: {
@@ -200,7 +203,7 @@ export async function confirmEmailLink(input: {
     }
     case "code": {
       const { error } = await supabase.auth.exchangeCodeForSession(parsed.verify.code);
-      if (error) return { ok: false, error: LINK_ERROR };
+      if (error) return { ok: false, error: isAuthPKCECodeVerifierMissingError(error) ? OTHER_DEVICE_LINK_ERROR : LINK_ERROR };
       return { ok: true, next: parsed.verify.next };
     }
     default: {

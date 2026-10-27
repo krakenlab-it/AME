@@ -11,6 +11,8 @@ interface FakeAuth {
   };
   updateUser: ReturnType<typeof vi.fn>;
   resetPasswordForEmail: ReturnType<typeof vi.fn>;
+  verifyOtp: ReturnType<typeof vi.fn>;
+  exchangeCodeForSession: ReturnType<typeof vi.fn>;
 }
 
 const holder: { auth: FakeAuth } = { auth: undefined as unknown as FakeAuth };
@@ -20,25 +22,32 @@ vi.mock("@/lib/supabase/server", () => ({
 }));
 
 import { MemoryRepo } from "@/lib/database/memory-repo";
-import { requestPasswordReset, setAdminPassword } from "@/lib/services/admin-auth";
+import { AuthPKCECodeVerifierMissingError } from "@supabase/supabase-js";
+import { confirmEmailLink, requestPasswordReset, setAdminPassword } from "@/lib/services/admin-auth";
 import { canonicalAdminBase } from "@/lib/services/canonical-base";
 import { portalConfirmUrl, staffConfirmRedirect } from "@/lib/services/staff-invite";
 
 const PASSWORD = "Nueva-clave-segura-2026";
 
 function fakeAuth(opts: { level: "aal1" | "aal2"; next: "aal1" | "aal2"; verifiedFactor: boolean }): FakeAuth {
+  const state = { level: opts.level };
   return {
     getClaims: vi.fn(async () => ({ data: { claims: { sub: "user-1" } }, error: null })),
     mfa: {
-      getAuthenticatorAssuranceLevel: vi.fn(async () => ({ data: { currentLevel: opts.level, nextLevel: opts.next }, error: null })),
+      getAuthenticatorAssuranceLevel: vi.fn(async () => ({ data: { currentLevel: state.level, nextLevel: opts.next }, error: null })),
       listFactors: vi.fn(async () => ({
         data: { totp: opts.verifiedFactor ? [{ id: "factor-1", status: "verified" }] : [], all: [] },
         error: null,
       })),
-      challengeAndVerify: vi.fn(async () => ({ data: {}, error: null })),
+      challengeAndVerify: vi.fn(async () => {
+        state.level = "aal2";
+        return { data: {}, error: null };
+      }),
     },
     updateUser: vi.fn(async () => ({ data: {}, error: null })),
     resetPasswordForEmail: vi.fn(async () => ({ data: {}, error: null })),
+    verifyOtp: vi.fn(async () => ({ data: {}, error: null })),
+    exchangeCodeForSession: vi.fn(async () => ({ data: {}, error: null })),
   };
 }
 
@@ -57,7 +66,7 @@ describe("restablecer contraseña de un administrador con TOTP", () => {
     expect(holder.auth.mfa.challengeAndVerify).not.toHaveBeenCalled();
 
     const done = await setAdminPassword(repo, PASSWORD, PASSWORD, "123 456");
-    expect(done).toEqual({ ok: true });
+    expect(done).toEqual({ ok: true, next: "/admin" });
     expect(holder.auth.mfa.challengeAndVerify).toHaveBeenCalledWith({ factorId: "factor-1", code: "123456" });
     const verifyOrder = holder.auth.mfa.challengeAndVerify.mock.invocationCallOrder[0] ?? 0;
     const updateOrder = holder.auth.updateUser.mock.invocationCallOrder[0] ?? 0;
@@ -77,7 +86,7 @@ describe("restablecer contraseña de un administrador con TOTP", () => {
   it("sin factor verificado (invitación nueva) actualiza directo", async () => {
     holder.auth = fakeAuth({ level: "aal1", next: "aal1", verifiedFactor: false });
     const res = await setAdminPassword(repo, PASSWORD, PASSWORD);
-    expect(res).toEqual({ ok: true });
+    expect(res).toEqual({ ok: true, next: "/admin/mfa" });
     expect(holder.auth.mfa.challengeAndVerify).not.toHaveBeenCalled();
     expect(holder.auth.updateUser).toHaveBeenCalledTimes(1);
   });
@@ -85,7 +94,7 @@ describe("restablecer contraseña de un administrador con TOTP", () => {
   it("con sesión ya en aal2 no pide el código otra vez", async () => {
     holder.auth = fakeAuth({ level: "aal2", next: "aal2", verifiedFactor: true });
     const res = await setAdminPassword(repo, PASSWORD, PASSWORD);
-    expect(res).toEqual({ ok: true });
+    expect(res).toEqual({ ok: true, next: "/admin" });
     expect(holder.auth.mfa.challengeAndVerify).not.toHaveBeenCalled();
   });
 
@@ -123,6 +132,31 @@ describe("restablecer contraseña de un administrador con TOTP", () => {
     const blocked = await setAdminPassword(repo, PASSWORD, PASSWORD, "000000");
     expect(blocked).toEqual({ ok: false, error: expect.stringContaining("Demasiados intentos") });
     expect(holder.auth.mfa.challengeAndVerify.mock.calls.length).toBe(calls);
+  });
+});
+
+describe("confirmar el enlace del correo", () => {
+  beforeEach(() => {
+    holder.auth = fakeAuth({ level: "aal1", next: "aal1", verifiedFactor: false });
+  });
+
+  it("token_hash se confirma con verifyOtp sin depender del navegador que pidió el correo", async () => {
+    const res = await confirmEmailLink({ tokenHash: "hash-1", type: "recovery", next: "/admin/restablecer" });
+    expect(res).toEqual({ ok: true, next: "/admin/restablecer" });
+    expect(holder.auth.verifyOtp).toHaveBeenCalledWith({ token_hash: "hash-1", type: "recovery" });
+    expect(holder.auth.exchangeCodeForSession).not.toHaveBeenCalled();
+  });
+
+  it("un código PKCE sin el verificador del navegador explica que hay que abrirlo donde se pidió", async () => {
+    holder.auth.exchangeCodeForSession.mockResolvedValue({ data: null, error: new AuthPKCECodeVerifierMissingError() });
+    const res = await confirmEmailLink({ code: "abc", next: "/admin/restablecer" });
+    expect(res).toEqual({ ok: false, error: expect.stringContaining("mismo navegador") });
+  });
+
+  it("un código vencido o usado sigue diciendo que el enlace venció", async () => {
+    holder.auth.exchangeCodeForSession.mockResolvedValue({ data: null, error: { code: "flow_state_expired", status: 400, message: "x" } });
+    const res = await confirmEmailLink({ code: "abc", next: "/admin/restablecer" });
+    expect(res).toEqual({ ok: false, error: expect.stringContaining("ya venció") });
   });
 });
 
