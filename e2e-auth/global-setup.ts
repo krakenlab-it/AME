@@ -3,7 +3,7 @@ import { randomBytes } from "node:crypto";
 import { createClient } from "@supabase/supabase-js";
 import { AUTH_E2E_PORT } from "../playwright.auth.config";
 import { readLocalStack } from "./local-stack";
-import { ADMIN_A, ADMIN_B, ADMIN_EMAILS } from "./helpers";
+import { ADMIN_EMAILS, localSql } from "./helpers";
 
 async function resetLocalState(apiUrl: string, serviceRoleKey: string, mailUrl: string) {
   const db = createClient(apiUrl, serviceRoleKey, { auth: { persistSession: false, autoRefreshToken: false } });
@@ -15,7 +15,9 @@ async function resetLocalState(apiUrl: string, serviceRoleKey: string, mailUrl: 
     }
   }
   await db.from("admin_users").delete().like("email", "%@ame.test");
-  await db.from("rate_limits").delete().like("bucket", "admin-%");
+  await db.from("rate_limits").delete().neq("bucket", "");
+  // Base local desechable: las personas de corridas anteriores usan otra sal de hash y no deben estorbar.
+  localSql("truncate table people cascade");
   await fetch(`${mailUrl}/api/v1/messages`, { method: "DELETE" });
 }
 
@@ -56,7 +58,7 @@ export default async function globalSetup() {
     HASH_PEPPER: randomBytes(48).toString("base64url"),
     // Dominio sin www a propósito: el portal tiene que enviar siempre la base canónica con www.
     APP_BASE_URL: "http://ame.test:3000",
-    ADMIN_BOOTSTRAP_EMAILS: `${ADMIN_A}, ${ADMIN_B}`,
+    ADMIN_BOOTSTRAP_EMAILS: ADMIN_EMAILS.join(", "),
   };
 
   const child = spawn("npx", ["next", "start", "--hostname", "0.0.0.0", "--port", String(AUTH_E2E_PORT)], {
